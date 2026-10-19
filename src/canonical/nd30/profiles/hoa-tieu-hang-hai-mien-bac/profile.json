@@ -1,0 +1,81 @@
+{
+  "schema_version": "1.0",
+  "id": "hoa-tieu-mien-bac-administrative-v1",
+  "regime": "administrative",
+  "organization": {
+    "name": "CÔNG TY HOA TIÊU HÀNG HẢI MIỀN BẮC",
+    "parent": "TỔNG CÔNG TY BẢO ĐẢM AN TOÀN HÀNG HẢI VIỆT NAM"
+  },
+  "status": "user_approved_visual_reference",
+  "scope": "first_page_header",
+  "source": {
+    "document": "header-reference.docx",
+    "render_pdf": "header-reference.pdf",
+    "sha256": "7944900a0ce2c67f67018ef14695cce0ce33814a558395b7df6a9ddf463b1cb3",
+    "legal_rule_catalog": "../../rules.generated.json",
+    "legal_regime": "VN-ND30-2020"
+  },
+  "selections": {
+    "page": {
+      "paper": "A4",
+      "margin_mm": { "top": 20, "bottom": 20, "left": 30, "right": 15 }
+    },
+    "header_table": {
+      "width_twips": 10432,
+      "left_column_twips": 5187,
+      "right_column_twips": 5245,
+      "indent_twips": -874,
+      "layout": "fixed",
+      "borders": "none",
+      "cell_padding_twips": 0
+    },
+    "left_column": {
+      "alignment": "center",
+      "parent_lines": [
+        "TỔNG CÔNG TY BẢO ĐẢM",
+        "AN TOÀN HÀNG HẢI VIỆT NAM"
+      ],
+      "issuer": "CÔNG TY HOA TIÊU HÀNG HẢI MIỀN BẮC",
+      "number_placeholder": "Số: …/…",
+      "issuer_line_shape": {
+        "kind": "plain_line",
+        "style": "none",
+        "shadow": false,
+        "color": "000000",
+        "dash": "solid",
+        "weight_pt": 0.75,
+        "left_pt": 112.9,
+        "top_pt": 103,
+        "width_pt": 116.2
+      }
+    },
+    "right_column": {
+      "national_title": "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM",
+      "motto": "Độc lập - Tự do - Hạnh phúc",
+      "place_date_placeholder": "Hải Phòng, ngày … tháng … năm …",
+      "place_date_alignment": "right",
+      "motto_line_shape": {
+        "kind": "plain_line",
+        "style": "none",
+        "shadow": false,
+        "color": "000000",
+        "dash": "solid",
+        "weight_pt": 0.75,
+        "left_pt": 353.6,
+        "top_pt": 88.5,
+        "width_pt": 155.9
+      }
+    },
+    "typography": {
+      "family": "Times New Roman",
+      "character_scale_percent": 100,
+      "parent_size_pt": 12,
+      "issuer_size_pt": 12,
+      "national_title_size_pt": 12,
+      "motto_size_pt": 13,
+      "number_size_pt": 13,
+      "place_date_size_pt": 13,
+      "place_date_italic": true
+    }
+  }
+}

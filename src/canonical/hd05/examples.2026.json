@@ -1,0 +1,75 @@
+{
+  "schema_version": "1.0",
+  "catalog_id": "VN-PARTY-HD05-2026-EXAMPLES",
+  "relationship_to_rules": "Chỉ là tài liệu thực tế để kiểm thử nhận dạng và đối chiếu. Quy tắc pháp lý vẫn lấy từ rules.2026.json và PDF 05-HD/VPTW.",
+  "reviewed_on": "2026-10-16",
+  "secondary_explainer": {
+    "url": "https://xaydungchinhsach.chinhphu.vn/huong-dan-so-05-hd-vptw-ve-the-thuc-va-ky-thuat-trinh-bay-van-ban-cua-dang-119260601101535274.htm",
+    "published_on": "2026-10-07",
+    "assessment": "Bài giới thiệu đăng toàn văn 36 trang, không xác lập rule khác PDF gốc. Phần tóm tắt không liệt kê Nơi nhận, nhưng Phần II.I.9 của văn bản gốc có quy định về thành phần này."
+  },
+  "examples": [
+    {
+      "id": "HD05.EXAMPLE.KH.HATINH.2026-09",
+      "document_type": "kế hoạch",
+      "publisher_page": "https://dukcq.hatinh.gov.vn/laws/",
+      "file_url": "https://dukcq.hatinh.gov.vn/laws/detail/Ke-hoach-thuc-hien-Chi-thi-so-14-CT-TU-ngay-15-7-2026-cua-Ban-Thuong-vu-Tinh-uy-ve-doi-moi-nang-cao-hieu-luc-hieu-qua-cong-tac-kiem-tra-giam-sat-va-ky-luat-cua-Dang-378/?download=1&id=0",
+      "file_sha256": "E356EF6CBAAC23AFF4AB13A12997F643521A55B8983AB52664B2D13EE115FF5F",
+      "listed_date": "2026-09-17",
+      "document_date": "2026-09-18",
+      "observed": [
+        "Đầu văn bản bố trí hai cột: tên cấp trên/cơ quan ban hành bên trái, tiêu đề Đảng và địa danh/ngày tháng bên phải.",
+        "Bên trái có dấu * giữa tên cơ quan và số 24-KH/ĐU.",
+        "Tên loại KẾ HOẠCH và trích yếu nằm ở giữa, sau trích yếu có dòng -----.",
+        "Có phần Nơi nhận và khối ký ở cuối văn bản."
+      ],
+      "linked_rule_ids": ["HD05.HEAD.01", "HD05.ORG.12", "HD05.ORG.13", "HD05.ORG.14", "HD05.TITLE.04", "HD05.TITLE.05", "HD05.TITLE.06", "HD05.TITLE.07"],
+      "review_note": "Ngày trên danh mục khác ngày trong tệp. Chỉ dùng như ca nhận dạng bố cục; không coi toàn bộ tệp là mẫu chuẩn đã được thẩm định."
+    },
+    {
+      "id": "HD05.EXAMPLE.BC.HATINH.2026-09",
+      "document_type": "báo cáo",
+      "publisher_page": "https://dukcq.hatinh.gov.vn/laws/",
+      "file_url": "https://dukcq.hatinh.gov.vn/laws/detail/Bao-cao-tinh-hinh-ket-qua-thuc-hien-nhiem-vu-chinh-tri-9-thang-dau-nam-nhiem-vu-giai-phap-trong-tam-3-thang-cuoi-nam-2026-381/?download=1&id=0",
+      "file_sha256": "3803812F85B5FC0040C8F4E56EAAAD071A60FEC9FBF41D7A4DEC5BD99888E923",
+      "listed_date": "2026-09-24",
+      "document_date": "2026-09-25",
+      "observed": [
+        "Đầu văn bản có dấu * dưới tên cơ quan, trên số 68-BC/ĐU.",
+        "Tên loại BÁO CÁO ở dòng riêng; trích yếu hai dòng phía dưới, rồi đến ----- trước phần nội dung.",
+        "Nội dung bắt đầu sau cụm tên loại, trích yếu và dấu phân cách."
+      ],
+      "linked_rule_ids": ["HD05.ORG.13", "HD05.ORG.14", "HD05.TITLE.04", "HD05.TITLE.05", "HD05.TITLE.06", "HD05.TITLE.07"],
+      "review_note": "Ngày trên danh mục khác ngày trong tệp. Dòng ----- có khoảng trắng dẫn đầu trong OOXML, cần nhận dạng theo vị trí hiển thị và nội dung sau khi chuẩn hoá khoảng trắng; không sao chép khoảng trắng làm rule."
+    },
+    {
+      "id": "HD05.EXAMPLE.CV.HATINH.2026-08",
+      "document_type": "công văn",
+      "publisher_page": "https://dukcq.hatinh.gov.vn/laws/",
+      "file_url": "https://dukcq.hatinh.gov.vn/laws/detail/Dinh-huong-noi-dung-trong-tam-tuyen-truyen-trong-thang-9-2026-366/?download=1&id=0",
+      "file_sha256": "43C16B54C9B84615C1782A6E48A41E26E3A77CCE886F319FCCFF9A9BAC153F08",
+      "listed_date": "2026-08-27",
+      "document_date": "2026-08-28",
+      "observed": [
+        "Trích yếu 'Định hướng nội dung trọng tâm tuyên truyền trong tháng 9/2026' nằm ở cột trái dưới số 331-CV/ĐU.",
+        "Không có cụm tên loại/trích yếu/----- ở giữa trang như kế hoạch hoặc báo cáo.",
+        "Bên phải là tiêu đề Đảng và địa danh/ngày tháng; nội dung công văn ở dưới phần đầu."
+      ],
+      "linked_rule_ids": ["HD05.HEAD.01", "HD05.TITLE.09", "HD05.TITLE.10"],
+      "review_note": "Ngày trên danh mục khác ngày trong tệp. Số/ký hiệu có khoảng trắng quanh dấu - trong OOXML; kiểm định khoảng cách theo PDF gốc, không lấy cách gõ của mẫu này làm chuẩn."
+    },
+    {
+      "id": "HD05.EXAMPLE.KH.IACHIM.2026-06.DRAFT",
+      "document_type": "kế hoạch",
+      "publisher_page": "https://iachim.quangngai.gov.vn/",
+      "file_url": "https://iachim.quangngai.gov.vn/upload/2007057/20260607/KH_thuc_hien_Chi_thi_14_Signed_17136.pdf",
+      "file_sha256": "D41501568E01E8D07F44013CA221CF965606FB5B8BA05AE93EEF38219467A0E4",
+      "observed": [
+        "Trang đầu có tên cơ quan, dấu *, tiêu đề Đảng, tên loại KẾ HOẠCH, trích yếu và dấu -----.",
+        "Số văn bản và ngày ban hành còn để trống trong bản PDF truy cập được."
+      ],
+      "linked_rule_ids": ["HD05.ORG.13", "HD05.TITLE.04", "HD05.TITLE.06"],
+      "review_note": "Chỉ dùng làm ca phát hiện biểu mẫu chưa hoàn thiện; không dùng làm mẫu đạt chuẩn về số, ngày tháng hoặc chứng cứ đã phát hành."
+    }
+  ]
+}

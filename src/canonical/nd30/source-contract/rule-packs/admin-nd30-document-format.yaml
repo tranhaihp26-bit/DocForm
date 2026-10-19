@@ -1,0 +1,13 @@
+schema_version: "1.0"
+id: ADMIN-ND30-DOCUMENT-FORMAT
+selector:
+  regimes:
+    - administrative
+  domains:
+    - document_format
+    - document_structure
+includes:
+  sources:
+    - VN-STATE-ND30-2020
+overlay_policy:
+  organization_profile: allowed

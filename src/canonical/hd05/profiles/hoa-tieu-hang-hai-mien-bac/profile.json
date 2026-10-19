@@ -1,0 +1,74 @@
+{
+  "schema_version": "1.0",
+  "id": "HOA-TIEU-MIEN-BAC-PARTY-HD05-HEADER-2026",
+  "regime": "party",
+  "organization": {
+    "name": "ĐẢNG ỦY CÔNG TY HOA TIÊU HÀNG HẢI MIỀN BẮC",
+    "organization_type": "party_committee"
+  },
+  "status": "user_tuned_visual_reference",
+  "source": {
+    "document": "header-reference.docx",
+    "sha256": "99282614cdce4920d52d229dae936327b227d44d1441d07ee18e2846dfa55430",
+    "legal_rule_catalog": "../../rules.2026.json",
+    "legal_regime": "VN-PARTY-HD05-2026"
+  },
+  "scope": "first_page_header",
+  "selections": {
+    "page": {
+      "paper": "A4",
+      "margin_mm": { "top": 20, "bottom": 20, "left": 30, "right": 15 }
+    },
+    "header_table": {
+      "width_twips": 10170,
+      "left_column_twips": 5580,
+      "right_column_twips": 4590,
+      "indent_twips": -540,
+      "layout": "fixed",
+      "borders": "none",
+      "cell_padding_twips": 0
+    },
+    "left_column": {
+      "alignment": "center",
+      "parent_lines": [
+        "ĐẢNG BỘ TỔNG CÔNG TY",
+        "BẢO ĐẢM AN TOÀN HÀNG HẢI VIỆT NAM"
+      ],
+      "issuer_lines": [
+        "ĐẢNG ỦY CÔNG TY",
+        "HOA TIÊU HÀNG HẢI MIỀN BẮC"
+      ],
+      "issuer_star": "*",
+      "reference_number_placeholder": "Số …-…/ĐU"
+    },
+    "right_column": {
+      "alignment": "right",
+      "party_title": "ĐẢNG CỘNG SẢN VIỆT NAM",
+      "place_date_placeholder": "Hải Phòng, ngày … tháng … năm 2026",
+      "title_line_shape": {
+        "kind": "plain_line",
+        "style": "none",
+        "shadow": false,
+        "color": "000000",
+        "dash": "solid",
+        "weight_pt": 0.75,
+        "left_pt": 360.1,
+        "top_pt": 76.1,
+        "width_pt": 207
+      }
+    },
+    "typography": {
+      "family": "Times New Roman",
+      "character_scale_percent": 100,
+      "character_spacing_pt": 0,
+      "parent_size_pt": 14,
+      "issuer_size_pt": 14,
+      "party_title_size_pt": 15,
+      "place_date_size_pt": 14,
+      "parent_bold": false,
+      "issuer_bold": true,
+      "party_title_bold": true,
+      "place_date_italic": true
+    }
+  }
+}

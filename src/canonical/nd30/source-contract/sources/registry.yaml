@@ -1,0 +1,134 @@
+schema_version: "1.0"
+verified_at: "2026-09-18"
+baseline_commit: "6f5a5f1d38a18b6117d8054134e76e8df472d10a"
+
+sources:
+  - id: VN-STATE-ND30-2020
+    title: "Nghị định 30/2020/NĐ-CP về công tác văn thư"
+    regime: administrative
+    domains:
+      - document_format
+      - document_structure
+      - document_workflow
+      - records_management
+      - electronic_transaction
+    implementation_status: core
+
+  - id: VN-STATE-LAW20-2023
+    title: "Luật Giao dịch điện tử 20/2023/QH15"
+    regime: administrative
+    domains:
+      - electronic_transaction
+    implementation_status: registered
+
+  - id: VN-STATE-LAW33-2024
+    title: "Luật Lưu trữ 33/2024/QH15"
+    regime: administrative
+    domains:
+      - records_management
+      - archival_preservation
+    implementation_status: registered
+
+  - id: VN-STATE-ND113-2025
+    title: "Nghị định 113/2025/NĐ-CP"
+    regime: administrative
+    domains:
+      - archival_preservation
+    implementation_status: registered
+
+  - id: VN-STATE-TT05-BNV-2025
+    title: "Thông tư 05/2025/TT-BNV"
+    regime: administrative
+    domains:
+      - archival_preservation
+    implementation_status: registered
+
+  - id: VN-STATE-TT06-BNV-2025
+    title: "Thông tư 06/2025/TT-BNV"
+    regime: administrative
+    domains:
+      - records_management
+      - archival_preservation
+    implementation_status: registered
+
+  - id: VN-STATE-LAW117-2025
+    title: "Luật Bảo vệ bí mật nhà nước 117/2025/QH15"
+    regime: administrative
+    domains:
+      - information_security
+    implementation_status: registered
+
+  - id: VN-STATE-ND63-2026
+    title: "Nghị định 63/2026/NĐ-CP"
+    regime: administrative
+    domains:
+      - information_security
+    implementation_status: registered
+
+  - id: VN-PARTY-QD399-2026
+    title: "Quy định 399-QĐ/TW"
+    regime: party
+    domains:
+      - document_format
+      - document_structure
+      - legal_authority
+    implementation_status: core
+
+  - id: VN-PARTY-HD05-2026
+    title: "Hướng dẫn 05-HD/VPTW"
+    regime: party
+    domains:
+      - document_format
+      - document_structure
+    implementation_status: core
+
+  - id: VN-PARTY-QD379-2025
+    title: "Quy định 379-QĐ/TW"
+    regime: party
+    domains:
+      - electronic_transaction
+    implementation_status: registered
+
+  - id: VN-PARTY-HD09-2026
+    title: "Hướng dẫn 09-HD/VPTW"
+    regime: party
+    domains:
+      - document_workflow
+      - electronic_transaction
+    implementation_status: deferred
+
+  - id: VN-PARTY-QD383-2025
+    title: "Quy định 383-QĐ/TW"
+    regime: party
+    domains:
+      - records_management
+    implementation_status: registered
+
+  - id: VN-PARTY-HD06-2026
+    title: "Hướng dẫn 06-HD/VPTW"
+    regime: party
+    domains:
+      - records_management
+      - archival_preservation
+    implementation_status: deferred
+
+  - id: VN-PARTY-QD384-2025
+    title: "Quy định 384-QĐ/TW"
+    regime: party
+    domains:
+      - data_governance
+    implementation_status: deferred
+
+  - id: VN-PARTY-HD07-2026
+    title: "Hướng dẫn 07-HD/VPTW"
+    regime: party
+    domains:
+      - data_governance
+    implementation_status: deferred
+
+  - id: VN-PARTY-QD308-2026
+    title: "Quyết định 308-QĐ/VPTW"
+    regime: party
+    domains:
+      - data_governance
+    implementation_status: deferred
