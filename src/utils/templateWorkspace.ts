@@ -7,6 +7,11 @@ function styleMap(attrs:string):Map<string,string>{
  const raw=attrs.match(/\bstyle\s*=\s*(?:"([^"]*)"|'([^']*)')/i)?.[1]??attrs.match(/\bstyle\s*=\s*(?:"([^"]*)"|'([^']*)')/i)?.[2]??'';
  return new Map(raw.split(';').map(part=>part.split(':').map(v=>v.trim())).filter(parts=>parts.length>=2).map(([k,...v])=>[k.toLowerCase(),v.join(':').toLowerCase()]));
 }
+function normalizeDocxColor(value:string|undefined):string{
+ const color=(value??'000000').replace('#','').toUpperCase();
+ if(/^[0-9A-F]{3}$/.test(color))return color.replace(/./g,'$&$&');
+ return /^[0-9A-F]{6}$/.test(color)?color:'000000';
+}
 function attrNumber(attrs:string,name:string):number|undefined{
  const value=attrs.match(new RegExp(`\\b${name}\\s*=\\s*["']?([\\d.]+)`,'i'))?.[1];return value===undefined?undefined:Number(value);
 }
@@ -55,8 +60,8 @@ function parseTemplateTable(tableHtml:string,templateId:string,index:number):{mo
    const border=styles.get('border');
    const borderColor=border?.match(/#[0-9a-f]{3,8}|\bblack\b/i)?.[0]??'000000';
    const cell:TableCellModel={cellId:`${id}:r${rowIndex}:c${colIndex}`,rowIndex,colIndex,gridColumn:colIndex,gridSpan:1,text,paragraphs};
-   if(border&&border!=='none')cell.borders={top:{style:'single',size:4,color:borderColor.replace('#','').toUpperCase()},bottom:{style:'single',size:4,color:borderColor.replace('#','').toUpperCase()},left:{style:'single',size:4,color:borderColor.replace('#','').toUpperCase()},right:{style:'single',size:4,color:borderColor.replace('#','').toUpperCase()}};
-   const shading=styles.get('background-color');if(shading)cell.shadingColor=shading.replace('#','').toUpperCase();
+   if(border&&border!=='none'){const color=normalizeDocxColor(borderColor);cell.borders={top:{style:'single',size:4,color},bottom:{style:'single',size:4,color},left:{style:'single',size:4,color},right:{style:'single',size:4,color}};}
+   const shading=styles.get('background-color');if(shading)cell.shadingColor=normalizeDocxColor(shading);
    const align=styles.get('text-align');if(['left','center','right','justify'].includes(align??''))cell.alignment=align as TableCellModel['alignment'];
    return cell;
   });

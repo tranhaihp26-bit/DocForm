@@ -1860,6 +1860,52 @@ export default function App() {
   const canEnterStep=(step:1|2|3)=>step===1||sourceChosen&&canEnterWorkspaceStep(workspaceSnapshot,step)&&(step!==3||canExportSource);
   const stepIsComplete=(step:1|2|3)=>step===1?sourceChosen&&canEnterWorkspaceStep(workspaceSnapshot,2):step===2?canExportSource:Boolean(visibleCandidate?.safe);
 
+  const numericComponentGroups = evaluationSummary.recognizedComponents.groups
+    .filter(group => typeof group.id === "number")
+    .sort((left, right) => Number(left.id) - Number(right.id));
+  const sidebarItems: Array<{ id: string; label: string; selector?: string }> = currentStep === 1
+    ? [
+        { id: "df-step1-regime", label: "Hệ thể thức" },
+        { id: "df-step1-template", label: "Mẫu cơ quan" },
+        { id: "df-step1-document-type", label: "Loại văn bản" },
+        { id: "df-step1-source", label: "Nguồn tài liệu & nhận diện" },
+      ]
+    : currentStep === 2
+      ? [
+          ...numericComponentGroups.filter(group => Number(group.id) >= 1 && Number(group.id) <= 5).map(group => ({
+            id: `df-step2-group-${group.id}`,
+            label: `${String(group.id).padStart(2, "0")}. ${group.name}`,
+            selector: `[data-workspace-group="${group.id}"]`,
+          })),
+          { id: "df-step2-body", label: "06. Nội dung văn bản (Body)" },
+          ...numericComponentGroups.filter(group => Number(group.id) >= 7 && Number(group.id) <= 9).map(group => ({
+            id: `df-step2-group-${group.id}`,
+            label: `${String(group.id).padStart(2, "0")}. ${group.name}`,
+            selector: `[data-workspace-group="${group.id}"]`,
+          })),
+          { id: "df-step2-appendices", label: `Phụ lục (${doc.appendices?.length ?? 0})` },
+        ]
+      : [
+          { id: "df-step3-preview", label: "Duyệt trang DOCX" },
+          { id: "df-step3-reference", label: "Đối chiếu Body nguồn" },
+          { id: "df-step3-export", label: "Tải xuống / in" },
+        ];
+  const [activeTocTarget, setActiveTocTarget] = useState("");
+  useEffect(() => {
+    const firstGroup = numericComponentGroups.find(group => Number(group.id) >= 1 && Number(group.id) <= 5)?.id ?? 1;
+    setActiveTocTarget(currentStep === 1 ? "df-step1-regime" : currentStep === 2 ? `df-step2-group-${firstGroup}` : "df-step3-preview");
+  }, [currentStep]);
+
+  const scrollToTocItem = (item: { id: string; selector?: string }) => {
+    setActiveTocTarget(item.id);
+    const target = item.selector
+      ? document.querySelector<HTMLElement>(item.selector)
+      : document.getElementById(item.id);
+    if (!target) return;
+    target.closest("details")?.setAttribute("open", "");
+    requestAnimationFrame(() => target.scrollIntoView({ behavior: "smooth", block: "start" }));
+  };
+
   const goToStep = (step: 1 | 2 | 3) => {
     if (step === currentStep) return;
     if (!canEnterStep(step)) {
@@ -2875,6 +2921,33 @@ export default function App() {
             </div>
           </div>
 
+          <nav aria-label="Tiến trình 3 bước" className="df-header-stepper">
+            {([
+              { step: 1, label: "Tải & nhận diện" },
+              { step: 2, label: "Soạn & kiểm tra" },
+              { step: 3, label: "Xem & xuất" },
+            ] as const).map((item, index) => (
+              <React.Fragment key={item.step}>
+                {index > 0 && <span className="df-stepper-connector" aria-hidden="true" />}
+                <button
+                  type="button"
+                  aria-label={`Bước ${item.step}: ${item.label}`}
+                  aria-current={currentStep === item.step ? "step" : undefined}
+                  aria-disabled={!canEnterStep(item.step) || undefined}
+                  data-step={item.step}
+                  data-step-complete={String(stepIsComplete(item.step))}
+                  data-step-allowed={String(canEnterStep(item.step))}
+                  onClick={() => goToStep(item.step)}
+                >
+                  <span className="df-step-index" aria-hidden="true">
+                    {stepIsComplete(item.step) ? "✓" : item.step}
+                  </span>
+                  <span>{item.label}</span>
+                </button>
+              </React.Fragment>
+            ))}
+          </nav>
+
           {/* Group 3 (Right on wide desktop >= xl): Step Navigation + Save Status + Tools */}
           <div className="hidden xl:flex items-center gap-2.5 shrink-0 justify-end">
 
@@ -2921,12 +2994,48 @@ export default function App() {
       )}
 
       <div className="df-workspace-layout">
-        <nav aria-label="Tiến trình 3 bước" className="df-workspace-sidebar">
-          {([{step:1,label:'1. Tải & nhận diện',hint:'Nguồn, chứng cứ và duyệt phân vùng'},{step:2,label:'2. Soạn & kiểm tra',hint:'9 nhóm, Body và phụ lục'},{step:3,label:'3. Xem & xuất',hint:'Xem DOCX ứng viên rồi tải'}] as const).map(item=><section key={item.step}>
-            <button aria-label={item.label} aria-expanded={currentStep===item.step} aria-controls={'workspace-step-panel-'+item.step} aria-current={currentStep===item.step?'step':undefined} aria-disabled={!canEnterStep(item.step)||undefined} data-step={item.step} data-step-complete={String(stepIsComplete(item.step))} data-step-allowed={String(canEnterStep(item.step))} onClick={()=>goToStep(item.step)}>{stepIsComplete(item.step)?'✓ ':''}{item.label}</button>
-            <div id={'workspace-step-panel-'+item.step} hidden={currentStep!==item.step}><p>{item.hint}</p>{item.step===1&&<p>{sourceOrigin==='none'?'Chưa chọn nguồn':uploadedFileName||originalSnapshot?.fileName||'Mẫu chuẩn đang dùng'}</p>}{item.step===2&&<><p>Bản soạn r{workspaceSnapshot.workspace.workingRevision}</p><div className="df-ws-group-links">{evaluationSummary.recognizedComponents.groups.filter(g=>typeof g.id==='number').map(g=><button data-workspace-group-link={g.id} key={String(g.id)} onClick={()=>{const target=document.querySelector<HTMLElement>('[data-workspace-group="'+g.id+'"]');if(!target)return;target.setAttribute('open','');const summary=target.querySelector<HTMLElement>('summary');summary?.focus({preventScroll:true});const main=document.querySelector<HTMLElement>('.df-workspace-main');if(window.matchMedia('(min-width: 1001px)').matches&&main){main.scrollTo({top:main.scrollTop+target.getBoundingClientRect().top-main.getBoundingClientRect().top-16,behavior:'smooth'});}else{target.scrollIntoView({block:'start',behavior:'smooth'});}}}>{g.name}</button>)}</div></>}{item.step===3&&<p>{visibleCandidate?.safe?'Ứng viên đã kiểm':'Chưa có ứng viên an toàn'}</p>}</div>
-          </section>)}
-          {workspaceSnapshot.workspace.staged&&<button onClick={closePartitionReview}>Hủy phân vùng</button>}
+        <nav aria-label={`Mục lục Bước ${currentStep}`} className="df-workspace-sidebar">
+          <p className="df-sidebar-eyebrow">QUY TRÌNH XỬ LÝ</p>
+          <div className="df-sidebar-step-title">
+            <span className="df-sidebar-step-index" aria-hidden="true">{currentStep}</span>
+            <div>
+              <strong>{currentStep === 1 ? "Tải & nhận diện" : currentStep === 2 ? "Soạn & kiểm tra" : "Xem & xuất"}</strong>
+              <small>Bước {currentStep} / 3</small>
+            </div>
+          </div>
+          <ol className="df-step-toc">
+            {sidebarItems.map(item => (
+              <li key={item.id}>
+                <button
+                  type="button"
+                  aria-controls={item.id}
+                  aria-current={activeTocTarget === item.id ? "location" : undefined}
+                  data-toc-target={item.id}
+                  onClick={() => scrollToTocItem(item)}
+                >
+                  <span aria-hidden="true" />
+                  <span>{item.label}</span>
+                </button>
+              </li>
+            ))}
+          </ol>
+          <div className="df-sidebar-current" role="status">
+            <strong>Màn hình hiện tại · Bước {currentStep}</strong>
+            <span>{currentStep === 1
+              ? sourceChosen
+                ? (importReviewSatisfied ? "Nguồn đã sẵn sàng cho bước soạn." : "Nguồn đang chờ đối chiếu và duyệt.")
+                : "Chọn tệp DOCX/TXT hoặc mẫu có sẵn để bắt đầu."
+              : currentStep === 2
+                ? `Bản soạn r${workspaceSnapshot.workspace.workingRevision} · ${doc.appendices?.length ?? 0} phụ lục`
+                : visibleCandidate?.safe
+                  ? `Ứng viên hiện hành · SHA-256 ${visibleCandidate.sha256.slice(0, 12)}…`
+                  : candidatePending
+                    ? "Đang tạo DOCX ứng viên hiện hành."
+                    : "Chưa có DOCX ứng viên an toàn hiện hành."}</span>
+          </div>
+          {workspaceSnapshot.workspace.staged && (
+            <button type="button" className="df-sidebar-cancel" onClick={closePartitionReview}>Hủy phân vùng</button>
+          )}
         </nav>
         <div className="df-workspace-main">
       {/* BƯỚC 1: TẢI & NHẬN DIỆN (hệ thể thức + mẫu cơ quan + loại văn bản + nguồn) */}

@@ -10,7 +10,7 @@
  * Toàn bộ lựa chọn nằm trong luồng tài liệu cuộn được để đạt 320×568,
  * 390×844 và 844×390 mà không cắt bớt nút.
  */
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   Building2,
@@ -32,6 +32,7 @@ import { COMPANY_HEADER_HD05_PROFILE_ID } from "../canonical/hd05/companyHeaderH
 import type { SourceBlock, StructuredImport } from "../shared/schemas/document.schema.ts";
 import type { OriginalDocumentSnapshot } from "../utils/draftStore.ts";
 import { useAccessibleDialog } from "../utils/useAccessibleDialog.ts";
+import "./ImportStepView.css";
 import {
   deriveSourceMismatch,
   docTypeDecisionCovers,
@@ -65,6 +66,15 @@ const REGIME_LABEL: Record<"state" | "party", string> = {
   state: "Hành chính — Nghị định 30/2020/NĐ-CP",
   party: "Văn bản Đảng — Hướng dẫn 05-HD/VPTW",
 };
+
+type ImportGroupStatus = "identified" | "needs-review" | "missing" | "unverified" | "no-source";
+
+interface ImportGroupSummary {
+  id: string;
+  title: string;
+  value: string;
+  status: ImportGroupStatus;
+}
 
 export interface ImportStepViewProps {
   regime: "state" | "party";
@@ -148,7 +158,17 @@ export function ImportStepView({
   const [isDragging, setIsDragging] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const [showDiffModal, setShowDiffModal] = useState(false);
+  const [contextOpen, setContextOpen] = useState(false);
   const diffDialogRef = useAccessibleDialog(showDiffModal, () => setShowDiffModal(false));
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const wideScreen = window.matchMedia("(min-width: 1536px)");
+    const syncContextVisibility = () => setContextOpen(wideScreen.matches);
+    syncContextVisibility();
+    wideScreen.addEventListener("change", syncContextVisibility);
+    return () => wideScreen.removeEventListener("change", syncContextVisibility);
+  }, []);
 
   const acceptFile = (file?: File) => {
     if (!file || isUploading) return;
@@ -161,10 +181,10 @@ export function ImportStepView({
   };
 
   const docTypes = isParty ? DOCUMENT_TYPES_HD05 : DOCUMENT_TYPES_ND30;
-  const tablesCount = structuredImport?.body?.tablesCount ?? (doc.bodyHtml.match(/<table\b/gi)?.length || 0);
+  const tablesCount = structuredImport?.source.tableCount ?? structuredImport?.body?.tablesCount ?? (doc.bodyHtml.match(/<table\b/gi)?.length || 0);
   const blocksCount = uploadedBlocks.length;
-  const appendicesCount = doc.appendices?.length || 0;
-  const filteredTemplates = templates.filter((t) => t.type === (isParty ? "party" : "state")).slice(0, 4);
+  const appendicesCount = structuredImport?.appendices.length ?? doc.appendices?.length ?? 0;
+  const filteredTemplates = templates.filter((t) => t.type === (isParty ? "party" : "state"));
   const hasImportedFile = Boolean(uploadedFileName || blocksCount > 0);
   const detection = structuredImport?.regimeDetection ?? null;
   const appliedTemplate = findAppliedTemplate(templates, originalSnapshot);
@@ -215,14 +235,57 @@ export function ImportStepView({
     !hasSelectedSource && demoDocType && chosenDocType && demoDocType !== chosenDocType
   );
 
+  const summarizeFields = (keys: string[], fallback: string): { value: string; status: ImportGroupStatus } => {
+    if (!hasSelectedSource) return { value: "Chưa có nguồn tài liệu", status: "no-source" };
+    const records = keys.map((key) => structuredImport?.fields[key]).filter((field) => field !== undefined);
+    if (records.length > 0) {
+      const value = records.map((field) => field.value?.trim()).filter(Boolean).join(" · ");
+      if (records.some((field) => field.status === "ambiguous")) {
+        return { value: value || "Cần đối chiếu nguồn", status: "needs-review" };
+      }
+      if (value) return { value, status: "identified" };
+      return { value: "Chưa tìm thấy trong nguồn", status: "missing" };
+    }
+    return fallback.trim()
+      ? { value: fallback.trim(), status: "identified" }
+      : { value: "Chưa tìm thấy trong nguồn", status: "missing" };
+  };
+
+  const importGroups: ImportGroupSummary[] = [
+    { id: "01", title: "Tiêu đề thể thức", ...summarizeFields(["nationalHeader1", "nationalHeader2"], [doc.nationalHeader1, doc.nationalHeader2].filter(Boolean).join(" · ")) },
+    { id: "02", title: "Cơ quan ban hành", ...summarizeFields(["orgHeader1", "orgHeader2"], [doc.orgHeader1, doc.orgHeader2].filter(Boolean).join(" · ")) },
+    { id: "03", title: "Số, ký hiệu", ...summarizeFields(["referenceNumber"], doc.referenceNumber) },
+    { id: "04", title: "Địa danh, ngày tháng", ...summarizeFields(["locationAndDate"], doc.locationAndDate) },
+    { id: "05", title: "Tên loại và trích yếu", ...summarizeFields(["documentType", "subject"], [doc.documentType, doc.subject].filter(Boolean).join(" · ")) },
+    { id: "06", title: "Nội dung văn bản (Body)", value: hasSelectedSource && (structuredImport?.body?.html || doc.bodyHtml) ? `${structuredImport?.body?.sourceBlockIds.length ?? blocksCount} khối nội dung` : hasSelectedSource ? "Chưa tìm thấy nội dung Body" : "Chưa có nguồn tài liệu", status: !hasSelectedSource ? "no-source" : (structuredImport?.body?.html || doc.bodyHtml) ? "identified" : "missing" },
+    { id: "07", title: "Quyền hạn, chức vụ, chữ ký", ...summarizeFields(["signTitle", "signName"], [doc.signTitle, doc.signName].filter(Boolean).join(" · ")) },
+    {
+      id: "08",
+      title: "Dấu, chữ ký số",
+      value: !hasSelectedSource ? "Chưa có nguồn tài liệu" : structuredImport?.seal?.status === "present" ? structuredImport.seal.type === "digital_signature" ? "Có chữ ký số" : "Có dấu" : structuredImport?.seal?.status === "missing" ? "Không thấy dấu hoặc chữ ký số" : structuredImport?.seal?.status === "unverified" ? "Chưa xác minh" : "Chưa có dữ liệu nhận diện",
+      status: !hasSelectedSource ? "no-source" : structuredImport?.seal?.status === "present" ? "identified" : structuredImport?.seal?.status === "missing" ? "missing" : "unverified",
+    },
+    { id: "09", title: "Nơi nhận", ...summarizeFields(["recipients"], doc.recipients) },
+  ];
+  const identifiedGroupsCount = importGroups.filter((group) => group.status === "identified" || (group.status === "needs-review" && group.value !== "Cần đối chiếu nguồn")).length;
+  const groupsNeedingReview = importGroups.filter((group) => group.status === "needs-review").length;
+  const aiSourceLabel = partitionCheckSource === "gemini_ai" ? "AI đã kiểm tra" : partitionCheckSource === "mixed" ? "AI và quy tắc nội bộ" : partitionCheckSource === "rule_fallback" ? "Quy tắc nội bộ" : "Chưa kiểm tra";
+  const canOpenSourceReview = hasSelectedSource && Boolean(onOpenReviewModal);
+  const continueDisabled = !canContinue && !canOpenSourceReview;
+  const handleContinue = () => {
+    if (canContinue) onNext();
+    else if (canOpenSourceReview) onOpenReviewModal?.();
+  };
+
   return (
     <div
       data-wizard-step="1"
       data-has-source={hasSelectedSource ? "true" : "false"}
-      className="df-wizard-page flex flex-col gap-3 df-step-enter"
+      className="df-step-layout df-import-step df-step-enter"
     >
+      <div className="df-step-content">
       {/* 1. Header */}
-      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+      <div className="df-import-heading flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <h1 className="text-xl sm:text-2xl font-extrabold text-[#17233D] tracking-tight">Tải &amp; nhận diện</h1>
         <p className="text-xs sm:text-sm text-[#52607A]">
           Chọn hệ thể thức, loại văn bản, rồi tải tệp hoặc dùng mẫu chuẩn.
@@ -243,8 +306,8 @@ export function ImportStepView({
       />
 
       {/* 2. Hệ thể thức + Mẫu cơ quan */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-        <section className="bg-white rounded-2xl border border-[#CFD8EA] p-3 shadow-2xs" aria-labelledby="wizard-regime-heading">
+      <div id="df-step1-regime" className="df-import-choice-grid grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <section className="df-import-card bg-white rounded-2xl border border-[#CFD8EA] p-3 shadow-2xs" aria-labelledby="wizard-regime-heading">
           <h2 id="wizard-regime-heading" className="text-xs sm:text-sm font-bold text-[#17233D] mb-2">
             1. Hệ thể thức
           </h2>
@@ -307,7 +370,7 @@ export function ImportStepView({
           </div>
         </section>
 
-        <section className="bg-white rounded-2xl border border-[#CFD8EA] p-3 shadow-2xs" aria-labelledby="wizard-profile-heading">
+        <section className="df-import-card bg-white rounded-2xl border border-[#CFD8EA] p-3 shadow-2xs" aria-labelledby="wizard-profile-heading">
           <h2 id="wizard-profile-heading" className="text-xs sm:text-sm font-bold text-[#17233D] mb-2">
             Mẫu cơ quan
           </h2>
@@ -378,7 +441,7 @@ export function ImportStepView({
       </div>
 
       {/* 3. Loại văn bản */}
-      <section className="bg-white rounded-2xl border border-[#CFD8EA] p-3.5 shadow-2xs" aria-labelledby="wizard-doctype-heading">
+      <section id="df-step1-document-type" className="df-import-card bg-white rounded-2xl border border-[#CFD8EA] p-3.5 shadow-2xs" aria-labelledby="wizard-doctype-heading">
         <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1 mb-2">
           <h2 id="wizard-doctype-heading" className="text-xs sm:text-sm font-bold text-[#17233D]">
             2. Loại văn bản
@@ -504,8 +567,8 @@ export function ImportStepView({
       </section>
 
       {/* 4. Nguồn tài liệu: tệp hoặc mẫu */}
-      <section className="grid grid-cols-1 lg:grid-cols-[1.15fr_1fr] gap-3" aria-labelledby="wizard-source-heading">
-        <div className="bg-white rounded-2xl border border-[#CFD8EA] p-3.5 shadow-2xs flex flex-col">
+      <section id="df-step1-source" className="df-import-source-grid grid grid-cols-1 lg:grid-cols-[1.15fr_1fr] gap-3" aria-labelledby="wizard-source-heading">
+        <div className="df-import-card bg-white rounded-2xl border border-[#CFD8EA] p-3.5 shadow-2xs flex flex-col">
           <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
             <h2 id="wizard-source-heading" className="text-xs sm:text-sm font-bold text-[#17233D]">
               3. Tải tài liệu của bạn
@@ -666,7 +729,7 @@ export function ImportStepView({
           )}
         </div>
 
-        <div className="bg-white rounded-2xl border border-[#CFD8EA] p-3.5 shadow-2xs flex flex-col">
+        <div id="df-step1-template" className="df-import-card bg-white rounded-2xl border border-[#CFD8EA] p-3.5 shadow-2xs flex flex-col">
           <h2 className="text-xs sm:text-sm font-bold text-[#17233D]">Hoặc bắt đầu từ mẫu</h2>
           <p className="text-xs text-[#52607A] mt-0.5 mb-2">Chọn mẫu sẽ thay nguồn hiện tại.</p>
 
@@ -705,7 +768,7 @@ export function ImportStepView({
       </section>
 
       {/* 5. Nhận diện thể thức: chọn / gợi ý / chứng cứ / đã xác nhận */}
-      <section className="bg-white rounded-2xl border border-[#CFD8EA] p-3.5 shadow-2xs" aria-labelledby="wizard-detection-heading">
+      <section id="df-step1-recognition" className="df-import-card df-import-recognition bg-white rounded-2xl border border-[#CFD8EA] p-3.5 shadow-2xs" aria-labelledby="wizard-detection-heading">
         <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
           <h2 id="wizard-detection-heading" className="text-xs sm:text-sm font-bold text-[#17233D] flex items-center gap-1.5">
             <ShieldCheck className="w-4 h-4 text-[#0D9488]" />
@@ -717,6 +780,67 @@ export function ImportStepView({
             </span>
           )}
         </div>
+
+        <div className="df-import-metrics" aria-label="Tóm tắt dữ liệu nguồn">
+          <div className="df-import-metric" data-metric="groups">
+            <strong>{identifiedGroupsCount}/9</strong>
+            <span>Nhóm có dữ liệu nhận diện</span>
+          </div>
+          <div className="df-import-metric" data-metric="appendices">
+            <strong>{String(appendicesCount).padStart(2, "0")}</strong>
+            <span>Phụ lục đã tách</span>
+          </div>
+          <div className="df-import-metric" data-metric="review">
+            <strong>{String(groupsNeedingReview).padStart(2, "0")}</strong>
+            <span>Nhóm cần xác nhận</span>
+          </div>
+          <div className="df-import-metric" data-metric="tables">
+            <strong>{String(tablesCount).padStart(2, "0")}</strong>
+            <span>Bảng trong nguồn</span>
+          </div>
+        </div>
+
+        <div className="df-import-group-heading">
+          <h3>Thành phần đã nhận diện từ nguồn</h3>
+          <span>{hasSelectedSource ? "Trạng thái lấy từ kết quả phân tích hiện tại" : "Chưa có nguồn để đối chiếu"}</span>
+        </div>
+        <div className="df-import-groups" aria-label="Trạng thái 9 nhóm thành phần">
+          {importGroups.map((group) => {
+            const statusLabel = group.status === "identified"
+              ? uploadedFileName ? "Đã nhận diện" : originalSnapshot?.sourceType === "system_template" ? "Có trong mẫu" : "Có dữ liệu"
+              : group.status === "needs-review" ? "Cần xác nhận"
+                : group.status === "missing" ? "Chưa tìm thấy"
+                  : group.status === "unverified" ? "Chưa xác minh"
+                    : "Chưa có nguồn";
+            return (
+              <article className={`df-import-group df-import-group--${group.status}`} key={group.id} data-group-id={group.id} data-group-status={group.status}>
+                <div className="df-import-group-top">
+                  <h4>{group.id}. {group.title}</h4>
+                  <span className="df-import-status">{statusLabel}</span>
+                </div>
+                <p>{group.value}</p>
+              </article>
+            );
+          })}
+        </div>
+
+        {appendicesCount > 0 && (
+          <section className="df-import-appendices" aria-label="Phụ lục nguồn">
+            <div className="df-import-group-heading">
+              <h3>Phụ lục / thành phần bổ sung</h3>
+              <span>{appendicesCount} mục</span>
+            </div>
+            {(structuredImport?.appendices ?? doc.appendices ?? []).map((appendix, index) => (
+              <div className="df-import-appendix" key={appendix.id || `${appendix.title}-${index}`}>
+                <span aria-hidden="true">▤</span>
+                <strong>{appendix.title || `Phụ lục ${String(index + 1).padStart(2, "0")}`}</strong>
+                <span data-appendix-status={appendix.extractionStatus}>
+                  {appendix.extractionStatus === "needs_review" ? "Cần xem lại" : "Đã tách riêng"}
+                </span>
+              </div>
+            ))}
+          </section>
+        )}
 
         {!hasSelectedSource ? (
           <div
@@ -824,21 +948,22 @@ export function ImportStepView({
         )}
       </section>
 
-      <div className="df-wizard-actions">
+      <div className="df-wizard-actions df-import-actions">
         <span className="text-[11.5px] text-[#52607A]">
-          {hasSelectedSource ? "Nguồn đã chọn. Tiếp tục để soạn và kiểm tra thể thức." : "Cần một nguồn tài liệu trước khi sang bước soạn."}
+          {canContinue ? "Nguồn đã đủ điều kiện để mở bước soạn." : canOpenSourceReview ? "Hãy đối chiếu và xác nhận các thành phần nguồn trước khi sang bước soạn." : "Cần một nguồn tài liệu trước khi sang bước soạn."}
         </span>
         <button
           type="button"
           data-action="wizard-next"
-          aria-disabled={!canContinue}
-          aria-describedby={!canContinue ? "wizard-source-gate-notice" : undefined}
-          onClick={onNext}
-          className={`df-btn-primary inline-flex items-center justify-center gap-2 min-h-[44px] rounded-xl px-4 py-2 text-sm font-semibold transition ${
-            canContinue ? "bg-[#6255E8] hover:bg-[#5244d4] text-white cursor-pointer" : "bg-slate-200 text-[#52607A] cursor-pointer"
+          aria-disabled={continueDisabled || undefined}
+          aria-describedby={!hasSelectedSource ? "wizard-source-gate-notice" : undefined}
+          disabled={continueDisabled}
+          onClick={handleContinue}
+          className={`df-btn-primary df-import-continue inline-flex items-center justify-center gap-2 min-h-[44px] rounded-xl px-4 py-2 text-sm font-semibold transition ${
+            canContinue ? "bg-[#6255E8] hover:bg-[#5244d4] text-white cursor-pointer" : canOpenSourceReview ? "bg-amber-100 text-amber-900 hover:bg-amber-200 cursor-pointer" : "bg-slate-200 text-[#52607A] cursor-not-allowed"
           }`}
         >
-          Tiếp tục: Soạn &amp; kiểm tra
+          {canContinue ? "Xác nhận & tiếp tục" : canOpenSourceReview ? "Đối chiếu nguồn trước" : "Chọn nguồn để tiếp tục"}
           <span aria-hidden="true">→</span>
         </button>
       </div>
@@ -903,6 +1028,64 @@ export function ImportStepView({
           </div>
         </div>
       )}
+      </div>
+
+      <aside className={`df-step-context df-import-context ${contextOpen ? "df-import-context--open" : "df-import-context--closed"}`} aria-label="Tình trạng nhập tài liệu">
+        <details open={contextOpen} onToggle={(event) => setContextOpen(event.currentTarget.open)}>
+          <summary>
+            <span className="df-import-context-icon" aria-hidden="true">✦</span>
+            <span>
+              <strong>Tình trạng nguồn</strong>
+              <small>{hasSelectedSource ? "Theo dữ liệu của phiên hiện tại" : "Đang chờ nguồn tài liệu"}</small>
+            </span>
+          </summary>
+          <div className="df-import-context-body">
+            <section className="df-import-context-card" aria-label="Kết quả phân tích">
+              <h3>{hasSelectedSource ? "Kết quả nhận diện" : "Bắt đầu tại đây"}</h3>
+              {hasSelectedSource ? (
+                <>
+                  <p>{identifiedGroupsCount}/9 nhóm có dữ liệu; {tablesCount} bảng; {appendicesCount} phụ lục.</p>
+                  {detection && <p>Hệ gợi ý: <strong>{suggestedRegimeText ?? "Chưa đủ chứng cứ"}</strong> · độ tin cậy {detection.confidence}.</p>}
+                  {groupsNeedingReview > 0 && <p className="df-import-context-warning">{groupsNeedingReview} nhóm cần xác nhận theo trạng thái nhận diện.</p>}
+                </>
+              ) : (
+                <p>Tải DOCX/TXT hoặc chọn một mẫu để phân tích và mở bước soạn.</p>
+              )}
+            </section>
+
+            <section className="df-import-context-card" aria-label="Trạng thái phân vùng">
+              <h3>Phân tích phân vùng</h3>
+              <p>{aiPartitionConsent ? aiSourceLabel : "Bạn chưa cho phép AI kiểm tra"}</p>
+              {isCheckingPartitions && partitionProgress && (
+                <p role="status">Đang xử lý {partitionProgress.processedChunks}/{partitionProgress.totalChunks} lô{partitionProgress.lastChunkStatus ? ` · lô gần nhất: ${partitionProgress.lastChunkStatus}` : ""}.</p>
+              )}
+              {uploadedFileName && partitionCheckNotice && <p>{partitionCheckNotice}</p>}
+              {partitionCoverage && <p>AI {partitionCoverage.aiReviewedBlockIds.length} · quy tắc {partitionCoverage.ruleFallbackBlockIds.length} · chưa xử lý {partitionCoverage.unreviewedBlockIds.length} khối.</p>}
+            </section>
+
+            {originalSnapshot?.sourceType === "uploaded_file" && (
+              <section className="df-import-context-card" aria-label="Bản gốc">
+                <h3>Bản gốc</h3>
+                <p>{originalAvailable ? "Tệp gốc hiện có để tải lại." : "Không có bản gốc khả dụng trong phiên này."}</p>
+                {onDownloadOriginal && originalAvailable && (
+                  <button type="button" data-original-download-context onClick={onDownloadOriginal}>Tải tệp gốc</button>
+                )}
+              </section>
+            )}
+
+            <section className="df-import-context-card df-import-next-card" aria-label="Bước tiếp theo">
+              <h3>Gợi ý tiếp theo</h3>
+              <p>{canContinue ? "Nguồn đã đủ điều kiện. Bạn có thể chuyển sang soạn và kiểm tra." : hasSelectedSource ? "Đối chiếu các vùng nguồn và xác nhận những mục còn cần xem lại." : "Chọn nguồn tài liệu để bắt đầu quy trình."}</p>
+              {!canContinue && canOpenSourceReview && (
+                <button type="button" onClick={onOpenReviewModal} className="df-import-context-action">Mở đối chiếu nguồn →</button>
+              )}
+              {canContinue && (
+                <button type="button" onClick={onNext} className="df-import-context-action">Sang Bước 2 →</button>
+              )}
+            </section>
+          </div>
+        </details>
+      </aside>
     </div>
   );
 }

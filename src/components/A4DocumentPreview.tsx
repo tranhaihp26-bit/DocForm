@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import DOMPurify from "dompurify";
 import { renderAsync } from "docx-preview";
 import { Packer } from "docx";
@@ -914,18 +914,21 @@ export const A4DocumentPreview: React.FC<A4DocumentPreviewProps> = ({
 };
 
 /** Main Workspace preview: consumes validated bytes; never composes or regenerates a DOCX. */
-export function CandidateDocumentPreview({bytes,sha256,instanceId}:{bytes:Uint8Array;sha256:string;instanceId:string}) {
+export const CandidateDocumentPreview=React.memo(function CandidateDocumentPreview({bytes,sha256,instanceId}:{bytes:Uint8Array;sha256:string;instanceId:string}) {
   const host=useRef<HTMLDivElement>(null);
   const viewport=useRef<HTMLDivElement>(null);
+  const pageElements=useRef<HTMLElement[]>([]);
   const [error,setError]=useState('');
   const [ready,setReady]=useState(false);
   const [renderedSha,setRenderedSha]=useState('');
-  const [zoomMode,setZoomMode]=useState<'fit'|'actual'>('fit');
+  const [zoomScale,setZoomScale]=useState<number|null>(null);
+  const [currentPage,setCurrentPage]=useState(1);
   const [viewportWidth,setViewportWidth]=useState(0);
   const [geometry,setGeometry]=useState<{width:number;height:number;pageWidth:number;pageCount:number}|null>(null);
   useEffect(()=>{
     let cancelled=false;
-    setReady(false);setRenderedSha('');setError('');setGeometry(null);setZoomMode('fit');host.current?.replaceChildren();
+    pageElements.current=[];
+    setReady(false);setRenderedSha('');setError('');setGeometry(null);setZoomScale(null);setCurrentPage(1);host.current?.replaceChildren();
     const staging=document.createElement('div');
     const renderBytes=new Uint8Array(bytes);
     const render=async()=>{const hash=await crypto.subtle.digest('SHA-256',renderBytes.buffer);const actualSha=[...new Uint8Array(hash)].map(b=>b.toString(16).padStart(2,'0')).join('');if(actualSha!==sha256)throw Error('Bytes bản xem không khớp ứng viên.');await renderAsync(renderBytes.buffer,staging,undefined,{inWrapper:true,breakPages:true,ignoreFonts:false,experimental:true});await document.fonts?.ready;const images=[...staging.querySelectorAll('img')];await Promise.all(images.map(image=>image.decode?.().catch(()=>undefined)));return actualSha;};
@@ -935,16 +938,18 @@ export function CandidateDocumentPreview({bytes,sha256,instanceId}:{bytes:Uint8A
       host.current.replaceChildren(...Array.from(staging.childNodes));
       await nextFrame();
       if(cancelled||!host.current)return;
-      const wrapper=(host.current.querySelector('.docx-wrapper') as HTMLElement|null)??host.current.firstElementChild as HTMLElement|null;
+      const wrapper=host.current.querySelector<HTMLElement>('.docx-wrapper');
       if(!wrapper)throw Error('Bản DOCX không có trang để xem.');
-      const pageEls=[...wrapper.querySelectorAll<HTMLElement>(':scope > .docx, section.docx, .docx-page')];
-      const pages=pageEls.length?pageEls:[...wrapper.children].filter((node):node is HTMLElement=>node instanceof HTMLElement);
+      const pageEls=[...wrapper.querySelectorAll<HTMLElement>(':scope > section.docx, :scope > .docx, :scope > .docx-page')];
+      if(!pageEls.length)throw Error('Không xác định được danh sách trang trong DOCX ứng viên.');
+      const pages=pageEls;
       pages.forEach((page,index)=>page.dataset.previewPage=String(index+1));
+      pageElements.current=pages;
       const widths=pages.map(page=>page.getBoundingClientRect().width||page.offsetWidth).filter(width=>width>0);
       const width=Math.max(wrapper.scrollWidth,wrapper.getBoundingClientRect().width,wrapper.offsetWidth);
       const height=Math.max(wrapper.scrollHeight,wrapper.getBoundingClientRect().height,wrapper.offsetHeight);
-      const pageWidth=Math.max(...widths,width);
-      setGeometry({width,height,pageWidth,pageCount:pages.length});setRenderedSha(actualSha);setReady(true);
+      const pageWidth=widths.length?Math.max(...widths):width;
+      setGeometry({width,height,pageWidth,pageCount:pages.length});setCurrentPage(1);setRenderedSha(actualSha);setReady(true);
     }).catch(e=>{if(!cancelled)setError(String(e));});
     return()=>{cancelled=true;};
   },[bytes,sha256,instanceId]);
@@ -955,24 +960,64 @@ export function CandidateDocumentPreview({bytes,sha256,instanceId}:{bytes:Uint8A
     const observer=new ResizeObserver(measure);observer.observe(node);
     return()=>observer.disconnect();
   },[]);
-  const scale=ready&&geometry&&zoomMode==='fit'&&viewportWidth>0?Math.min(1,Math.max(.1,(viewportWidth-32)/geometry.pageWidth)):1;
+  const fitScale=ready&&geometry&&viewportWidth>0?Math.min(1,Math.max(.1,(viewportWidth-32)/geometry.pageWidth)):1;
+  const scale=zoomScale??fitScale;
   const layoutWidth=geometry?geometry.width*scale:undefined;
   const layoutHeight=geometry?geometry.height*scale:undefined;
-  return <section data-candidate-preview data-preview-bytes-sha={renderedSha||undefined} data-candidate-sha={sha256} data-candidate-instance={instanceId} data-preview-page-count={ready?geometry?.pageCount:undefined} aria-label="Bản xem DOCX ứng viên">
-    <p>Phân trang tham khảo · docx-preview. Cần đối chiếu bản in trong Word trước khi phát hành.</p>
+  const updateCurrentPage=useCallback(()=>{
+    const viewportNode=viewport.current;
+    if(!viewportNode||!pageElements.current.length)return;
+    const top=viewportNode.getBoundingClientRect().top+10;
+    const index=pageElements.current.findIndex(page=>page.getBoundingClientRect().bottom>top);
+    setCurrentPage(index<0?pageElements.current.length:index+1);
+  },[]);
+  useEffect(()=>{
+    const node=viewport.current;if(!node)return;
+    node.addEventListener('scroll',updateCurrentPage,{passive:true});
+    return()=>node.removeEventListener('scroll',updateCurrentPage);
+  },[updateCurrentPage,ready]);
+  const goToPage=useCallback((pageIndex:number)=>{
+    const viewportNode=viewport.current;
+    const page=pageElements.current[pageIndex];
+    if(!viewportNode||!page)return;
+    const viewportRect=viewportNode.getBoundingClientRect();
+    const pageRect=page.getBoundingClientRect();
+    viewportNode.scrollTo({top:Math.max(0,viewportNode.scrollTop+pageRect.top-viewportRect.top-12),behavior:'smooth'});
+    setCurrentPage(pageIndex+1);
+  },[]);
+  const setRelativeZoom=(direction:-1|1)=>setZoomScale(Math.min(1.5,Math.max(.35,scale+direction*.1)));
+  return <section className="df-candidate-preview" data-candidate-preview data-preview-bytes-sha={renderedSha||undefined} data-candidate-sha={sha256} data-candidate-instance={instanceId} data-preview-page-count={ready?geometry?.pageCount:undefined} aria-label="Bản xem DOCX ứng viên">
+    <p className="df-candidate-preview-note">Bản xem được dựng từ DOCX ứng viên đã kiểm. Cần đối chiếu phân trang bản in trước khi phát hành.</p>
     {!ready&&!error&&<p role="status">Đang dựng bản xem từ DOCX đã kiểm…</p>}
     {error&&<p role="alert">Không dựng được bản xem: {error}. Không thay bằng bản dựng khác.</p>}
-    <div className="df-candidate-preview-toolbar" role="toolbar" aria-label="Tỉ lệ bản xem">
-      <button type="button" data-preview-fit aria-pressed={zoomMode==='fit'} disabled={!ready} onClick={()=>setZoomMode('fit')}>Vừa khung</button>
-      <button type="button" data-preview-actual aria-pressed={zoomMode==='actual'} disabled={!ready} onClick={()=>setZoomMode('actual')}>100%</button>
-      {ready&&geometry&&<span role="status">{geometry.pageCount} trang · {zoomMode==='fit'?'Vừa khung':'100%'}</span>}
+    <div className="df-candidate-preview-toolbar" role="toolbar" aria-label="Điều hướng trang và thu phóng">
+      <div className="df-candidate-page-nav">
+        <button type="button" data-preview-prev aria-label="Trang trước" disabled={!ready||currentPage<=1} onClick={()=>goToPage(currentPage-2)}>‹</button>
+        <span aria-live="polite">Trang <strong>{ready?currentPage:'—'}</strong> / {ready?geometry?.pageCount??0:'—'}</span>
+        <button type="button" data-preview-next aria-label="Trang sau" disabled={!ready||currentPage>=(geometry?.pageCount??0)} onClick={()=>goToPage(currentPage)}>›</button>
+      </div>
+      <span className="df-candidate-page-orientation">A4 dọc</span>
+      <div className="df-candidate-zoom-controls">
+        <button type="button" aria-label="Thu nhỏ" disabled={!ready} onClick={()=>setRelativeZoom(-1)}>−</button>
+        <span>{Math.round(scale*100)}%</span>
+        <button type="button" aria-label="Phóng to" disabled={!ready} onClick={()=>setRelativeZoom(1)}>+</button>
+        <button type="button" data-preview-fit aria-pressed={zoomScale===null} disabled={!ready} onClick={()=>setZoomScale(null)}>Vừa chiều rộng</button>
+        <button type="button" data-preview-actual aria-pressed={zoomScale===1} disabled={!ready} onClick={()=>setZoomScale(1)}>100%</button>
+      </div>
+      <span className="df-candidate-preview-state">Chế độ: Xem trước in ấn</span>
     </div>
-    <div className="df-candidate-preview-scroll" ref={viewport} data-preview-mode={zoomMode} data-preview-ready={String(ready)}>
-      <div className="df-candidate-preview-frame" style={{width:layoutWidth,height:layoutHeight}}>
-        <div className="df-candidate-preview-scaled" style={{width:geometry?.width,height:geometry?.height,transform:`scale(${scale})`}}>
-          <div className="df-candidate-preview-rendered" ref={host}/>
+    <div className="df-candidate-preview-layout">
+      <nav className="df-candidate-page-list" aria-label="Danh sách trang trong DOCX">
+        <h3>Trang</h3>
+        {ready&&geometry&&geometry.pageCount>0?Array.from({length:geometry.pageCount},(_,index)=><button type="button" key={index} data-preview-page-link={index+1} aria-current={currentPage===index+1?'page':undefined} onClick={()=>goToPage(index)}><span aria-hidden="true">{String(index+1).padStart(2,'0')}</span><span>Trang {index+1}</span></button>):<p>{ready?'Không tìm thấy trang trong DOCX.':'Đang đọc trang…'}</p>}
+      </nav>
+      <div className="df-candidate-preview-scroll" ref={viewport} data-preview-mode={zoomScale===null?'fit':zoomScale===1?'actual':'manual'} data-preview-ready={String(ready)}>
+        <div className="df-candidate-preview-frame" style={{width:layoutWidth,height:layoutHeight}}>
+          <div className="df-candidate-preview-scaled" style={{width:geometry?.width,height:geometry?.height,transform:`scale(${scale})`}}>
+            <div className="df-candidate-preview-rendered" ref={host}/>
+          </div>
         </div>
       </div>
     </div>
   </section>;
-}
+});
