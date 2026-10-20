@@ -15,4 +15,3 @@ echo.
 
 %NODE% "%TSX%" server.ts --port %PORT%
 pause
-

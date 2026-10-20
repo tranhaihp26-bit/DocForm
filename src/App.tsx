@@ -1,8 +1,8 @@
 import { composeDocumentFormatData } from "./utils/documentComposer.ts";
 import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
-import { 
-  FileText, Upload, Sparkles, Download, Printer, History, RotateCcw, 
-  CheckCircle2, AlertCircle, LayoutTemplate, Edit3, Eye, 
+import {
+  FileText, Upload, Sparkles, Download, Printer, History, RotateCcw,
+  CheckCircle2, AlertCircle, LayoutTemplate, Edit3, Eye,
   Save, Wand2, ArrowRight, FileCheck, ShieldCheck, Check,
   X, AlertTriangle, Info, HelpCircle, FilePlus, ChevronRight, ChevronLeft,
   ExternalLink, Copy, Bookmark, Building2, MapPin, Tag, ZoomIn, ZoomOut,
@@ -17,11 +17,11 @@ import DOMPurify from "dompurify";
 import ND30Editor from "./components/ND30Editor.tsx";
 import { A4DocumentPreview } from "./components/A4DocumentPreview.tsx";
 import {printCandidate} from "./components/CandidatePrintView.tsx";
-import { 
-  exportToDocx as generateAndDownloadDocx, 
-  generateND30DocxUint8Array, 
-  generateND30DocxBuffer, 
-  detectEmbeddedSignature, 
+import {
+  exportToDocx as generateAndDownloadDocx,
+  generateND30DocxUint8Array,
+  generateND30DocxBuffer,
+  detectEmbeddedSignature,
   sanitizeHtmlForDocx,
   downloadDocxUint8Array
 } from "./utils/docxExport.ts";
@@ -40,17 +40,17 @@ import {
   toRegimeDetectionRecord,
   type RegimeDetectionResult,
 } from "./utils/regimeDetection.ts";
-import { 
-  composeImportedBodyHtml, 
-  deriveImportStatus, 
+import {
+  composeImportedBodyHtml,
+  deriveImportStatus,
   updateImportField,
   reconstructFromReviewedBlocks,
   validateReviewedBlocks
 } from "./utils/importReview.ts";
-import { 
-  applySingleProposal, 
-  applyAllProposalsSequentially, 
-  changeBlockRole, 
+import {
+  applySingleProposal,
+  applyAllProposalsSequentially,
+  changeBlockRole,
   type CanonicalWorkflowState,
   type ReviewProposalBatchContext,
   type RefineProposalContext,
@@ -69,9 +69,9 @@ import {
 } from "./utils/importSessionLifecycle.ts";
 import { saveDraft, loadDraft, clearDraft, loadSourceBlob, type OriginalDocumentSnapshot } from "./utils/draftStore.ts";
 import { computeVisualDiff } from "./utils/diffUtils.ts";
-import { 
-  type DocumentFormatType, 
-  validateND30Compliance, 
+import {
+  type DocumentFormatType,
+  validateND30Compliance,
   type ND30ComplianceReport,
   isPlaceholderValue,
   REFERENCE_NUMBER_REGEX,
@@ -105,23 +105,23 @@ import {
 import { formatStandardDate, extractLocation } from "./server/middleware/compliance.middleware.ts";
 import { detectDocumentType } from "./server/parser.ts";
 import { COMPANY_HEADER_PROFILE_ID, COMPANY_HEADER_PARENT_LINES, applyCompanyProfile, LOCKED_COMPANY_FIELDS } from "./canonical/nd30/companyHeader.ts";
-import { 
-  COMPANY_HEADER_HD05_PROFILE_ID, 
-  COMPANY_HEADER_HD05_PARENT_LINES, 
-  COMPANY_HEADER_HD05_ISSUER_LINES, 
-  applyCompanyHD05Profile, 
-  LOCKED_COMPANY_HD05_FIELDS 
+import {
+  COMPANY_HEADER_HD05_PROFILE_ID,
+  COMPANY_HEADER_HD05_PARENT_LINES,
+  COMPANY_HEADER_HD05_ISSUER_LINES,
+  applyCompanyHD05Profile,
+  LOCKED_COMPANY_HD05_FIELDS
 } from "./canonical/hd05/companyHeaderHD05.ts";
 import { PILOT_DOCUMENTS, type PilotDocumentItem } from "./fixtures/pilotDocuments.ts";
 import { COMPLEX_MALFORMED_DOCUMENTS, type ComplexMalformedItem } from "./fixtures/complexMalformedDocuments.ts";
 import { generateRuleBasedProposals, summarizeProposals } from "./server/reviewProposals.ts";
-import { 
-  evaluateDocumentRules, 
+import {
+  evaluateDocumentRules,
   extractOoxmlEvidenceFromXml,
-  COMPONENT_GROUPS, 
-  type ComponentGroupId, 
-  type CanonicalStatus, 
-  type DocumentEvaluationSummary 
+  COMPONENT_GROUPS,
+  type ComponentGroupId,
+  type CanonicalStatus,
+  type DocumentEvaluationSummary
 } from "./canonical/ruleEngine.ts";
 
 import {
@@ -464,7 +464,7 @@ export default function App() {
     rawText: TEMPLATES[0].defaultData.bodyHtml.replace(/<[^>]+>/g, " "),
   });
   const [customInstructions, setCustomInstructions] = useState("");
-  
+
   // UI Panels state
   const [showSidebarLeft, setShowSidebarLeft] = useState(false);
   const [showInspectorRight, setShowInspectorRight] = useState(true);
@@ -505,7 +505,7 @@ export default function App() {
   const [isAutoFitZoom, setIsAutoFitZoom] = useState<boolean>(true);
   const [tiptapEditor, setTiptapEditor] = useState<any>(null);
   const [activeIssueIndex, setActiveIssueIndex] = useState<number>(0);
-  
+
   // Storage & Autosave
   const [autoSaveStatus, setAutoSaveStatus] = useState<string>("Đã sẵn sàng");
   const [isAutoSaving, setIsAutoSaving] = useState(false);
@@ -519,7 +519,7 @@ export default function App() {
   const [isUploading, setIsUploading] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [isExportingDocx, setIsExportingDocx] = useState(false);
-  
+
   // Notification messages
   const [successMsg, setSuccessMsg] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
@@ -1288,8 +1288,8 @@ export default function App() {
     markUserInteraction();
     if (target === standardType) return;
     const hasContent = Boolean(
-      (doc.bodyHtml && doc.bodyHtml.length > 50) || 
-      doc.subject || 
+      (doc.bodyHtml && doc.bodyHtml.length > 50) ||
+      doc.subject ||
       doc.documentType
     );
     if (hasContent) {
@@ -1986,8 +1986,8 @@ export default function App() {
     }
     invalidateActiveAiSession();
 
-    const selectedBaseDoc = t.type === "state" 
-      ? applyCompanyProfile({...t.defaultData}) 
+    const selectedBaseDoc = t.type === "state"
+      ? applyCompanyProfile({...t.defaultData})
       : applyCompanyHD05Profile({...t.defaultData});
     const preparedTemplate=prepareTemplateTables(t.id,selectedBaseDoc),selectedDoc=preparedTemplate.doc;
 
@@ -2118,14 +2118,14 @@ export default function App() {
     setIsTestingPilot(true);
     setTimeout(() => {
       const results: Record<string, { passed: boolean; score: number; checks: number; errors: string[] }> = {};
-      
+
       if (pilotDatasetMode === "standard") {
         PILOT_DOCUMENTS.forEach(item => {
           const d = item.doc;
           const isParty = item.category === "dang" || d.regime === "party";
           const rep = validateND30Compliance(d);
           const errors: string[] = [];
-          
+
           if (isParty) {
             if (!d.nationalHeader1.includes("ĐẢNG CỘNG SẢN VIỆT NAM")) errors.push("Thiếu Quốc hiệu Đảng");
           } else {
@@ -2575,10 +2575,10 @@ export default function App() {
       unclassified: liveReconstructed.unclassified,
       importMetadata: {
         sourceType: uploadedFileType || "docx",
-        status: deriveImportStatus({ 
-          ...structuredImport, 
-          unclassified: liveReconstructed.unclassified, 
-          appendices: liveReconstructed.appendices 
+        status: deriveImportStatus({
+          ...structuredImport,
+          unclassified: liveReconstructed.unclassified,
+          appendices: liveReconstructed.appendices
         }, true),
         sourceFilename: uploadedFileName,
       }
@@ -2826,11 +2826,11 @@ export default function App() {
 
   return (
     <div data-current-step={currentStep} className="min-h-screen df-app-shell text-[#17233D] flex flex-col font-sans select-text">
-      
+
       {/* 1. TOP APPLICATION BAR (SINGLE-ROW ON WIDE DESKTOP ~56PX, 2-ROW ON NARROW/TABLET ~80PX) */}
       <header className="df-glass-header text-[#17233D] px-3 sm:px-6 py-1.5 xl:py-0 z-30 sticky top-0 border-b border-slate-200/80 w-full bg-white/85 backdrop-blur-md shrink-0">
         <div className="w-full flex flex-col xl:flex-row xl:items-center xl:justify-between min-h-[56px] xl:h-14 gap-1 xl:gap-3">
-          
+
           {/* Group 1 (Row 1 on narrow, Left on wide desktop): Brand + Filename + (Save & Tools on narrow) */}
           <div className="flex items-center justify-between xl:justify-start gap-2.5 min-w-0 h-9 xl:h-10 shrink-0">
             <div className="flex items-center gap-2 shrink-0">
@@ -2841,7 +2841,7 @@ export default function App() {
             </div>
 
             {/* Document Filename with accessible title and truncation */}
-            <div 
+            <div
               className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-100/70 border border-slate-200/60 text-xs font-semibold text-[#17233D] max-w-[150px] sm:max-w-[220px] xl:max-w-[240px] truncate"
               title={fullDocumentTitle}
               tabIndex={0}
@@ -2854,7 +2854,7 @@ export default function App() {
 
             {/* Save Status & Tools on narrow screens (< xl) placed in Row 1 */}
             <div className="flex items-center gap-2 xl:hidden ml-auto shrink-0">
-              <div 
+              <div
                 className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-50 border border-slate-200 text-[11px] text-[#52607A]"
                 title={saveTooltip}
                 role="status"
@@ -2878,7 +2878,7 @@ export default function App() {
           {/* Group 3 (Right on wide desktop >= xl): Step Navigation + Save Status + Tools */}
           <div className="hidden xl:flex items-center gap-2.5 shrink-0 justify-end">
 
-            <div 
+            <div
               className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-50 border border-slate-200/90 text-xs text-[#52607A]"
               title={saveTooltip}
               role="status"
@@ -2911,8 +2911,8 @@ export default function App() {
             {errorMsg ? <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" /> : <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />}
             <span>{errorMsg || successMsg}</span>
           </div>
-          <button 
-            onClick={() => { setErrorMsg(""); setSuccessMsg(""); }} 
+          <button
+            onClick={() => { setErrorMsg(""); setSuccessMsg(""); }}
             className="text-xs opacity-75 hover:opacity-100 underline font-semibold ml-4"
           >
             Đóng
@@ -2983,7 +2983,7 @@ export default function App() {
           MODAL 1: SIDE-BY-SIDE IMPORT REVIEW STUDIO
          ======================================================== */}
       {showSideBySideModal && (structuredImport || partitionReviewBlocks.length > 0) && (
-        <div 
+        <div
           ref={sideBySideDialogRef}
           data-testid="side-by-side-modal"
           data-partition-revision={partitionRevision}
@@ -2993,7 +2993,7 @@ export default function App() {
           className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4"
         >
           <div className="bg-white rounded-2xl w-full max-w-5xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
-            
+
             {/* Header */}
             <div className="bg-slate-50 text-[#17233D] p-4 flex items-center justify-between flex-wrap gap-2">
               <div className="flex items-center gap-3">
@@ -3015,8 +3015,8 @@ export default function App() {
                           ? "bg-emerald-500/20 text-emerald-700 border-emerald-400/30"
                           : "bg-amber-500/20 text-amber-700 border-amber-400/30"
                       }`}>
-                        {sourceStorageStatus.storage === "indexeddb" 
-                          ? "Đã lưu an toàn trong IndexedDB" 
+                        {sourceStorageStatus.storage === "indexeddb"
+                          ? "Đã lưu an toàn trong IndexedDB"
                           : "Lưu tạm bộ nhớ phiên (tải lại trang sẽ mất)"}
                       </span>
                     )}
@@ -3047,7 +3047,7 @@ export default function App() {
                     <span>Hoàn tác ({partitionHistory.length})</span>
                   </button>
                 )}
-                <button 
+                <button
                   type="button"
                   aria-label="Đóng hộp thoại đối chiếu nguồn"
                   onClick={() => closePartitionReview()}
@@ -3107,10 +3107,10 @@ export default function App() {
 
             {/* Split Screen 2 Columns */}
             <div className="flex-1 grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-200 overflow-y-auto text-xs">
-              
+
               {/* Column 1: Source Blocks with Interactive Region Assignment */}
               <div className={`p-4 bg-slate-50/70 space-y-3 overflow-y-auto max-h-[65vh] ${importReviewTab === "source" ? "block" : "hidden md:block"}`}>
-                
+
                 {/* Disagreements list between Current Rule and AI proposals */}
                 {visiblePartitionProposals.length > 0 && (
                   <div className="bg-purple-50/90 border border-purple-200 rounded-xl p-3 space-y-2">
@@ -3316,7 +3316,7 @@ export default function App() {
                 <div className="space-y-2.5">
                   {(partitionReviewBlocks.length > 0 ? partitionReviewBlocks : (structuredImport?.blocks || uploadedBlocks)).filter(b => reviewBlockFilter === "all" || b.role === reviewBlockFilter).map((b) => {
                     const isTable = b.kind === "table";
-                    const roleColor = 
+                    const roleColor =
                       b.role === "header" ? "bg-blue-50 border-blue-200 text-blue-900" :
                       b.role === "metadata" ? "bg-indigo-50 border-indigo-200 text-indigo-900" :
                       b.role === "body" ? "bg-emerald-50 border-emerald-200 text-emerald-900" :
@@ -3598,13 +3598,13 @@ export default function App() {
                         {visibleReviewProposals.map((prop) => {
                           const isAccepted = acceptedProposalIds.has(prop.id);
                           return (
-                            <div 
+                            <div
                               key={prop.id}
                               data-proposal-id={prop.id}
                               data-proposal-accepted={isAccepted ? "true" : "false"}
                               className={`p-2 rounded-lg border transition text-[11px] ${
-                                isAccepted 
-                                  ? "bg-emerald-50 border-emerald-300" 
+                                isAccepted
+                                  ? "bg-emerald-50 border-emerald-300"
                                   : "bg-white border-slate-200 shadow-2xs hover:border-purple-300"
                               }`}
                             >
@@ -3632,7 +3632,7 @@ export default function App() {
 
                                   {/* Exact target block badge */}
                                   {prop.targetBlockId && (
-                                    <span 
+                                    <span
                                       className="text-[8.5px] font-mono px-1 py-0.5 rounded bg-slate-50 text-slate-600 border border-slate-200"
                                       title={`Khối ID: ${prop.targetBlockId}`}
                                     >
@@ -3647,7 +3647,7 @@ export default function App() {
                                     </span>
                                   )}
                                 </div>
-                                
+
                                 {isAccepted ? (
                                   <span className="text-emerald-700 font-bold text-[10px] flex items-center gap-1">
                                     <Check className="w-3 h-3" /> Đã áp dụng
@@ -3803,7 +3803,7 @@ export default function App() {
                   Báo cáo Kiểm tra Thể thức NĐ 30 / HD 05
                 </h3>
               </div>
-              <button 
+              <button
                 onClick={() => setShowComplianceModal(false)}
                 className="text-slate-400 hover:text-slate-700 p-1 rounded-lg"
               >
@@ -3989,7 +3989,7 @@ export default function App() {
                         Nội dung gốc (Đã đánh dấu lỗi):
                       </span>
                     </div>
-                    <div 
+                    <div
                       className="p-3 bg-white border border-rose-200/70 rounded-lg flex-1 max-h-[360px] overflow-y-auto text-[11px] leading-relaxed text-justify text-slate-700 font-sans whitespace-pre-wrap"
                       dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(visualDiff?.originalHighlightedHtml || refineProposal.originalHtml) }}
                     />
@@ -4001,7 +4001,7 @@ export default function App() {
                         Đề xuất mới (Đã tối ưu hóa):
                       </span>
                     </div>
-                    <div 
+                    <div
                       className="p-3 bg-white border border-emerald-200/70 rounded-lg flex-1 max-h-[360px] overflow-y-auto text-[11px] leading-relaxed text-justify text-slate-900 font-sans whitespace-pre-wrap"
                       dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(visualDiff?.refinedHighlightedHtml || refineProposal.refinedHtml) }}
                     />
@@ -4014,7 +4014,7 @@ export default function App() {
                   <span className="font-bold text-indigo-900 block border-b border-indigo-50 pb-2">
                     Văn bản hoàn chỉnh sau khi áp dụng AI:
                   </span>
-                  <div 
+                  <div
                     className="p-3 bg-white rounded-lg max-h-[380px] overflow-y-auto text-[12px] leading-relaxed text-justify text-slate-900 font-sans"
                     dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(refineProposal.refinedHtml) }}
                   />
@@ -4071,7 +4071,7 @@ export default function App() {
       {showPilotModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-5">
           <div className="bg-slate-50 rounded-2xl w-full max-w-6xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[92vh] animate-in fade-in zoom-in-95 duration-150">
-            
+
             {/* Header */}
             <div className="bg-gradient-to-r from-purple-900 via-indigo-900 to-slate-900 px-5 py-4 text-white flex items-center justify-between border-b border-purple-800/50 shrink-0">
               <div className="flex items-center gap-3">
@@ -4090,7 +4090,7 @@ export default function App() {
                   </p>
                 </div>
               </div>
-              <button 
+              <button
                 onClick={() => setShowPilotModal(false)}
                 className="text-purple-200 hover:text-white p-2 rounded-xl hover:bg-white/10 transition"
               >
@@ -4125,8 +4125,8 @@ export default function App() {
                 </button>
               </div>
               <span className="text-[11px] text-purple-200/80">
-                {pilotDatasetMode === "standard" 
-                  ? "27 tài liệu mẫu kiểm tra các trường thể thức cơ bản NĐ 30 & HD 05" 
+                {pilotDatasetMode === "standard"
+                  ? "27 tài liệu mẫu kiểm tra các trường thể thức cơ bản NĐ 30 & HD 05"
                   : "10 ca thử thách kiểm tra bộ lọc mã độc & nhận diện vi phạm thể thức"}
               </span>
             </div>
@@ -4156,7 +4156,7 @@ export default function App() {
 
                 {pilotTestStats ? (
                   <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border ${
-                    pilotTestStats.allPassed 
+                    pilotTestStats.allPassed
                       ? "bg-emerald-50 text-emerald-800 border-emerald-300"
                       : "bg-amber-50 text-amber-800 border-amber-300"
                   }`}>
@@ -4190,7 +4190,7 @@ export default function App() {
                   className="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 border border-slate-300 rounded-xl focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
                 />
                 {pilotSearch && (
-                  <button 
+                  <button
                     onClick={() => setPilotSearch("")}
                     className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600"
                   >
@@ -4209,7 +4209,7 @@ export default function App() {
                     key={cat.id}
                     onClick={() => setPilotCategory(cat.id)}
                     className={`px-3 py-1.5 rounded-lg text-xs font-medium transition shrink-0 flex items-center gap-1.5 cursor-pointer ${
-                      isActive 
+                      isActive
                         ? (pilotDatasetMode === "standard" ? "bg-white text-purple-900 font-bold shadow-xs border border-purple-200" : "bg-white text-amber-900 font-bold shadow-xs border border-amber-200")
                         : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60"
                     }`}
@@ -4233,7 +4233,7 @@ export default function App() {
                   <FileText className="w-12 h-12 text-slate-300 mx-auto mb-3" />
                   <p className="text-sm font-semibold text-slate-700">Không tìm thấy tài liệu phù hợp</p>
                   <p className="text-xs text-slate-400 mt-1">Vui lòng thử tìm kiếm với từ khóa khác hoặc xóa bộ lọc.</p>
-                  <button 
+                  <button
                     onClick={() => { setPilotCategory("all"); setPilotSearch(""); }}
                     className="mt-3 px-3 py-1.5 bg-purple-100 text-purple-800 rounded-lg text-xs font-semibold hover:bg-purple-200 transition cursor-pointer"
                   >
@@ -4249,11 +4249,11 @@ export default function App() {
                     const edgeType = isEdge ? (item as ComplexMalformedItem).type : "standard";
 
                     return (
-                      <div 
+                      <div
                         key={item.id}
                         className={`bg-white rounded-xl border p-4 shadow-xs hover:shadow-md transition flex flex-col justify-between group ${
-                          isEdge && edgeType === "non_compliant" 
-                            ? "border-amber-200 hover:border-amber-400" 
+                          isEdge && edgeType === "non_compliant"
+                            ? "border-amber-200 hover:border-amber-400"
                             : (isEdge && edgeType === "malformed_data" ? "border-rose-200 hover:border-rose-400" : "border-slate-200 hover:border-purple-300")
                         }`}
                       >
@@ -4316,7 +4316,7 @@ export default function App() {
                         <div>
                           {testRes && (
                             <div className={`mb-3 p-2 rounded-lg text-[11px] font-medium flex items-center justify-between ${
-                              testRes.passed 
+                              testRes.passed
                                 ? "bg-emerald-50 text-emerald-800 border border-emerald-200"
                                 : "bg-rose-50 text-rose-800 border border-rose-200"
                             }`}>

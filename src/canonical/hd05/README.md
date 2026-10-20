@@ -38,4 +38,3 @@ Nguồn chuẩn: [PDF do Văn phòng Trung ương Đảng công bố](https://da
 | PAGE, STYLE | Khổ/lề/số trang, phông và cỡ chữ Phụ lục 2 |
 
 Các ví dụ ở trang 3–5 và 14–22 được quy về điều kiện áp dụng và yêu cầu tương ứng. Không biến tên riêng trong ví dụ thành giá trị bắt buộc cho mọi văn bản. Các quy định được Hướng dẫn 05 dẫn chiếu sang văn bản khác chỉ có `operator=reference`; cần nạp nguồn tương ứng trước khi kiểm định.
-
