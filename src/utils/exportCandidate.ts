@@ -8,6 +8,10 @@ import { verifyCandidateContentFidelity, type ContentFidelityResult } from "./ca
 import { extractOoxmlEvidenceFromXml } from "../canonical/ruleEngine.ts";
 import { canonicalWorkspaceValue, confirmedRemovedTableIds, freezeWorkspaceValue, hasWorkspaceApproval, workspaceInvariantErrors, type WorkspaceSnapshot, type WorkspaceState } from "./workspaceState.ts";
 import { isTransformedMetadataTable } from "./sourceTableInventory.ts";
+import { hasProfileHeaderShapeLines, hasReplaceableHeaderShapeLines } from "./sourceHeaderShapes.ts";
+import { hasStampedHoaTieuHeader } from "./hoaTieuHeaderStamp.ts";
+import { COMPANY_HEADER_PROFILE_ID } from "../canonical/nd30/companyHeader.ts";
+import { COMPANY_HEADER_HD05_PROFILE_ID } from "../canonical/hd05/companyHeaderHD05.ts";
 
 export interface ExportCandidateSnapshot extends DocumentComposerSnapshot { workspace?: WorkspaceState; /** Explicit UI override provenance participates in the cache identity. */ docTypeOverride?: unknown }
 export interface ExportCandidate {
@@ -23,6 +27,7 @@ export interface ExportCandidate {
   readonly tableFidelity: CandidateExportVerificationResult;
   readonly contentFidelity: ContentFidelityResult;
   readonly exportSafety: ReturnType<typeof assessExportSafety>;
+  readonly profileHeaderLines: number;
   readonly safe: boolean;
   readonly blockers: readonly string[];
 }
@@ -53,9 +58,17 @@ export async function prepareExportCandidate(input: ExportCandidateSnapshot, gen
   const sourceBlocks = working?.workspace.source?.blocks ?? (snapshot.reviewBlocks.length ? snapshot.reviewBlocks : snapshot.structuredImport?.blocks ?? snapshot.uploadedBlocks ?? []);
   const removed = new Set(working ? confirmedRemovedTableIds(working) : []);
   const tables = { ...formatData.importedTables };
+  const replacedHeaderShapeBlocks: typeof sourceBlocks = [];
   for (const block of sourceBlocks) {
+    const reviewedBlock = snapshot.reviewBlocks.find(reviewed => reviewed.id === block.id);
+    const effectiveMetadataBlock = reviewedBlock ? { ...block, role: reviewedBlock.role, tableModel: reviewedBlock.tableModel ?? block.tableModel } : block;
     if (block.kind === "table" && !block.tableModel) blockers.push(`unsupported_source_table_model:${block.id}`);
-    if (/<(?:w:)?(?:drawing|pict|object|fldSimple|fldChar)\b/i.test(block.rawXml ?? "")) blockers.push(`unsupported_source_ooxml:${block.id}`);
+    if (/<(?:w:)?(?:drawing|pict|object|fldSimple|fldChar)\b/i.test(block.rawXml ?? "")) {
+      const selectedProfile = formatData.regime === "administrative" ? COMPANY_HEADER_PROFILE_ID : COMPANY_HEADER_HD05_PROFILE_ID;
+      if (formatData.headerProfile === selectedProfile && isTransformedMetadataTable(effectiveMetadataBlock, manifest, snapshot.structuredImport?.fields) &&
+          hasReplaceableHeaderShapeLines(block.rawXml ?? "")) replacedHeaderShapeBlocks.push(block);
+      else blockers.push(`unsupported_source_ooxml:${block.id}`);
+    }
     if (/<(?:img|svg|object|embed|iframe|video|audio|canvas)\b/i.test(block.html ?? "")) blockers.push(`unsupported_source_media:${block.id}`);
     if (!block.tableModel) continue;
     const tableId = block.tableModel.tableId || block.id;
@@ -100,7 +113,20 @@ export async function prepareExportCandidate(input: ExportCandidateSnapshot, gen
   const tableFidelity = await verifyCandidateExportFidelity(generatedBytes, canonicalTables, expectedManifest,
     approvedNewTableIds ? { approvedNewTableIds } : undefined);
   let xml = "";
-  try { xml = await (await JSZip.loadAsync(generatedBytes)).file("word/document.xml")?.async("string") ?? ""; } catch { blockers.push("candidate_unpack_failed"); }
+  let settingsXml = "";
+  try {
+    const zip = await JSZip.loadAsync(generatedBytes);
+    xml = await zip.file("word/document.xml")?.async("string") ?? "";
+    settingsXml = await zip.file("word/settings.xml")?.async("string") ?? "";
+  } catch { blockers.push("candidate_unpack_failed"); }
+  const profileSelected = formatData.headerProfile === (formatData.regime === "administrative" ? COMPANY_HEADER_PROFILE_ID : COMPANY_HEADER_HD05_PROFILE_ID);
+  const profileShapesPresent = hasProfileHeaderShapeLines(xml, formatData.regime) &&
+    hasStampedHoaTieuHeader(xml, settingsXml, formatData);
+  if (profileSelected && !profileShapesPresent) blockers.push("profile_header_not_stamped");
+  for (const block of replacedHeaderShapeBlocks) if (replacedHeaderShapeBlocks.length !== 1 || !profileShapesPresent)
+    blockers.push(`unsupported_source_ooxml:${block.id}`);
+  const profileHeaderLines = replacedHeaderShapeBlocks.length === 1 && profileShapesPresent
+    ? formatData.regime === "administrative" ? 2 : 1 : 0;
   const contentFidelity = verifyCandidateContentFidelity(xml, formatData);
   const exportSafety = assessExportSafety(manifest, { candidateFidelityResult: tableFidelity, roundtripVerified: tableFidelity.safe });
   const evidence = extractOoxmlEvidenceFromXml(xml, formatData.regime);
@@ -109,6 +135,7 @@ export async function prepareExportCandidate(input: ExportCandidateSnapshot, gen
     formatData: freezeWorkspaceValue(formatData), get bytes() { return new Uint8Array(generatedBytes); }, sha256: digest,
     documentXml: xml, evidence: freezeWorkspaceValue(evidence), tableFidelity: freezeWorkspaceValue(tableFidelity),
     contentFidelity: freezeWorkspaceValue(contentFidelity), exportSafety: freezeWorkspaceValue(exportSafety),
+    profileHeaderLines,
     safe: blockers.length === 0 && tableFidelity.safe && contentFidelity.safe && exportSafety.decision === "allow",
     blockers: Object.freeze([...new Set(blockers)]),
   };

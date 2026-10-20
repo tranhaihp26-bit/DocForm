@@ -15,7 +15,11 @@ export function describeExportBlocker(code:string,context:{targetId?:string}={})
  const targetId=context.targetId??(code.split(':').slice(1).join(':')||undefined);
  const exact=messages[code];
  if(exact)return{code,messageVi:exact.messageVi,...(exact.action?{action:exact.action}:{}),...(targetId?{targetId}:{})};
+ if(code==='profile_header_not_stamped')
+  return{code,messageVi:'Phần đầu Hoa Tiêu chưa được ghép nguyên mẫu cùng đường kẻ Shape. Hãy kiểm tra tên cơ quan và tạo lại ứng viên.',action:'review_source'};
  const root=code.split(':',1)[0];
+ if(root==='unsupported_source_ooxml')
+  return{code,messageVi:`Khối nguồn ${targetId?`"${targetId}" `:''}có đối tượng Drawing/Shape hoặc trường OOXML chưa được chứng minh bảo toàn trong DOCX ứng viên. Hãy đối chiếu tệp gốc.`,action:'review_source',...(targetId?{targetId}:{})};
  if(root.startsWith('unsupported_source_media')||root.startsWith('unsupported_source_ooxml')||root.startsWith('unsupported_source_table')||root.startsWith('unsupported_source_block'))
   return{code,messageVi:'Nguồn có bảng, ảnh hoặc cấu trúc OOXML chưa được hỗ trợ xác minh. Hãy đối chiếu khối nguồn được nêu trước khi xuất.',action:'review_source',...(targetId?{targetId}:{})};
  if(root.startsWith('readonly_content')||root.startsWith('invalid_transaction')||root.startsWith('stale_revision'))

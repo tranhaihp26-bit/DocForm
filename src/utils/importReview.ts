@@ -356,6 +356,16 @@ export function reconstructFromReviewedBlocks(
     }
   }
 
+  // An official letter can keep its "V/v" subject inside the lower row of the
+  // header table. That row belongs to the header, not a separate metadata block.
+  if (isHeaderUnchanged && baseImport) {
+    const stillInHeader = (ids: string[]) => ids.length > 0 && ids.every(id => currentHeaderBlockIds.has(id));
+    if (!documentType && stillInHeader(baseImport.fields.documentType?.sourceBlockIds ?? []))
+      documentType = baseImport.fields.documentType?.value || "";
+    if (!subject && stillInHeader(baseImport.fields.subject?.sourceBlockIds ?? []))
+      subject = baseImport.fields.subject?.value || "";
+  }
+
   // 3. RECONSTRUCT BODY REGION
   const bodyHtml = bodyBlocks.map(b => b.html || `<p>${b.text}</p>`).join("");
 

@@ -23,6 +23,7 @@ import {
   XmlComponent, Attributes, LineRuleType, Bookmark
 } from "docx";
 import JSZip from "jszip";
+import { stampHoaTieuHeader } from "./hoaTieuHeaderStamp.ts";
 import { type DocumentFormatType, type SourceBlock, isPlaceholderValue } from "../shared/schemas/document.schema.ts";
 import { containsSeparatorParagraph } from "../shared/separator.ts";
 import type { TableModel } from "../shared/tableModel.ts";
@@ -1160,18 +1161,19 @@ export function detectEmbeddedHeaderField(bodyHtml:string,value?:string):boolean
   const expected=normalizeHeaderText(value),paragraphs=bodyHtml.slice(0,5000).split(/<\/p>|<\/div>|<br\s*\/?>|<\/tr>/i).slice(0,24);
   return paragraphs.some(p=>normalizeHeaderText(p.replace(/<[^>]+>/g,""))===expected);
 }
-export interface HeaderRenderPlan{renderSystemHeader:boolean;renderType:boolean;renderSubject:boolean;renderPartySeparator:boolean;isCongVanParty:boolean}
+export interface HeaderRenderPlan{renderSystemHeader:boolean;renderType:boolean;renderSubject:boolean;renderPartySeparator:boolean;isCongVanParty:boolean;isCongVanState:boolean}
 /** Independent header decisions keep content fields even when the organization/reference block is absent. */
 export function getHeaderRenderPlan(data:DocumentFormatType):HeaderRenderPlan{
   const isParty=data.regime==="party",company=data.headerProfile===COMPANY_HEADER_PROFILE_ID||data.headerProfile===COMPANY_HEADER_HD05_PROFILE_ID;
   const isCongVanParty=isParty&&(data.documentType??"").trim().toUpperCase()==="CÔNG VĂN";
+  const isCongVanState=!isParty&&((data.documentType??"").trim().toUpperCase()==="CÔNG VĂN"||/^(?:V\/v|Về việc)\s+/i.test((data.subject??"").trim()));
   const hasEmbeddedHeader=detectEmbeddedHeader(data.bodyHtml??"");
   const hasOfficeReference=Boolean(data.orgHeader2&&!isPlaceholderValue(data.orgHeader2)||data.referenceNumber&&!isPlaceholderValue(data.referenceNumber));
   const renderSystemHeader=!hasEmbeddedHeader&&(company||hasOfficeReference);
-  const renderType=Boolean(data.documentType&&!isCongVanParty&&!detectEmbeddedHeaderField(data.bodyHtml??"",data.documentType));
+  const renderType=Boolean(data.documentType&&!isCongVanParty&&!isCongVanState&&!detectEmbeddedHeaderField(data.bodyHtml??"",data.documentType));
   const renderSubject=Boolean(data.subject&&!detectEmbeddedHeaderField(data.bodyHtml??"",data.subject));
   const renderPartySeparator=Boolean(isParty&&!isCongVanParty&&renderSubject&&data.subject&&!containsSeparatorParagraph(data.bodyHtml??""));
-  return{renderSystemHeader,renderType,renderSubject,renderPartySeparator,isCongVanParty};
+  return{renderSystemHeader,renderType,renderSubject,renderPartySeparator,isCongVanParty,isCongVanState};
 }
 
 /**
@@ -1604,8 +1606,8 @@ export function generateND30DocxDocument(data: DocumentFormatType): Document {
                               ],
                             }),
                           ] : []),
-                          ...(isCongVanParty && renderPlan.renderSubject ? [
-                            // Đối với công văn Đảng: Trích yếu đặt cân đối dưới số và ký hiệu ở cột trái (cỡ 12, thường, nghiêng theo HD05 Phụ lục 2 mục 5)
+                          ...((isCongVanParty || renderPlan.isCongVanState) && renderPlan.renderSubject ? [
+                            // Công văn giữ trích yếu ở cột trái ngay dưới số, ký hiệu.
                             new Paragraph({
                               alignment: AlignmentType.CENTER,
                               spacing: { line: 240, before: 20, after: 60 },
@@ -1614,7 +1616,7 @@ export function generateND30DocxDocument(data: DocumentFormatType): Document {
                                   text: data.subject,
                                   font: "Times New Roman",
                                   size: 24, // 12pt
-                                  italics: true,
+                                  italics: isCongVanParty,
                                   bold: false,
                                 }),
                               ],
@@ -1717,12 +1719,12 @@ export function generateND30DocxDocument(data: DocumentFormatType): Document {
             new Paragraph({ text: "", spacing: { after: 120 } }),
           ] : []),
 
-          ...(isCongVanParty && renderPlan.renderSubject && !renderSystemHeader ? [
-            // Công văn Đảng thiếu khối cơ quan/số vẫn giữ trích yếu ở vùng riêng trước nội dung.
+          ...((isCongVanParty || renderPlan.isCongVanState) && renderPlan.renderSubject && !renderSystemHeader ? [
+            // Công văn thiếu khối cơ quan/số vẫn giữ trích yếu trước nội dung.
             new Paragraph({
               alignment: AlignmentType.LEFT,
               spacing: { before: 120, after: 120, line: 240 },
-              children: [new TextRun({ text: data.subject, font: "Times New Roman", size: 24, italics: true })],
+              children: [new TextRun({ text: data.subject, font: "Times New Roman", size: 24, italics: isCongVanParty })],
             }),
           ] : []),
 
@@ -1746,7 +1748,7 @@ export function generateND30DocxDocument(data: DocumentFormatType): Document {
                 ],
               }),
             ] : []),
-            ...(renderPlan.renderSubject && !isCongVanParty ? [
+            ...(renderPlan.renderSubject && (!renderPlan.isCongVanState || useCompanyHeader) ? [
               new Paragraph({
                 alignment: AlignmentType.CENTER,
                 keepNext: true,
@@ -2092,7 +2094,8 @@ export function generateND30DocxDocument(data: DocumentFormatType): Document {
 export async function generateND30DocxUint8Array(data: DocumentFormatType): Promise<Uint8Array> {
   const doc = generateND30DocxDocument(data);
   const arrayBuffer = await Packer.toArrayBuffer(doc);
-  return await postProcessDocxShapes(new Uint8Array(arrayBuffer));
+  const withShapes = await postProcessDocxShapes(new Uint8Array(arrayBuffer));
+  return stampHoaTieuHeader(withShapes, data);
 }
 
 /**

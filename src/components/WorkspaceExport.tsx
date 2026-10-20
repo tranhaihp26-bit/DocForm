@@ -28,6 +28,7 @@ export function WorkspaceExport({candidate,pending,error,onPrepare,onDownload,on
  const previewBytes=useMemo(()=>candidate?candidate.bytes:null,[candidate]);
  const blockerDescriptions=candidate?.blockers.map(code=>describeExportBlocker(code))??[];
  const actions=[...new Map(blockerDescriptions.filter(d=>d.action&&(d.action!=='download_original'||originalAvailable)).map(d=>[d.action+'|'+(d.targetId??''),d])).values()];
+ const blockerReasons=candidate&&!candidate.safe?[...new Set([...blockerDescriptions.map(d=>d.messageVi),...candidate.contentFidelity.violations.map(v=>v.messageVi),...candidate.tableFidelity.diffs.map(d=>d.messageVi),candidate.exportSafety.decision!=='allow'?candidate.exportSafety.userNotice:''].filter(Boolean))]:[];
  const tableCount=Object.keys(candidate?.formatData.importedTables??{}).length;
  const appendixCount=candidate?.formatData.appendices?.length??0;
  const regimeLabel=candidate?.formatData.regime==='party'?'Văn bản Đảng · Hướng dẫn 05':'Hành chính · Nghị định 30';
@@ -63,9 +64,10 @@ export function WorkspaceExport({candidate,pending,error,onPrepare,onDownload,on
      {candidate&&!candidate.safe&&<div className="df-step3-blocked-state" role="alert">
       <h3>Chưa thể xem hoặc xuất ứng viên này</h3>
       <p>Hãy xử lý các mục được nêu dưới đây rồi tạo lại ứng viên. Tệp nguồn và nội dung đang soạn vẫn được giữ nguyên.</p>
-      <ul>{[...blockerDescriptions.map(d=>d.messageVi),...candidate.contentFidelity.violations.map(v=>v.messageVi),...candidate.tableFidelity.diffs.map(d=>d.messageVi),candidate.exportSafety.decision!=='allow'?candidate.exportSafety.userNotice:''].filter(Boolean).map((reason,i)=><li key={i}>{reason}</li>)}</ul>
+      <ul>{blockerReasons.map((reason,i)=><li key={i}>{reason}</li>)}</ul>
       {actions.length>0&&<nav className="df-step3-blocker-actions" aria-label="Xử lý lý do chặn xuất">{actions.map(({action,targetId},i)=><button type="button" key={i} onClick={()=>action==='review_source'?onReviewSource():action==='edit_target'?onEditTarget(targetId):onDownloadOriginal()}>{action==='review_source'?'Đối chiếu nguồn':action==='edit_target'?'Mở vị trí cần sửa':'Tải tệp gốc'}</button>)}</nav>}
      </div>}
+     {candidate?.safe&&candidate.profileHeaderLines>0&&<p className="df-step3-reference-notice">Phần đầu đã dùng mẫu Hoa Tiêu chuẩn. Đường kẻ trong tệp gốc được thay bằng Shape của mẫu; hãy đối chiếu bản xem trước khi phát hành.</p>}
      {candidate?.safe&&mode==='candidate'&&previewBytes&&<CandidateDocumentPreview bytes={previewBytes} sha256={candidate.sha256} instanceId={candidate.instanceId}/>}
     </section>
 
@@ -95,7 +97,7 @@ export function WorkspaceExport({candidate,pending,error,onPrepare,onDownload,on
      <summary>Bằng chứng kiểm tra ứng viên</summary>
      <p className="df-ws-hash">SHA-256: {candidate.sha256}</p>
      <p>Instance: {candidate.instanceId} · revision: {candidate.revision}</p>
-     <pre>{JSON.stringify({blockers:candidate.blockers,table:candidate.tableFidelity.safe,content:candidate.contentFidelity.safe,safety:candidate.exportSafety.decision,evidence:candidate.evidence},null,2)}</pre>
+     <pre>{JSON.stringify({blockers:candidate.blockers,table:candidate.tableFidelity.safe,content:candidate.contentFidelity.safe,safety:candidate.exportSafety.decision,profileHeaderLines:candidate.profileHeaderLines,evidence:candidate.evidence},null,2)}</pre>
     </details>}
     {error&&<p className="df-step3-error" role="alert">{error}</p>}
    </div>

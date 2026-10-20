@@ -425,13 +425,20 @@ export function segmentSourceBlocks(
       fields.nationalHeader2 = { value: "Độc lập - Tự do - Hạnh phúc", confidence: "high", status: "extracted", sourceBlockIds: [headerBlock.id] };
     }
 
-    // Parse Location and Date if present in right cell
-    const dateMatch = extractHeaderDate(rightText);
-    if (dateMatch) {
-      fields.locationAndDate = {
-        ...dateMatch,
-        sourceBlockIds: [headerBlock.id],
-      };
+    // Header tables may put the date in a later row, beside the reference line.
+    for (let rowIndex = 0; rowIndex < tableData.length && !fields.locationAndDate.value; rowIndex++) {
+      for (const rawLine of (tableData[rowIndex]?.[1] || "").split(/\r?\n/)) {
+        const line = rawLine.trim();
+        const dateMatch = extractHeaderDate(line);
+        if (!dateMatch) continue;
+        fields.locationAndDate = {
+          ...dateMatch,
+          sourceBlockIds: [headerBlock.id],
+          sourceCell: { rowIndex, colIndex: 1 },
+          exactQuote: line,
+        };
+        break;
+      }
     }
 
     // Parse Org headers and Reference number from left cell
@@ -445,6 +452,8 @@ export function segmentSourceBlocks(
           confidence: "high",
           status: "extracted",
           sourceBlockIds: [headerBlock.id],
+          sourceCell: { rowIndex: 0, colIndex: 0 },
+          exactQuote: line,
         };
       } else if (!line.includes("---") && !line.includes("___")) {
         nonRefLines.push(line);
@@ -466,6 +475,26 @@ export function segmentSourceBlocks(
         sourceBlockIds: [headerBlock.id],
         note: orgs.draftNote ? `Ghi chú bản thảo nguồn: ${orgs.draftNote}` : undefined,
       };
+    }
+
+    // The lower left cell can contain both "Số:" and the official-letter
+    // subject. Keep each line's exact source quote for table coverage checks.
+    for (let rowIndex = 1; rowIndex < tableData.length; rowIndex++) {
+      for (const rawLine of (tableData[rowIndex]?.[0] || "").split(/\r?\n/)) {
+        const line = rawLine.trim();
+        if (!fields.referenceNumber.value && REF_NUMBER_REGEX.test(line)) {
+          fields.referenceNumber = {
+            value: formatReferenceNumber(line, options.standardType),
+            confidence: "high", status: "extracted", sourceBlockIds: [headerBlock.id],
+            sourceCell: { rowIndex, colIndex: 0 }, exactQuote: line,
+          };
+        } else if (!fields.subject.value && /^(?:V\/v|Về việc)\s+/i.test(line)) {
+          fields.subject = {
+            value: line, confidence: "high", status: "extracted", sourceBlockIds: [headerBlock.id],
+            sourceCell: { rowIndex, colIndex: 0 }, exactQuote: line,
+          };
+        }
+      }
     }
 
     // Check subsequent paragraph(s) for referenceNumber or Date

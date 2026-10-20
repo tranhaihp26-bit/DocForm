@@ -452,7 +452,7 @@
 }
 
 .df-step-layout-workspace .df-workspace-prose {
-  min-height: 320px;
+  min-height: 0;
   color: #202020;
 }
 

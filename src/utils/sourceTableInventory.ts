@@ -1,17 +1,17 @@
 import type { ImportFidelityManifest, SourceBlock, StructuredImport } from "../shared/schemas/document.schema.ts";
 
-type MetadataFieldKey = "orgHeader1" | "orgHeader2" | "nationalHeader1" | "nationalHeader2" | "referenceNumber" | "locationAndDate" | "signTitle" | "signName" | "recipients";
+type MetadataFieldKey = "orgHeader1" | "orgHeader2" | "nationalHeader1" | "nationalHeader2" | "referenceNumber" | "locationAndDate" | "documentType" | "subject" | "signTitle" | "signName" | "recipients";
 const normalize = (text: string) => text.normalize("NFC").replace(/\s+/g, " ").trim().toLocaleUpperCase("vi-VN");
 const isDecoration = (line: string) => /^[-—–_*\s]+$/.test(line)
   || /^\(?KÝ,?\s*(?:ĐÓNG DẤU|GHI RÕ HỌ TÊN|CHỮ KÝ)\)?$/.test(line);
 function hasFieldCoverage(block: SourceBlock, sourceFields: StructuredImport["fields"] | null | undefined): boolean {
   const keys: MetadataFieldKey[] = block.role === "header"
-    ? ["orgHeader1", "orgHeader2", "nationalHeader1", "nationalHeader2", "referenceNumber", "locationAndDate"]
+    ? ["orgHeader1", "orgHeader2", "nationalHeader1", "nationalHeader2", "referenceNumber", "locationAndDate", "documentType", "subject"]
     : ["signTitle", "signName", "recipients"];
   // These are the values extracted from this source block at import time. The
   // current document fields are editable and must never revoke that mapping.
   const represented = normalize(keys.filter(key => sourceFields?.[key]?.sourceBlockIds.includes(block.id))
-    .map(key => sourceFields![key].value ?? "").join("\n"));
+    .map(key => sourceFields![key].exactQuote ?? sourceFields![key].value ?? "").join("\n"));
   const rawLines = block.tableModel!.rows.flatMap(row => row.cells.flatMap(cell => cell.text.split(/\r?\n/)))
     .map(normalize).filter(Boolean);
   const meaningful = rawLines.filter(line => !isDecoration(line));

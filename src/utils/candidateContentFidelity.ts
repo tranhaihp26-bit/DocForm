@@ -58,7 +58,7 @@ export function verifyCandidateContentFidelity(xml: string, data: DocumentFormat
   const prefixParagraphs = semanticXmlParagraphs(xml.slice(0, pos("body:start")));
   const lines = (text?: string) => (text ?? "").split(/\r?\n/).map(normalizeSemanticText).filter(Boolean);
   const party = data.regime === "party", companyState = data.headerProfile === COMPANY_HEADER_PROFILE_ID, companyParty = data.headerProfile === COMPANY_HEADER_HD05_PROFILE_ID;
-  const company = companyState || companyParty, renderPlan=getHeaderRenderPlan(data), letterParty=renderPlan.isCongVanParty;
+  const company = companyState || companyParty, renderPlan=getHeaderRenderPlan(data), letterParty=renderPlan.isCongVanParty, letterState=renderPlan.isCongVanState;
   const expectedPrefix: string[] = [];
   if (renderPlan.renderSystemHeader) {
     expectedPrefix.push(...lines(companyParty ? data.orgHeader1 : data.orgHeader1?.toUpperCase()), ...lines(companyParty ? data.orgHeader2 : data.orgHeader2?.toUpperCase()));
@@ -66,14 +66,15 @@ export function verifyCandidateContentFidelity(xml: string, data: DocumentFormat
     if (!companyState) expectedPrefix.push(...lines(data.referenceNumber));
     if (!company && data.includeDraftNoteInExport !== false) expectedPrefix.push(...lines(data.draftNote));
     if (!company && letterParty && renderPlan.renderSubject) expectedPrefix.push(...lines(data.subject));
+    if (!company && letterState && renderPlan.renderSubject) expectedPrefix.push(...lines(data.subject));
     expectedPrefix.push(party ? "ĐẢNG CỘNG SẢN VIỆT NAM" : "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM");
     if (!party) expectedPrefix.push("Độc lập - Tự do - Hạnh phúc");
     if (companyState) expectedPrefix.push(...lines(data.referenceNumber));
     expectedPrefix.push(...lines(data.locationAndDate));
   }
-  if(letterParty&&renderPlan.renderSubject&&!renderPlan.renderSystemHeader)expectedPrefix.push(...lines(data.subject));
+  if((letterParty||letterState)&&renderPlan.renderSubject&&!renderPlan.renderSystemHeader)expectedPrefix.push(...lines(data.subject));
   if(renderPlan.renderType)expectedPrefix.push(...lines(data.documentType?.toUpperCase()));
-  if(!letterParty&&renderPlan.renderSubject)expectedPrefix.push(...lines(data.subject));
+  if(!letterParty&&(!letterState||company)&&renderPlan.renderSubject)expectedPrefix.push(...lines(data.subject));
   if(renderPlan.renderPartySeparator)expectedPrefix.push("-----");
   compare("header-fields", expectedPrefix, prefixParagraphs);
   const signature = semanticXmlParagraphs(section("body:end", "signature:end"));

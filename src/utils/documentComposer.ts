@@ -1,6 +1,6 @@
 import type { DocumentFormatType, DocumentState, SourceBlock, StructuredImport } from "../shared/schemas/document.schema.ts";
-import { COMPANY_HEADER_PROFILE_ID, applyCompanyProfile } from "../canonical/nd30/companyHeader.ts";
-import { COMPANY_HEADER_HD05_PROFILE_ID, applyCompanyHD05Profile } from "../canonical/hd05/companyHeaderHD05.ts";
+import { COMPANY_HEADER_PROFILE_ID, COMPANY_HEADER_PARENT, COMPANY_HEADER_ISSUER, applyCompanyProfile } from "../canonical/nd30/companyHeader.ts";
+import { COMPANY_HEADER_HD05_PROFILE_ID, COMPANY_HEADER_HD05_PARENT, COMPANY_HEADER_HD05_ISSUER, applyCompanyHD05Profile } from "../canonical/hd05/companyHeaderHD05.ts";
 import { sanitizeHtmlForDocx } from "./docxExport.ts";
 import { syncImportedTablesFromHtml } from "./tableFormatUtils.ts";
 import { isTransformedMetadataTable } from "./sourceTableInventory.ts";
@@ -17,10 +17,14 @@ export function composeDocumentFormatData(snapshot: DocumentComposerSnapshot): D
     const isParty = standardType === "party";
     let exportDoc = doc;
     let effectiveProfile: "generic" | typeof COMPANY_HEADER_PROFILE_ID | typeof COMPANY_HEADER_HD05_PROFILE_ID = "generic";
-    if (!isParty && doc.headerProfile === COMPANY_HEADER_PROFILE_ID) {
+    const normalized = (value: string) => value.normalize("NFC").replace(/\s+/g, " ").trim().toLocaleUpperCase("vi-VN");
+    const matchesCompany = normalized(doc.orgHeader1 || "") === normalized(isParty ? COMPANY_HEADER_HD05_PARENT : COMPANY_HEADER_PARENT) &&
+      normalized(doc.orgHeader2 || "") === normalized(isParty ? COMPANY_HEADER_HD05_ISSUER : COMPANY_HEADER_ISSUER);
+    // Existing local sessions may predate profile auto-selection; export their exact Hoa Tieu agency with the canonical header.
+    if (!isParty && (doc.headerProfile === COMPANY_HEADER_PROFILE_ID || (doc.headerProfile === "generic" && matchesCompany))) {
       exportDoc = applyCompanyProfile(doc);
       effectiveProfile = COMPANY_HEADER_PROFILE_ID;
-    } else if (isParty && doc.headerProfile === COMPANY_HEADER_HD05_PROFILE_ID) {
+    } else if (isParty && (doc.headerProfile === COMPANY_HEADER_HD05_PROFILE_ID || (doc.headerProfile === "generic" && matchesCompany))) {
       exportDoc = applyCompanyHD05Profile(doc);
       effectiveProfile = COMPANY_HEADER_HD05_PROFILE_ID;
     }
