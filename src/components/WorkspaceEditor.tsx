@@ -57,6 +57,15 @@ export function WorkspaceEditor({snapshot,active,initialCanvasId,onCanvasSelecte
  };
  return <main data-wizard-step={active?'2':undefined} className="df-workspace-editor">
   <h1>Soạn &amp; kiểm tra</h1><p className="df-ws-muted">9 nhóm thể thức · Bản soạn r{snapshot.workspace.workingRevision}. Nội dung và nguồn được lưu riêng.</p>
+  <aside className="df-ws-refine" aria-label="Trợ lý AI rà soát nội dung">
+   <strong>Trợ lý AI: chính tả, câu từ và văn phong</strong>
+   <p>Rà đoạn Body đang chọn. Bạn sẽ xem và duyệt đề xuất trước khi áp dụng.</p>
+   <div className="df-ws-toolbar">
+    <button type="button" data-ai-action="proofread" data-ai-target-node={activeBodyNode?.editableNodeId??''} disabled={selected!=='body'||refining||!activeBodyNode} onClick={()=>activeBodyNode&&onRefine('proofread',activeBodyNode.editableNodeId)}>Sửa chính tả &amp; câu từ bằng AI</button>
+    <button type="button" data-ai-action="formalize" data-ai-target-node={activeBodyNode?.editableNodeId??''} disabled={selected!=='body'||refining||!activeBodyNode} onClick={()=>activeBodyNode&&onRefine('formalize',activeBodyNode.editableNodeId)}>Nâng văn phong bằng AI</button>
+   </div>
+   {selected!=='body'&&<p>AI chỉ hỗ trợ đoạn trong Body; phụ lục và ô bảng chưa được gửi.</p>}
+  </aside>
   <div className="df-ws-groups">{projection.groups.map(group=><details key={group.id} data-workspace-group={group.id} open={group.id===5}>
    <summary>{group.name}</summary>
    {group.fields.filter(f=>f.key!=='bodyHtml').map(f=><label key={f.key}>{labels[f.key]??f.key}<textarea aria-label={labels[f.key]??f.key} data-workspace-field={f.key} value={f.value} readOnly={!f.editable} onChange={e=>onAction({type:'editField',field:f.key,value:e.target.value})}/></label>)}
@@ -68,8 +77,6 @@ export function WorkspaceEditor({snapshot,active,initialCanvasId,onCanvasSelecte
    <button onClick={()=>{const id=crypto.randomUUID();if(onAction({type:'addAppendix',appendix:{id,title:'PHỤ LỤC',html:'<p></p>',sourceBlockIds:[],blocks:[],extractionStatus:'confirmed'}}))setActive(id);}}>Thêm phụ lục</button>
   </div>
   <div role="toolbar" aria-label="Công cụ Canvas đang chọn" className="df-ws-toolbar">{([['undo','Hoàn tác'],['redo','Làm lại'],['toggleBold','Đậm'],['toggleItalic','Nghiêng'],['toggleUnderline','Gạch chân']] as const).map(([name,label])=><button key={name} data-workspace-command={name} aria-label={label} onMouseDown={e=>e.preventDefault()} onClick={()=>command(name)}>{label}</button>)}
-   <button data-ai-target-node={activeBodyNode?.editableNodeId??''} disabled={selected!=='body'||refining||!activeBodyNode} onClick={()=>activeBodyNode&&onRefine('proofread',activeBodyNode.editableNodeId)}>Rà chính tả Body · đoạn đang chọn</button>
-   {selected!=='body'&&<span>AI phụ lục/ô chưa được hỗ trợ; không gửi thay cho Body.</span>}
   </div>
   {canvases.map(a=><section key={a.id} id={`canvas-${a.id}`} role="tabpanel" aria-labelledby={`canvas-tab-${a.id}`} hidden={selected!==a.id} data-canvas-id={a.id} className="df-ws-sheet">
    <h2>{a.title}</h2>
