@@ -9,6 +9,7 @@ import type {
   SourceRegion,
   PartitionProposal,
 } from "./schemas/document.schema.ts";
+import { toPartitionAiBlock } from "./partitionAiProtocol.ts";
 
 export const VALID_SOURCE_REGIONS: readonly SourceRegion[] = [
   "header",
@@ -153,7 +154,7 @@ export function validateProposalAgainstSource(
   }
 
   const cleanQuote = exactQuote.trim();
-  let validatedCellLocation: { rowIndex: number; colIndex: number } | undefined = undefined;
+  let validatedCellLocation: { rowIndex: number; colIndex: number; cellId?: string } | undefined = undefined;
   let requiresUserVerification = false;
 
   const hasCellLocation = cellLocation !== undefined && cellLocation !== null;
@@ -196,7 +197,17 @@ export function validateProposalAgainstSource(
       return null;
     }
 
-    validatedCellLocation = { rowIndex: rawRow, colIndex: rawCol };
+    const rawCellId = cellLocation.cellId;
+    if (rawCellId !== undefined) {
+      if (typeof rawCellId !== "string" || !rawCellId.trim()) return null;
+      const sourceCell = toPartitionAiBlock(sourceBlock).cells?.find(cell =>
+        cell.rowIndex === rawRow && cell.colIndex === rawCol,
+      );
+      if (!sourceCell || sourceCell.cellId !== rawCellId) return null;
+      validatedCellLocation = { rowIndex: rawRow, colIndex: rawCol, cellId: rawCellId };
+    } else {
+      validatedCellLocation = { rowIndex: rawRow, colIndex: rawCol };
+    }
 
     // Bảng có gridSpan, vMerge, mergedCells, partiallyPreserved hoặc bản đồ ô thiếu tin cậy
     if (hasUntrustedTableStructure(sourceBlock)) {
@@ -279,6 +290,11 @@ export interface ProposalValidityCheckResult {
   reason?: string;
 }
 
+export interface PartitionProposalContext {
+  sourceGeneration: number;
+  partitionRevision: number;
+}
+
 /**
  * Checks proposal validity immediately before applying it against the current document state.
  * Reports expired/invalid if block was removed, quote changed, role changed, or regime changed.
@@ -286,10 +302,23 @@ export interface ProposalValidityCheckResult {
 export function checkProposalValidityBeforeApply(
   proposal: PartitionProposal,
   currentBlocks: SourceBlock[],
-  currentRegime: "administrative" | "party"
+  currentRegime: "administrative" | "party",
+  userModifiedBlockIds: readonly string[] = [],
+  currentContext?: PartitionProposalContext,
 ): ProposalValidityCheckResult {
   if (!proposal || !proposal.sourceBlockId) {
     return { valid: false, reason: "Đề xuất không hợp lệ" };
+  }
+
+  if (userModifiedBlockIds.includes(proposal.sourceBlockId)) {
+    return { valid: false, reason: `Khối #${proposal.sourceBlockId} đã được người dùng chỉnh sửa trong phiên này` };
+  }
+
+  if (currentContext && proposal.sourceGeneration !== currentContext.sourceGeneration) {
+    return { valid: false, reason: "Đề xuất thuộc một thế hệ nguồn khác" };
+  }
+  if (currentContext && proposal.partitionRevision !== currentContext.partitionRevision) {
+    return { valid: false, reason: "Đề xuất thuộc phiên bản phân vùng cũ" };
   }
 
   // 1. Chế độ thể thức đã thay đổi
@@ -357,6 +386,17 @@ export function checkProposalValidityBeforeApply(
         valid: false,
         reason: `Nội dung ô [${rowIndex}, ${colIndex}] đã thay đổi, không còn chứa trích dẫn "${cleanQuote}"`
       };
+    }
+    if (proposal.cellLocation.cellId !== undefined) {
+      const sourceCell = toPartitionAiBlock(block).cells?.find(cell =>
+        cell.rowIndex === rowIndex && cell.colIndex === colIndex,
+      );
+      if (!sourceCell || sourceCell.cellId !== proposal.cellLocation.cellId) {
+        return {
+          valid: false,
+          reason: `Định danh ô [${rowIndex}, ${colIndex}] không còn khớp với nguồn hiện tại`,
+        };
+      }
     }
   } else {
     if (isTableBlock(block)) {

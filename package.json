@@ -10,6 +10,7 @@
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "test": "tsx test/nd30-compliance.test.ts",
+    "test:ai:live": "tsx test/gemini-live-smoke.test.ts",
     "rules:sync": "node scripts/sync_verified_nd30.mjs",
     "test:canonical": "tsx test/nd30-canonical-overlay.test.ts",
     "test:import:segments": "tsx test/import-segments.test.ts",
@@ -17,6 +18,8 @@
     "test:fidelity": "tsx test/import-fidelity-gate.test.ts && tsx test/source-retention.test.ts && tsx test/imported-table-grid.test.ts && tsx test/imported-table-roundtrip.test.ts && tsx test/table-role-classification.test.ts && tsx test/body-rule-applicability.test.ts && tsx test/body-ooxml-audit.test.ts && tsx test/preview-table-fidelity.test.ts",
     "test:pilot": "tsx test/pilot-documents.test.ts",
     "test:edgecases": "tsx test/complex-malformed-pipeline.test.ts",
+    "test:repro": "tsx test/repro-plan-signature-bug.test.ts",
+    "test:regression": "node scripts/run-regression.mjs",
     "fixtures:export": "tsx scripts/export_pilot_fixtures.ts",
     "fixtures:export:edgecases": "tsx scripts/export_complex_malformed_fixtures.ts"
   },

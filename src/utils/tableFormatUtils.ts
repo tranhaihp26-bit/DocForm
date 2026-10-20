@@ -468,6 +468,64 @@ function mergeAdjacentIdenticalRuns(runs: TableCellRun[]): TableCellRun[] {
 }
 
 /**
+ * Trích xuất văn bản của một phần tử HTML **giữ nguyên ngắt dòng**.
+ *
+ * Chặng 5 / P1: khi bỏ thẻ bằng `replace(/<[^>]*>/g, "")` hoặc đọc
+ * `textContent`, mọi `<br/>` bị xoá **không thay bằng khoảng trắng** ⇒ hai từ
+ * ở hai đầu ngắt dòng bị dính liền ("BẢO ĐẢM" + "AN TOÀN" → "BẢO ĐẢMAN TOÀN").
+ * Hậu quả: bản xuất Word mất nội dung và cổng fidelity fail-closed từ chối xuất.
+ * Ở đây ngắt dòng được quy về "\n" — đúng như cách bộ trích xuất DOCX biểu diễn
+ * `<w:br/>` — nên vòng nhập → xuất → nhập lại giữ nguyên nội dung ô.
+ */
+export function extractHtmlTextWithBreaks(html: string): string {
+  return decodeHtmlEntities(
+    String(html ?? "")
+      .replace(/<br\b[^>]*\/?>/gi, "\n")
+      .replace(/<[^>]*>/g, "")
+  ).trim();
+}
+
+/** Replace text in one proven simple cell while keeping the surrounding table markup byte-for-byte. */
+export function replaceSimpleTableCellText(html:string,cellId:string,value:string):string|undefined{
+ const escape=(s:string)=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+ let matches=0,valid=true;
+ const result=html.replace(/<(td|th)\b([^>]*)>([\s\S]*?)<\/\1>/gi,(whole,tag:string,attrs:string,inner:string)=>{
+  const id=attrs.match(/\bdata-cell-id\s*=\s*(["'])(.*?)\1/i)?.[2];if(id!==cellId)return whole;
+  matches++;
+  const ps=[...inner.matchAll(/<p\b([^>]*)>([\s\S]*?)<\/p>/gi)];
+  if(ps.length===1){
+   const p=ps[0],innerText=p[2];if(/<[^>]+>/.test(innerText)){valid=false;return whole;}
+   const next=`<p${p[1]}>${escape(value)}</p>`;return whole.replace(p[0],next);
+  }
+  if(ps.length===0&&!/<[^>]+>/.test(inner))return `<${tag}${attrs}>${escape(value)}</${tag}>`;
+  valid=false;return whole;
+ });
+ return matches===1&&valid?result:undefined;
+}
+
+/** Tương tự `extractHtmlTextWithBreaks` nhưng cho phần tử DOM (môi trường trình duyệt). */
+export function extractElementTextWithBreaks(el: Element): string {
+  let out = "";
+  const walk = (node: Node) => {
+    node.childNodes.forEach(child => {
+      if (child.nodeType === 3) {
+        out += child.nodeValue || "";
+        return;
+      }
+      if (child.nodeType !== 1) return;
+      const tag = (child as Element).tagName?.toLowerCase();
+      if (tag === "br") {
+        out += "\n";
+        return;
+      }
+      walk(child);
+    });
+  };
+  walk(el);
+  return out.trim();
+}
+
+/**
  * Trích xuất các runs từ chuỗi HTML của một đoạn văn (môi trường Node.js / Regex)
  */
 export function parseRunsFromHtmlString(pHtml: string, templateRun?: TableCellRun): TableCellRun[] {
@@ -838,12 +896,12 @@ export function syncTableModelFromHtml(
 
         if (pEls.length > 0) {
           pEls.forEach(p => {
-            const text = (p.textContent || "").trim();
+            const text = extractElementTextWithBreaks(p);
             const runs = parseRunsFromDomElement(p);
             cellParas.push({ text, runs: runs.length > 0 ? runs : undefined });
           });
         } else {
-          const text = (cellEl.textContent || "").trim();
+          const text = extractElementTextWithBreaks(cellEl);
           const runs = parseRunsFromDomElement(cellEl);
           cellParas.push({ text, runs: runs.length > 0 ? runs : undefined });
         }
@@ -869,12 +927,12 @@ export function syncTableModelFromHtml(
 
         if (pMatches && pMatches.length > 0) {
           pMatches.forEach(pTag => {
-            const text = decodeHtmlEntities(pTag.replace(/<[^>]*>/g, "")).trim();
+            const text = extractHtmlTextWithBreaks(pTag);
             const runs = parseRunsFromHtmlString(pTag);
             cellParas.push({ text, runs: runs.length > 0 ? runs : undefined });
           });
         } else {
-          const text = decodeHtmlEntities(cellHtml.replace(/<[^>]*>/g, "")).trim();
+          const text = extractHtmlTextWithBreaks(cellHtml);
           const runs = parseRunsFromHtmlString(cellHtml);
           cellParas.push({ text, runs: runs.length > 0 ? runs : undefined });
         }

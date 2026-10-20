@@ -1,5 +1,8 @@
 @echo off
 cd /d "%~dp0"
+set NODE=node
+set TSX=node_modules\tsx\dist\cli.mjs
+
 set PORT=%1
 if "%PORT%"=="" set PORT=3000
 
@@ -10,5 +13,6 @@ echo ===================================================================
 echo Nhan Ctrl+C de dung server.
 echo.
 
-call npm run dev -- --port %PORT%
+%NODE% "%TSX%" server.ts --port %PORT%
 pause
+

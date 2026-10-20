@@ -112,13 +112,19 @@ export function createCompanyHeaderHD05Table(
     ? customOrgHeader2.split("\n").map(s => s.trim()).filter(Boolean)
     : [...COMPANY_HEADER_HD05_ISSUER_LINES];
 
-  // Chiều rộng an toàn chuẩn A4 (165mm = 9355 twips) bảo đảm ngày tháng 14pt không bị rớt dòng
-  const colLeft = 4490;
-  const colRight = 4865;
-  const tableWidth = colLeft + colRight;
+  // S05: hình học bảng phần đầu phải bám đúng mẫu Word chuẩn.
+  // Đo từ `header-reference.docx` của profile: tblW = 10170 twips,
+  // tblInd = -540 twips, tblGrid = 5580 + 4590, tcW = 5580 / 4590.
+  // Trước đây bộ xuất dùng 4490 + 4865 (9355 twips) và không thụt lề nên
+  // candidate lệch mẫu, đồng thời làm rule `PROFILE.HD05.HOA_TIEU_MB.TABLE_WIDTH`
+  // FAIL. Không đổi mẫu, không đổi profile, không đổi rule — sửa bộ xuất.
+  const colLeft = SOURCE_TABLE_TWIPS.left;
+  const colRight = SOURCE_TABLE_TWIPS.right;
+  const tableWidth = SOURCE_TABLE_TWIPS.width;
 
   return new Table({
     width: { size: tableWidth, type: WidthType.DXA },
+    indent: { size: SOURCE_TABLE_TWIPS.indent, type: WidthType.DXA },
     layout: TableLayoutType.FIXED,
     columnWidths: [colLeft, colRight],
     borders: INVISIBLE,
@@ -126,16 +132,16 @@ export function createCompanyHeaderHD05Table(
       new TableRow({
         cantSplit: true,
         children: [
-          // Cột trái: Cơ quan cấp trên (11.5-12.5pt thường, condensed -4), Cơ quan ban hành & Đơn vị trực thuộc (12.5pt đậm, condensed -4), dấu * (14pt), Số ký hiệu (14pt thường nếu có)
+          // Cột trái: cỡ 14pt, giãn chữ mặc định và giãn dòng 18pt như header-reference.docx.
           new TableCell({
             width: { size: colLeft, type: WidthType.DXA },
             borders: INVISIBLE,
             margins: { top: 0, bottom: 0, left: 0, right: 0 },
             children: [
-              ...org1Lines.map(line => centered([RUN(line, line.length > 30 ? 11.5 : 12.5, false, false, -4)], 280, 10)),
-              ...org2Lines.map(line => centered([RUN(line, 12.5, true, false, -4)], 280, 10)),
+              ...org1Lines.map(line => centered([RUN(line, 14)], 360, 0)),
+              ...org2Lines.map(line => centered([RUN(line, 14, true)], 360, 0)),
               // Dấu * căn giữa dưới tên cơ quan ban hành theo HD05 Phần II.I.2.2.1
-              centered([RUN("*", 14)], 320, 20),
+              centered([RUN("*", 14)], 360, 40),
               // Số ký hiệu cân đối dưới dấu * (chỉ tạo khi có số, không tự ép placeholder vào văn bản không có số)
               ...(cleanRef ? [centered([RUN(cleanRef, 14)], 360, 0)] : []),
             ],

@@ -12,6 +12,10 @@ import type {
   PartitionProposal, 
   PartitionCheckResult 
 } from "../shared/schemas/document.schema.ts";
+import {
+  toPartitionAiBlocks,
+  type PartitionAiBlock,
+} from "../shared/partitionAiProtocol.ts";
 
 export {
   VALID_SOURCE_REGIONS,
@@ -19,6 +23,7 @@ export {
   hasUntrustedTableStructure,
   validateProposalAgainstSource,
 } from "../shared/partitionValidation.ts";
+export { analyzePartitionFallback } from "../shared/partitionFallback.ts";
 
 export interface PartitionRequestPayload {
   blocks: SourceBlock[];
@@ -37,118 +42,14 @@ export interface PartitionRequestPayload {
 export function createPartitionFingerprint(
   blocks: SourceBlock[], 
   regime: "administrative" | "party", 
-  filename = ""
+  _filename = ""
 ): string {
-  const contentDigest = blocks
-    .map(b => `${b.id}:${b.role || "unclassified"}`)
-    .join(";");
+  const safeBlocks = toPartitionAiBlocks(blocks);
   return crypto
     .createHash("sha256")
-    .update(`${regime}|${filename}|${contentDigest}`)
+    .update(JSON.stringify({ regime, blocks: safeBlocks }))
     .digest("hex")
     .slice(0, 16);
-}
-
-/**
- * Offline / Rule-based Fallback Partition Analyzer
- * Identifies high-confidence misclassifications deterministically without calling external AI.
- */
-export function analyzePartitionFallback(
-  blocks: SourceBlock[],
-  regime: "administrative" | "party",
-  userModifiedBlockIds: string[] = []
-): PartitionProposal[] {
-  const userSet = new Set(userModifiedBlockIds);
-  const proposals: PartitionProposal[] = [];
-
-  for (let idx = 0; idx < blocks.length; idx++) {
-    const b = blocks[idx];
-    if (userSet.has(b.id)) continue;
-
-    const currentRole = b.role || "unclassified";
-    const text = (b.text || "").trim();
-    const upper = text.toUpperCase();
-
-    // 1. Separator detection in HD05 (dashes "-----" or stars after metadata)
-    if (regime === "party" && /^[-–—_*~]{3,40}$/.test(text) && currentRole !== "separator") {
-      proposals.push({
-        id: `fb-sep-${b.id}`,
-        sourceBlockId: b.id,
-        currentRole,
-        suggestedRole: "separator",
-        exactQuote: text,
-        reason: "Dấu gạch nối '-----' phân cách thể thức Đảng (HD05), cần đặt là separator để tránh lẫn vào thân bài",
-        confidence: "high",
-        status: "pending",
-        regime,
-      });
-      continue;
-    }
-
-    // 2. Multi-column signature table misclassified as body
-    if (b.kind === "table" && b.tableData && b.tableData.length > 0 && currentRole === "body") {
-      const numCols = b.tableShape?.columns || b.tableData[0]?.length || 1;
-      const combinedText = b.text.toUpperCase();
-      const hasSigKeywords = 
-        (combinedText.includes("THƯ KÝ") && combinedText.includes("TRƯỞNG ĐOÀN")) ||
-        (combinedText.includes("CHỦ TỊCH") || combinedText.includes("GIÁM ĐỐC") || combinedText.includes("NGƯỜI LẬP BIÊN BẢN"));
-
-      if (numCols >= 2 && hasSigKeywords && idx >= Math.floor(blocks.length * 0.5)) {
-        // Find exact quote from signature table
-        const quote = combinedText.includes("THƯ KÝ") ? "THƯ KÝ" : (b.tableData[0][0] || text.slice(0, 30));
-        proposals.push({
-          id: `fb-sig-${b.id}`,
-          sourceBlockId: b.id,
-          currentRole,
-          suggestedRole: "signature",
-          fieldKey: "signTitle",
-          exactQuote: quote,
-          reason: "Bảng ở cuối văn bản chứa các chức danh ký kết (biên bản / phân công ký), không phải bảng dữ liệu thân bài",
-          confidence: "high",
-          status: "pending",
-          regime,
-          componentGroupIndex: 7,
-          requiresUserVerification: true,
-        });
-        continue;
-      }
-    }
-
-    // 3. National header or Party header misclassified as body
-    if (idx < 5 && currentRole === "body") {
-      if (regime === "party" && upper.includes("ĐẢNG CỘNG SẢN VIỆT NAM")) {
-        proposals.push({
-          id: `fb-hdr-${b.id}`,
-          sourceBlockId: b.id,
-          currentRole,
-          suggestedRole: "header",
-          fieldKey: "nationalHeader1",
-          exactQuote: "ĐẢNG CỘNG SẢN VIỆT NAM",
-          reason: "Tiêu đề Đảng ở đầu văn bản thuộc vùng header",
-          confidence: "high",
-          status: "pending",
-          regime,
-          componentGroupIndex: 1,
-        });
-      } else if (regime === "administrative" && upper.includes("CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM")) {
-        proposals.push({
-          id: `fb-hdr-${b.id}`,
-          sourceBlockId: b.id,
-          currentRole,
-          suggestedRole: "header",
-          fieldKey: "nationalHeader1",
-          exactQuote: "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM",
-          reason: "Quốc hiệu NĐ 30 ở đầu văn bản thuộc vùng header",
-          confidence: "high",
-          status: "pending",
-          regime,
-          componentGroupIndex: 1,
-        });
-      }
-    }
-  }
-
-  return proposals;
 }
 
 /**
@@ -176,24 +77,22 @@ export function buildPartitionPrompt(
   totalChunks: number,
   regime: "administrative" | "party"
 ): string {
+  return buildPartitionAiPrompt(toPartitionAiBlocks(chunk), chunkIndex, totalChunks, regime);
+}
+
+export function buildPartitionAiPrompt(
+  blockManifest: PartitionAiBlock[],
+  chunkIndex: number,
+  totalChunks: number,
+  regime: "administrative" | "party"
+): string {
   const regimeDesc = regime === "party"
     ? "Hướng dẫn số 05-HD/VPTW về thể thức văn bản Đảng (Tiêu đề: ĐẢNG CỘNG SẢN VIỆT NAM, không tiêu ngữ, dấu hoa thị cơ quan, dấu gạch nối '-----' dưới trích yếu, chữ ký chức danh)."
     : "Nghị định số 30/2020/NĐ-CP về thể thức văn bản hành chính (Quốc hiệu: CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM, Tiêu ngữ: Độc lập - Tự do - Hạnh phúc, đường kẻ cơ quan 1/3-1/2, chữ ký và nơi nhận).";
 
-  const blockManifest = chunk.map(b => ({
-    id: b.id,
-    index: b.index,
-    kind: b.kind,
-    currentRole: b.role || "unclassified",
-    tableShape: b.tableShape,
-    tableHasMergedCells: Boolean(b.tableProperties?.mergedCells?.length || b.tableProperties?.isGridSpan || b.tableProperties?.isVMerge),
-    textSnippet: (b.text || "").slice(0, 350),
-    firstRowPreview: b.tableData?.[0]?.slice(0, 4),
-  }));
-
   return `
 Bạn là chuyên gia kiểm định phân vùng tài liệu hành chính và văn bản Đảng Việt Nam theo ${regimeDesc}.
-Đang xử lý cụm ${chunkIndex + 1}/${totalChunks} (gồm ${chunk.length} khối).
+Đang xử lý cụm ${chunkIndex + 1}/${totalChunks} (gồm ${blockManifest.length} khối).
 
 8 VÙNG PHÂN LOẠI KHỐI (SourceRegion) HỢP LỆ:
 1. "header": Quốc hiệu/Tiêu đề, Tiêu ngữ, Cơ quan ban hành, Số ký hiệu, Địa danh ngày tháng ở đầu trang.
@@ -207,8 +106,11 @@ Bạn là chuyên gia kiểm định phân vùng tài liệu hành chính và v�
 
 RÀNG BUỘC AN TOÀN TUYỆT ĐỐI (ZERO DATA LOSS):
 - TUYỆT ĐỐI KHÔNG sửa nội dung text, html, tableData, id, thứ tự khối.
+- Phân loại độc lập; không có vai trò parser hiện tại. Chỉ dùng nguyên văn nội dung nguồn bên dưới.
 - CHỈ đề xuất thay đổi role nếu có bằng chứng rõ ràng khối đó đang bị phân loại sai vùng.
 - BẮT BUỘC cung cấp "exactQuote" là cụm từ nguyên văn nằm trong khối đó.
+- Với khối bảng, BẮT BUỘC trích từ một ô trong "cells" và cung cấp đúng rowIndex, colIndex, cellId của ô ấy.
+- Không suy diễn tọa độ hoặc cellId; nếu không đủ bằng chứng, trả về mảng proposals rỗng.
 - Không tự bịa đặt họ tên người ký, số hiệu, ngày tháng. Kế hoạch hoặc dự thảo chưa ký phải giữ nguyên, không biến bảng phân công thành chữ ký.
 - Bảng phân công công việc (STT, Nội dung, Thời gian, Chủ trì) trong thân bài PHẢI là "body", KHÔNG ĐƯỢC gán thành "signature".
 
@@ -223,11 +125,13 @@ Trả về JSON thuần túy (không bọc markdown \`\`\`):
       "sourceBlockId": "id khối bị phân vùng sai (VD: block-4)",
       "suggestedRole": "một trong 8 vùng hợp lệ",
       "fieldKey": "trường đích nếu thuộc header/metadata/signature (VD: nationalHeader1, signTitle, subject...)",
-      "exactQuote": "cụm từ nguyên văn trích từ khối đó",
+      "exactQuote": "cụm từ nguyên văn trích từ khối đó hoặc ô được chỉ định",
+      "cellLocation": { "rowIndex": 0, "colIndex": 0, "cellId": "ID ô trong danh sách cells" },
       "reason": "lý do thể thức theo NĐ 30 hoặc HD 05",
       "confidence": "high"
     }
-  ]
+  ],
+  "schemaVersion": 1
 }
 `;
 }

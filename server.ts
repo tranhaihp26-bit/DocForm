@@ -1,19 +1,44 @@
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
+import fs from "fs";
 import { fileURLToPath } from "url";
 import multer from "multer";
 import mammoth from "mammoth";
 import cors from "cors";
 import rateLimit from "express-rate-limit";
 import { GoogleGenAI } from "@google/genai";
+import tailwindcss from "@tailwindcss/vite";
+import react from "@vitejs/plugin-react";
 import dotenv from "dotenv";
 import { enforceND30Standards, formatStandardDate } from "./src/server/middleware/compliance.middleware.ts";
 
-dotenv.config();
+if (process.env.DOCFORM_TEST_NO_DOTENV !== "true") {
+  dotenv.config();
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+/**
+ * True when this module is the process entry point.
+ *
+ * `process.argv[1]` and `__filename` can legitimately differ even though they
+ * point at the same file: a junction/symlink alias, a short (8.3) path or a
+ * relative invocation makes `path.resolve()` produce different strings. When
+ * that happened the dev server silently never started, which broke every
+ * browser test that spawns `server.ts`. Compare the *real* paths first and
+ * fall back to the plain comparison.
+ */
+function isServerEntryPoint(): boolean {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  try {
+    return fs.realpathSync(entry) === fs.realpathSync(__filename);
+  } catch {
+    return path.resolve(entry) === path.resolve(__filename);
+  }
+}
 
 const upload = multer({ 
   storage: multer.memoryStorage(),
@@ -34,8 +59,6 @@ const PREFERRED_LITE_MODELS = [
   "gemini-3.1-flash-lite",
   "gemini-2.5-flash-lite"
 ];
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
-
 const failedModelsSet = new Set<string>();
 
 async function generateContentWithModelFallback(params: { contents: any; config?: any }) {
@@ -97,14 +120,18 @@ import { extractBlocksFromDocx, extractBlocksFromTxt } from "./src/server/blockE
 import { segmentSourceBlocks } from "./src/server/structuralSegmenter.ts";
 import { generateRuleBasedProposals, summarizeProposals } from "./src/server/reviewProposals.ts";
 import {
-  createPartitionFingerprint,
-  chunkBlocksForAnalysis,
-  buildPartitionPrompt,
-  validateProposalAgainstSource,
-  analyzePartitionFallback,
-} from "./src/server/aiPartitionReview.ts";
+  runPartitionAiService,
+  PartitionAiRequestError,
+  type PartitionAiProvider,
+} from "./src/server/aiPartitionService.ts";
+import { validatePartitionAiRequest } from "./src/shared/partitionAiProtocol.ts";
 
-async function startServer() {
+export interface ServerOptions {
+  /** Injected provider seam for synthetic server/browser tests. */
+  partitionAiProviderFactory?: (request: express.Request) => PartitionAiProvider | undefined;
+}
+
+export async function startServer(options: ServerOptions = {}) {
   const app = express();
   app.set("trust proxy", 1);
   const portArgIndex = process.argv.findIndex(arg => arg === "--port" || arg === "-p");
@@ -547,132 +574,78 @@ Hãy trả về JSON thuần túy (không markdown bao quanh) với cấu trúc:
 
   // API for AI-assisted partition review (Zero Data Loss Proposals)
   app.post("/api/ai/check-partitions", async (req, res) => {
+    const abortController = new AbortController();
+    const abortOnDisconnect = () => {
+      if (!res.writableEnded) abortController.abort();
+    };
+    req.on("aborted", abortOnDisconnect);
+    res.on("close", abortOnDisconnect);
     try {
-      const { blocks, regime, filename, userModifiedBlockIds, requestFingerprint, mode } = req.body;
-
-      if (!Array.isArray(blocks) || blocks.length === 0) {
-        return res.status(400).json({ error: "Thiếu danh sách khối (blocks) để kiểm tra phân vùng." });
+      const requestValidation = validatePartitionAiRequest(req.body);
+      if (!requestValidation.valid) {
+        const statusCode = requestValidation.reason?.includes("xác nhận cho phép") ? 403 : 400;
+        return res.status(statusCode).json({ error: requestValidation.reason });
       }
-
-      const activeRegime: "administrative" | "party" = regime === "party" ? "party" : "administrative";
-      const calculatedFingerprint = createPartitionFingerprint(blocks, activeRegime, filename || "");
-      const userModifiedSet = new Set<string>(Array.isArray(userModifiedBlockIds) ? userModifiedBlockIds : []);
-      const blocksById = new Map<string, any>(blocks.map(b => [b.id, b]));
-
-      // Fallback rule proposals
-      const fallbackProposals = analyzePartitionFallback(blocks, activeRegime, Array.isArray(userModifiedBlockIds) ? userModifiedBlockIds : []);
-
-      // If local_only mode or no GEMINI_API_KEY is configured
-      if (mode === "local_only" || !process.env.GEMINI_API_KEY) {
-        return res.json({
-          success: true,
-          requestFingerprint: calculatedFingerprint,
-          totalBlocks: blocks.length,
-          reviewedBlocksCount: blocks.length,
-          unreviewedBlocksCount: 0,
-          proposals: fallbackProposals,
-          source: "rule_fallback",
-          isFallback: true,
-          notice: "Chưa kiểm tra bằng AI (Chế độ nội bộ / Chưa cấu hình khóa API Gemini)."
-        });
+      const injectedProvider = options.partitionAiProviderFactory?.(req);
+      if (!injectedProvider && !process.env.GEMINI_API_KEY) {
+        return res.status(503).json({ error: "Dịch vụ AI chưa được cấu hình; phân vùng quy tắc vẫn hoạt động trong ứng dụng." });
       }
-
-      // Process long documents by chunking without truncation
-      const chunks = chunkBlocksForAnalysis(blocks, 25);
-      const validatedAiProposals: any[] = [];
-      let lastActiveModel = GEMINI_MODEL;
-      let totalReviewedBlocks = 0;
-
-      for (let cIdx = 0; cIdx < chunks.length; cIdx++) {
-        const chunk = chunks[cIdx];
-        const prompt = buildPartitionPrompt(chunk, cIdx, chunks.length, activeRegime);
-
-        try {
-          const { response, activeModel } = await generateContentWithModelFallback({
-            contents: prompt,
-            config: {
-              responseMimeType: "application/json",
-              temperature: 0.1,
+      res.status(200);
+      res.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
+      res.setHeader("Cache-Control", "no-cache, no-transform");
+      res.flushHeaders();
+      const result = await runPartitionAiService(
+        req.body,
+        injectedProvider ?? (async (prompt, signal) => {
+            const { response, activeModel } = await generateContentWithModelFallback({
+              contents: prompt,
+              config: { responseMimeType: "application/json", temperature: 0.1, abortSignal: signal },
+            });
+            return { text: response.text || "", model: activeModel };
+          }),
+        {
+          timeoutMs: 30000,
+          chunkSize: 25,
+          concurrency: 2,
+          signal: abortController.signal,
+          onChunkResult: chunk => {
+            if (!res.writableEnded && !res.destroyed) {
+              res.write(`${JSON.stringify({ type: "chunk", chunk })}\n`);
             }
-          });
-          lastActiveModel = activeModel;
-          totalReviewedBlocks += chunk.length;
-
-          const textRes = response.text || "{}";
-          const firstBrace = textRes.indexOf("{");
-          const lastBrace = textRes.lastIndexOf("}");
-          let parsed: { proposals?: any[] } = {};
-          if (firstBrace !== -1 && lastBrace !== -1) {
-            try {
-              parsed = JSON.parse(textRes.slice(firstBrace, lastBrace + 1));
-            } catch {
-              parsed = {};
-            }
-          }
-
-          if (Array.isArray(parsed.proposals)) {
-            for (const rawProp of parsed.proposals) {
-              const valid = validateProposalAgainstSource(rawProp, blocksById, userModifiedSet, activeRegime);
-              if (valid && !validatedAiProposals.some(p => p.sourceBlockId === valid.sourceBlockId)) {
-                validatedAiProposals.push(valid);
-              }
-            }
-          }
-        } catch (chunkErr: any) {
-          console.warn(`[AI PARTITION CHUNK ERROR] Chunk ${cIdx + 1}/${chunks.length}:`, chunkErr?.message?.slice(0, 100));
-          // If a chunk fails, stop and preserve whatever has been verified
-          break;
-        }
+          },
+        },
+      );
+      if (!res.writableEnded && !res.destroyed) {
+        res.end(`${JSON.stringify({ type: "final", response: result })}\n`);
       }
-
-      // Merge fallback proposals for blocks not covered by AI proposals
-      const combinedProposals = [...validatedAiProposals];
-      for (const fb of fallbackProposals) {
-        if (!combinedProposals.some(p => p.sourceBlockId === fb.sourceBlockId)) {
-          combinedProposals.push(fb);
-        }
+    } catch (error: any) {
+      if (res.headersSent) {
+        if (!res.writableEnded && !res.destroyed) res.end();
+        return;
       }
-
-      return res.json({
-        success: true,
-        requestFingerprint: calculatedFingerprint,
-        totalBlocks: blocks.length,
-        reviewedBlocksCount: totalReviewedBlocks,
-        unreviewedBlocksCount: Math.max(0, blocks.length - totalReviewedBlocks),
-        proposals: combinedProposals,
-        source: validatedAiProposals.length > 0 ? "gemini_ai" : "rule_fallback",
-        model: lastActiveModel,
-        isFallback: validatedAiProposals.length === 0,
-        notice: validatedAiProposals.length > 0 
-          ? `Đã hoàn tất phân tích phân vùng bằng AI (${totalReviewedBlocks}/${blocks.length} khối).`
-          : "Chưa kiểm tra bằng AI (Dịch vụ AI không khả dụng hoặc không có đề xuất mới; sử dụng quy tắc nội bộ)."
-      });
-    } catch (err: any) {
-      console.warn("[AI PARTITION ERROR] Falling back to rule analyzer:", err?.message?.slice(0, 100));
-      const activeRegime: "administrative" | "party" = req.body?.regime === "party" ? "party" : "administrative";
-      const blocks = Array.isArray(req.body?.blocks) ? req.body.blocks : [];
-      const fallbackProposals = analyzePartitionFallback(blocks, activeRegime, req.body?.userModifiedBlockIds || []);
-      return res.json({
-        success: true,
-        requestFingerprint: req.body?.requestFingerprint || "",
-        totalBlocks: blocks.length,
-        reviewedBlocksCount: blocks.length,
-        unreviewedBlocksCount: 0,
-        proposals: fallbackProposals,
-        source: "rule_fallback",
-        isFallback: true,
-        notice: "Chưa kiểm tra bằng AI (Đã chuyển sang phân tích quy tắc nội bộ do lỗi kết nối)."
-      });
+      if (error instanceof PartitionAiRequestError) {
+        return res.status(error.statusCode).json({ error: error.message });
+      }
+      console.warn("[AI PARTITION ERROR] AI partition service did not complete:", error?.message?.slice(0, 100));
+      return res.status(503).json({ error: "AI phân vùng hiện không khả dụng; phân vùng quy tắc vẫn hoạt động trong ứng dụng." });
+    } finally {
+      req.off("aborted", abortOnDisconnect);
+      res.off("close", abortOnDisconnect);
     }
   });
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
-      server: { 
-        middlewareMode: true,
-        fs: { strict: false }
-      },
+      ...(process.env.DOCFORM_TEST_NO_VITE_CONFIG === "true" ? {
+        configFile: false,
+        plugins: [react(), tailwindcss()],
+        resolve: { alias: { "@": __dirname } },
+      } : {}),
+      cacheDir: process.env.DOCFORM_TEST_NO_VITE_CONFIG === "true"
+        ? path.join(__dirname, `.vite-test-cache-${PORT}`)
+        : undefined,
+      server: { middlewareMode: true, hmr: false, fs: { strict: false, allow: [__dirname, process.cwd()] } },
       appType: "spa",
     });
     app.use(vite.middlewares);
@@ -688,4 +661,6 @@ Hãy trả về JSON thuần túy (không markdown bao quanh) với cấu trúc:
   });
 }
 
-startServer();
+if (isServerEntryPoint()) {
+  void startServer();
+}

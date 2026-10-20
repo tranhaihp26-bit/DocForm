@@ -11,9 +11,10 @@ import type {
   AppendixDocument,
   SourceRegion,
 } from "../shared/schemas/document.schema.ts";
-import { detectDocumentType } from "./parser.ts";
 import { classifyTable, type TableClassificationResult, type TableOwner, type TableRole } from "./tableRoleClassifier.ts";
+import { isSeparatorParagraph } from "../shared/separator.ts";
 export { classifyTable, type TableClassificationResult, type TableOwner, type TableRole };
+export { isSeparatorParagraph };
 
 /**
  * Standard regex patterns for Vietnamese administrative & party documents
@@ -27,6 +28,99 @@ export const DOC_TYPE_KEYWORDS = [
   "QUYẾT ĐỊNH", "KẾ HOẠCH", "TỜ TRÌNH", "THÔNG BÁO", "NGHỊ QUYẾT",
   "BÁO CÁO", "NGHỊ ĐỊNH", "CHỈ THỊ", "HƯỚNG DẪN", "CÔNG VĂN", "BIÊN BẢN"
 ];
+
+/**
+ * True when the letters in `text` are mostly uppercase (>= 80%). Header titles
+ * and org names are uppercase; body prose is normally mixed case.
+ */
+function isUpperDominantText(text: string, threshold = 0.8): boolean {
+  const letters = text.match(/\p{L}/gu) || [];
+  if (letters.length === 0) return false;
+  let upper = 0;
+  for (const ch of letters) {
+    if (ch.toUpperCase() === ch && ch.toLowerCase() !== ch) upper += 1;
+  }
+  return upper / letters.length >= threshold;
+}
+
+/** Match a standalone document-type title line (exact, or short uppercase heading). */
+function matchDocumentTypeTitle(rawText: string): string | null {
+  const trimmed = rawText.trim();
+  if (!trimmed) return null;
+  const upper = trimmed.toUpperCase();
+  for (const kw of DOC_TYPE_KEYWORDS) {
+    if (upper === kw) return kw;
+    if ((upper.startsWith(kw + " ") || upper.startsWith(kw + ":")) && trimmed.length <= 120 && isUpperDominantText(trimmed)) {
+      return kw;
+    }
+  }
+  return null;
+}
+
+/**
+ * Normalise a reference-number line according to the **confirmed** regime.
+ * Party documents keep the "Số " form (no colon); administrative documents
+ * use "Số: ". This is the single normalisation path used by segmentation,
+ * reconstruction and the UI regime switch.
+ */
+export function formatReferenceNumber(rawLine: string, standardType?: string): string {
+  const trimmed = rawLine.trim();
+  if (!trimmed) return trimmed;
+  const isParty = standardType === "party";
+  // Preserve an explicit colon written in the source (data preservation).
+  if (/^Số\s*:/iu.test(trimmed)) return trimmed;
+  const value = trimmed.replace(/^Số\s+/iu, "").trim();
+  if (!value) return trimmed;
+  return isParty ? `Số ${value}` : `Số: ${value}`;
+}
+
+/**
+ * A leading paragraph may only become an organisation header when it looks like
+ * an org name (uppercase-dominant or a recognisable org prefix), not when it is
+ * a normal body sentence. Prevents case F (no header) from swallowing the body.
+ */
+export function isOrgNameLikeLine(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed || trimmed.length > 140) return false;
+  if (/[.;:,]\s*$/u.test(trimmed)) return false;
+  if (/^(?:[-+*•]|\d+[.)])\s+/u.test(trimmed)) return false;
+  if (isUpperDominantText(trimmed)) return true;
+  return /^(?:CÔNG TY|TỔNG CÔNG TY|SỞ|PHÒNG|BAN|CHI CỤC|TRUNG TÂM|VIỆN|TRƯỜNG|CỤC|ĐOÀN|HỘI|ỦY BAN|UBND|ĐẢNG ỦY|ĐẢNG BỘ|CHI BỘ)\b/iu.test(trimmed);
+}
+
+/**
+ * A table can carry the document-type title (1-column title table, or a table
+ * whose non-empty cells are all title lines). Returns the matched type and the
+ * cell coordinate so the field keeps real provenance.
+ */
+function findDocumentTypeInTable(
+  block: SourceBlock
+): { value: string; cell: { rowIndex: number; colIndex: number }; quote: string } | null {
+  const rows = block.tableData || [];
+  const nonEmpty: Array<{ text: string; rowIndex: number; colIndex: number }> = [];
+  for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+    const row = rows[rowIndex] || [];
+    for (let colIndex = 0; colIndex < row.length; colIndex++) {
+      const text = (row[colIndex] || "").trim();
+      if (text) nonEmpty.push({ text, rowIndex, colIndex });
+    }
+  }
+  if (nonEmpty.length === 0) return null;
+
+  for (const cell of nonEmpty) {
+    const keyword = matchDocumentTypeTitle(cell.text);
+    if (!keyword) continue;
+    // For multi-cell tables only accept when every non-empty cell is a title line,
+    // so a data table is never removed from the body just because one cell matches.
+    if (nonEmpty.length > 1 && !nonEmpty.every((c) => Boolean(matchDocumentTypeTitle(c.text)))) {
+      continue;
+    }
+    return { value: keyword, cell: { rowIndex: cell.rowIndex, colIndex: cell.colIndex }, quote: cell.text };
+  }
+  return null;
+}
+
+
 
 function extractHeaderDate(text: string): Pick<ExtractedField<string>, "value" | "confidence" | "status"> | null {
   for (const sourceLine of text.split(/\r?\n/)) {
@@ -347,7 +441,7 @@ export function segmentSourceBlocks(
       const refMatch = line.match(REF_NUMBER_REGEX);
       if (refMatch) {
         fields.referenceNumber = {
-          value: line.startsWith("Số:") ? line : `Số: ${line.replace(/^Số\s*/i, "").trim()}`,
+          value: formatReferenceNumber(line, options.standardType),
           confidence: "high",
           status: "extracted",
           sourceBlockIds: [headerBlock.id],
@@ -392,7 +486,7 @@ export function segmentSourceBlocks(
           const refMatch = part.match(REF_NUMBER_REGEX);
           if (refMatch && !fields.referenceNumber.value) {
             fields.referenceNumber = {
-              value: part.startsWith("Số:") ? part : `Số: ${part.replace(/^Số\s*/i, "").trim()}`,
+              value: formatReferenceNumber(part, options.standardType),
               confidence: "high",
               status: "extracted",
               sourceBlockIds: [b.id],
@@ -448,7 +542,7 @@ export function segmentSourceBlocks(
         const refMatch = part.match(REF_NUMBER_REGEX);
         if (refMatch && !fields.referenceNumber.value) {
           fields.referenceNumber = {
-            value: part.startsWith("Số:") ? part : `Số: ${part.replace(/^Số\s*/i, "").trim()}`,
+            value: formatReferenceNumber(part, options.standardType),
             confidence: "high", status: "extracted", sourceBlockIds: [b.id]
           };
           isHeaderPart = true;
@@ -464,7 +558,7 @@ export function segmentSourceBlocks(
         b.role = "header";
         headerBlockIds.push(b.id);
         nextStartIndex = pIdx + 1;
-      } else if (!fields.nationalHeader1.value && pIdx < 3 && text.length <= 120 && !/[.!?]\s+[A-ZĐ]/.test(text)) {
+      } else if (!fields.nationalHeader1.value && pIdx < 3 && text.length <= 120 && isOrgNameLikeLine(text)) {
         if (!fields.orgHeader2.value) {
           fields.orgHeader2 = { value: text, confidence: "medium", status: "extracted", sourceBlockIds: [b.id] };
         } else if (!fields.orgHeader1.value) {
@@ -516,50 +610,77 @@ export function segmentSourceBlocks(
   // =========================================================================
   // STEP 3: DOCUMENT TYPE & SUBJECT
   // =========================================================================
-  const docTypeKeywords = [
-    "QUYẾT ĐỊNH", "KẾ HOẠCH", "TỜ TRÌNH", "THÔNG BÁO", "NGHỊ QUYẾT",
-    "BÁO CÁO", "NGHỊ ĐỊNH", "CHỈ THỊ", "HƯỚNG DẪN", "CÔNG VĂN", "BIÊN BẢN"
-  ];
-
+  // The document-type keyword list is `DOC_TYPE_KEYWORDS`; the title is matched
+  // through `matchDocumentTypeTitle` so the paragraph path and the table path
+  // apply exactly the same rule (S2-F01).
   let docTypeIndex = -1;
-  const docTypeSearchStart = options.fileType === "txt" ? 0 : nextStartIndex;
-  for (let i = docTypeSearchStart; i < Math.min(docTypeSearchStart + 8, total); i++) {
-    const b = blocks[i];
-    if (b.kind !== "paragraph") continue;
-    const text = b.text.trim().toUpperCase();
-    if (!text) continue;
+  // Search order: the original window (blocks after the header/date steps) first,
+  // then the earlier lead blocks. The title may precede a body opening that also
+  // carries the date, so we must not lose it. Only blocks/cells with real content
+  // are accepted as provenance; no provenance-free inference.
+  const primaryStart = options.fileType === "txt" ? 0 : nextStartIndex;
+  const candidateIndexes: number[] = [];
+  for (let i = primaryStart; i < Math.min(primaryStart + 8, total); i++) candidateIndexes.push(i);
+  if (options.fileType !== "txt") {
+    for (let i = 0; i < Math.min(primaryStart, 10); i++) {
+      if (!candidateIndexes.includes(i)) candidateIndexes.push(i);
+    }
+  }
 
-    for (const kw of docTypeKeywords) {
-      if (text === kw || text.startsWith(kw + " ") || text.startsWith(kw + ":")) {
+  for (const i of candidateIndexes) {
+    const b = blocks[i];
+    if (!b || b.role === "header") continue;
+
+    if (b.kind === "table") {
+      const tableTitle = findDocumentTypeInTable(b);
+      if (tableTitle) {
         docTypeIndex = i;
         b.role = "metadata";
         fields.documentType = {
-          value: text,
+          value: tableTitle.value,
           confidence: "high",
           status: "extracted",
           sourceBlockIds: [b.id],
+          sourceCell: tableTitle.cell,
+          exactQuote: tableTitle.quote,
         };
         break;
       }
+      continue;
     }
-    if (docTypeIndex !== -1) break;
+
+    if (b.kind !== "paragraph") continue;
+    const trimmed = b.text.trim();
+    const text = trimmed.toUpperCase();
+    if (!text) continue;
+
+    // S2-F01 (tái audit 20/10/2026): a body sentence that merely *starts* with
+    // a document-type keyword ("Báo cáo tình hình thực hiện nhiệm vụ …") must
+    // NOT be promoted to the document type and must NOT leave the body. The
+    // paragraph path now uses exactly the same rule as the table path
+    // (`matchDocumentTypeTitle`): an exact keyword, or a short
+    // uppercase-dominant heading. The detector (`regimeDetection.ts`) already
+    // applied this rule, so the two stages no longer disagree.
+    const keyword = matchDocumentTypeTitle(trimmed);
+    if (keyword) {
+      docTypeIndex = i;
+      b.role = "metadata";
+      fields.documentType = {
+        value: text,
+        confidence: "high",
+        status: "extracted",
+        sourceBlockIds: [b.id],
+        exactQuote: trimmed,
+      };
+      break;
+    }
   }
 
-  if (docTypeIndex === -1) {
-    // Infer only when the source actually mentions a document type.
-    const fullText = blocks.slice(0, 10).map(b => b.text).join("\n");
-    if (docTypeKeywords.some(keyword => fullText.toUpperCase().includes(keyword))) {
-      const detected = detectDocumentType(fullText, options.standardType);
-      fields.documentType = {
-        value: detected,
-        confidence: "medium",
-        status: "extracted",
-        sourceBlockIds: [],
-      };
-    }
-  } else {
+  if (docTypeIndex !== -1) {
     nextStartIndex = Math.max(nextStartIndex, docTypeIndex + 1);
   }
+  // No provenance-free inference: when no block or table cell actually carries
+  // a title, `documentType` stays missing and the user can choose it manually.
 
   // Subject extraction (block following documentType)
   if (nextStartIndex < total) {
@@ -594,7 +715,7 @@ export function segmentSourceBlocks(
 
   while (nextStartIndex < total) {
     const b = blocks[nextStartIndex];
-    if (b.kind === "paragraph" && /^[-–—_\s*]{3,10}$/.test(b.text.trim())) {
+    if (b.kind === "paragraph" && isSeparatorParagraph(b.text)) {
       if (exporterWillRenderSeparator) {
         b.role = "separator";
       } else {
@@ -959,6 +1080,22 @@ export function segmentSourceBlocks(
   // =========================================================================
   const bodyBlockIds: string[] = [];
   const bodyHtmlParts: string[] = [];
+
+  // S2-F02 (tái audit 20/10/2026): khi bộ xuất sẽ tự sinh lại dấu phân cách
+  // "-----" (thể thức Đảng, có trích yếu, không phải công văn), mọi dòng kẻ
+  // dạng dấu gạch trong thân bài phải được loại khỏi body để DOCX chỉ có
+  // **một** dấu phân cách đúng vị trí. Trước đây chỉ dấu nằm ngay sau trích
+  // yếu mới bị loại; dấu nằm ở vị trí khác vẫn nằm trong bodyHtml và bộ xuất
+  // sinh thêm một dấu → Word có hai dấu "-----".
+  if (exporterWillRenderSeparator) {
+    for (let i = nextStartIndex; i < bodyEndExclusive; i++) {
+      const b = blocks[i];
+      if (b.role !== "unclassified") continue;
+      if (b.kind === "paragraph" && isSeparatorParagraph(b.text)) {
+        b.role = "separator";
+      }
+    }
+  }
 
   for (let i = nextStartIndex; i < bodyEndExclusive; i++) {
     const b = blocks[i];

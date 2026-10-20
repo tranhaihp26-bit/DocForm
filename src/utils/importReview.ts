@@ -9,7 +9,8 @@ import {
   DOC_TYPE_KEYWORDS, 
   DATE_LOCATION_REGEX,
   NATIONAL_HEADER_1_REGEX,
-  NATIONAL_HEADER_2_REGEX
+  NATIONAL_HEADER_2_REGEX,
+  formatReferenceNumber
 } from "../server/structuralSegmenter.ts";
 
 export interface ReconstructedDocumentState {
@@ -256,7 +257,7 @@ export function reconstructFromReviewedBlocks(
         for (const line of leftLines) {
           const refMatch = line.match(REF_NUMBER_REGEX);
           if (refMatch && !referenceNumber) {
-            referenceNumber = line.startsWith("Số:") ? line : `Số: ${line.replace(/^Số\s*/i, "").trim()}`;
+            referenceNumber = formatReferenceNumber(line, standardType);
           } else if (!line.includes("---") && !line.includes("___")) {
             nonRefLines.push(line);
           }
@@ -299,11 +300,7 @@ export function reconstructFromReviewedBlocks(
           }
           const refMatch = line.match(REF_NUMBER_REGEX);
           if (refMatch && !referenceNumber) {
-            if (/^Số\s*[:\s]/i.test(line)) {
-              referenceNumber = line.trim();
-            } else {
-              referenceNumber = standardType === "party" ? `Số ${line.trim()}` : `Số: ${line.trim()}`;
-            }
+            referenceNumber = formatReferenceNumber(line, standardType);
             continue;
           }
           nonRefLines.push(line);
@@ -352,7 +349,7 @@ export function reconstructFromReviewedBlocks(
           }
         } else if (/^(?:V\/v|Về việc)\s+/i.test(line)) {
           if (!subject) subject = line;
-        } else if (!subject && documentType && line !== documentType) {
+        } else if (!subject && documentType && line !== documentType && !DATE_LOCATION_REGEX.test(line) && !/^Số\s*:?\s/iu.test(line)) {
           subject = line;
         }
       }

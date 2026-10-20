@@ -20,11 +20,70 @@ import type {
 import { reconcileRunsWithNewText } from "./tableFormatUtils.ts";
 import { tableModelToHtmlView } from "../shared/tableModel.ts";
 
+export interface ReviewProposalBatchContext {
+  sourceGeneration: number;
+  standardType: "state" | "party";
+  partitionRevision: number;
+  partitionFingerprint?: string;
+}
+
+/**
+ * S1-F01 (tái audit 20/10/2026): ngữ cảnh của đề xuất "AI tinh chỉnh"
+ * (`/api/ai/refine-text`). Kênh này ghi đè **toàn bộ** `bodyHtml` nên phải
+ * ràng buộc chặt hơn kênh đề xuất rà soát: đề xuất chỉ được hiện và áp dụng
+ * cho đúng thế hệ nguồn, đúng thể thức, đúng revision phân vùng và đúng
+ * mã băm nguồn mà nó được tạo ra.
+ */
+export interface RefineProposalContext {
+  sourceGeneration: number;
+  standardType: "state" | "party";
+  partitionRevision: number;
+  sourceHash: string;
+}
+
+/**
+ * Kiểm tra ngữ cảnh đề xuất tinh chỉnh còn hiệu lực hay không.
+ * Trả `false` khi ngữ cảnh thiếu, khi thế hệ nguồn / thể thức / revision phân
+ * vùng đã đổi, hoặc khi mã băm nguồn không còn khớp (người dùng đã đổi nguồn
+ * sang tệp khác, kể cả cùng bytes).
+ */
+export function isRefineProposalContextValid(
+  proposalContext: RefineProposalContext | null | undefined,
+  currentContext: RefineProposalContext
+): boolean {
+  if (!proposalContext) return false;
+  return (
+    proposalContext.sourceGeneration === currentContext.sourceGeneration &&
+    proposalContext.standardType === currentContext.standardType &&
+    proposalContext.partitionRevision === currentContext.partitionRevision &&
+    proposalContext.sourceHash === currentContext.sourceHash
+  );
+}
+
+export function computePartitionFingerprint(blocks: SourceBlock[]): string {
+  if (!blocks || blocks.length === 0) return "";
+  return blocks.map(b => `${b.id}:${b.role || "unclassified"}`).join(";");
+}
+
+export function isReviewProposalBatchValid(
+  batchContext: ReviewProposalBatchContext | null | undefined,
+  currentContext: ReviewProposalBatchContext
+): boolean {
+  if (!batchContext) return false;
+  return (
+    batchContext.sourceGeneration === currentContext.sourceGeneration &&
+    batchContext.standardType === currentContext.standardType &&
+    batchContext.partitionRevision === currentContext.partitionRevision
+  );
+}
+
 export interface CanonicalWorkflowState {
   reviewBlocks: SourceBlock[];
   structuredImport?: StructuredImport | null;
   doc: DocumentState;
   acceptedProposalIds: Set<string>;
+  proposalBatchContext?: ReviewProposalBatchContext | null;
+  currentContext?: ReviewProposalBatchContext;
 }
 
 export interface ProposalApplyResult {
@@ -46,17 +105,12 @@ export function changeBlockRole(
   
   let nextImport: StructuredImport | null = null;
   if (structuredImport) {
-    const activeContentTableIds = nextBlocks
-      .filter(b => b.kind === "table" && b.role !== "header" && b.role !== "signature")
-      .map(b => b.tableModel?.tableId || b.id);
-
     nextImport = {
       ...structuredImport,
       blocks: nextBlocks,
-      importFidelityManifest: structuredImport.importFidelityManifest ? {
-        ...structuredImport.importFidelityManifest,
-        tableIds: activeContentTableIds,
-      } : undefined,
+      // Source inventory is immutable provenance. Export policy must account for
+      // role tables explicitly instead of deleting IDs to make the gate pass.
+      importFidelityManifest: structuredImport.importFidelityManifest,
     };
   }
 
@@ -74,12 +128,14 @@ export function splitTopLevelHtml(html: string): string[] {
   let lastIndex = 0;
   let blockStart = 0;
   let match: RegExpExecArray | null;
-  const voidTags = new Set(["br", "hr", "img", "input", "meta", "link"]);
+  const voidTags = new Set(["area", "base", "br", "col", "embed", "hr", "img", "input", "meta", "link", "param", "source", "track", "wbr"]);
 
   while ((match = tagRegex.exec(html)) !== null) {
     const isClosing = Boolean(match[1]);
     const tagName = match[2].toLowerCase();
-    const isSelfClosing = Boolean(match[3]) || voidTags.has(tagName);
+    // The attribute matcher may consume the slash before the optional capture.
+    // Inspect the complete token so <col ... /> cannot swallow later tables.
+    const isSelfClosing = Boolean(match[3]) || /\/\s*>$/.test(match[0]) || voidTags.has(tagName);
 
     if (depth === 0) {
       if (match.index > lastIndex) {
@@ -290,7 +346,16 @@ export function applySingleProposal(
   proposal: ReviewProposal,
   currentState: CanonicalWorkflowState
 ): ProposalApplyResult {
-  const { reviewBlocks, structuredImport, doc, acceptedProposalIds } = currentState;
+  const { reviewBlocks, structuredImport, doc, acceptedProposalIds, proposalBatchContext, currentContext } = currentState;
+
+  if (proposalBatchContext && currentContext) {
+    if (!isReviewProposalBatchValid(proposalBatchContext, currentContext)) {
+      return {
+        success: false,
+        reason: "Đề xuất đã hết hiệu lực do thể thức, nguồn hoặc phân vùng tài liệu đã thay đổi.",
+      };
+    }
+  }
 
   if (acceptedProposalIds.has(proposal.id)) {
     return {
@@ -339,6 +404,8 @@ export function applySingleProposal(
         structuredImport: nextImport,
         doc: nextDoc,
         acceptedProposalIds: nextAccepted,
+        proposalBatchContext,
+        currentContext,
       },
     };
   }
@@ -541,6 +608,8 @@ export function applySingleProposal(
         structuredImport: nextStructuredImport,
         doc: nextDoc,
         acceptedProposalIds: nextAccepted,
+        proposalBatchContext,
+        currentContext,
       },
     };
   }
@@ -569,6 +638,8 @@ export function applySingleProposal(
         structuredImport,
         doc: nextDoc,
         acceptedProposalIds: nextAccepted,
+        proposalBatchContext,
+        currentContext,
       },
     };
   }
@@ -591,6 +662,15 @@ export function applyAllProposalsSequentially(
   appliedCount: number;
   rejectedReasons: string[];
 } {
+  if (initialState.proposalBatchContext && initialState.currentContext) {
+    if (!isReviewProposalBatchValid(initialState.proposalBatchContext, initialState.currentContext)) {
+      return {
+        finalState: initialState,
+        appliedCount: 0,
+        rejectedReasons: ["Đề xuất đã hết hiệu lực do thể thức, nguồn hoặc phân vùng tài liệu đã thay đổi."],
+      };
+    }
+  }
   let state = initialState;
   let appliedCount = 0;
   const rejectedReasons: string[] = [];

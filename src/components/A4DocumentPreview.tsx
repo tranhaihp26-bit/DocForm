@@ -15,7 +15,7 @@ import {
 } from "../canonical/nd30/companyHeader.ts";
 import {
   COMPANY_HEADER_HD05_PROFILE_ID, COMPANY_HEADER_HD05_GEOMETRY_MM,
-  COMPANY_HEADER_HD05_PARENT_LINES, COMPANY_HEADER_HD05_ISSUER_LINES,
+  COMPANY_HEADER_HD05_PARENT_LINES, COMPANY_HEADER_HD05_ISSUER_LINES, COMPANY_HEADER_HD05_TITLE,
 } from "../canonical/hd05/companyHeaderHD05.ts";
 import { optimizeTableHtml } from "../utils/tableFormatUtils.ts";
 
@@ -40,10 +40,17 @@ export interface A4DocumentPreviewProps {
 function positionCompanyTableInDocxPreview(root: HTMLElement, isParty: boolean) {
   if (isParty) {
     const table = Array.from(root.querySelectorAll("table"))
-      .find((candidate) => candidate.textContent?.includes(COMPANY_HEADER_HD05_ISSUER_LINES[0]));
+      .find((candidate) => candidate.textContent?.includes(COMPANY_HEADER_HD05_TITLE));
     if (!table) return;
     table.style.marginLeft = `${COMPANY_HEADER_HD05_GEOMETRY_MM.headerIndent}mm`;
+    table.style.width = `${COMPANY_HEADER_HD05_GEOMETRY_MM.headerWidth}mm`;
+    table.style.minWidth = `${COMPANY_HEADER_HD05_GEOMETRY_MM.headerWidth}mm`;
     table.style.tableLayout = "fixed";
+    const headerCells = table.rows[0]?.cells;
+    if (headerCells?.length === 2) {
+      headerCells[0].style.width = `${COMPANY_HEADER_HD05_GEOMETRY_MM.leftColumn}mm`;
+      headerCells[1].style.width = `${COMPANY_HEADER_HD05_GEOMETRY_MM.rightColumn}mm`;
+    }
   } else {
     const table = Array.from(root.querySelectorAll("table"))
       .find((candidate) => candidate.textContent?.includes(COMPANY_HEADER_ISSUER_LINES[0]));
@@ -291,7 +298,7 @@ export const A4DocumentPreview: React.FC<A4DocumentPreviewProps> = ({
             marginLeft: `${COMPANY_HEADER_GEOMETRY_MM.headerIndent}mm`,
             gridTemplateColumns: `${COMPANY_HEADER_GEOMETRY_MM.leftColumn}mm ${COMPANY_HEADER_GEOMETRY_MM.rightColumn}mm`,
             fontFamily: "'Times New Roman', Times, serif",
-            lineHeight: 1.15,
+            lineHeight: "18pt",
           }}
         >
           <div>
@@ -337,27 +344,18 @@ export const A4DocumentPreview: React.FC<A4DocumentPreviewProps> = ({
               <p style={{ fontSize: "14pt" }}>{COMPANY_HEADER_HD05_PARENT_LINES[0]}<br />{COMPANY_HEADER_HD05_PARENT_LINES[1]}</p>
             )}
             {doc.orgHeader2 && !doc.orgHeader2.includes("[Tên") ? (
-              <div className="font-bold mt-0.5" style={{ fontSize: "14pt" }}>
+              <div className="font-bold" style={{ fontSize: "14pt" }}>
                 {doc.orgHeader2.split("\n").map((line, idx) => (
-                  <p key={idx} className="leading-tight">{line}</p>
+                  <p key={idx}>{line}</p>
                 ))}
               </div>
             ) : (
-              <p className="font-bold whitespace-nowrap mt-0.5" style={{ fontSize: "14pt" }}>
+              <p className="font-bold whitespace-nowrap" style={{ fontSize: "14pt" }}>
                 {COMPANY_HEADER_HD05_ISSUER_LINES[0]}<br />{COMPANY_HEADER_HD05_ISSUER_LINES[1]}
               </p>
             )}
             {/* Dấu hoa thị * cân đối giữa cơ quan và số/ký hiệu theo HD 05 */}
-            <p className="font-bold mt-0.5 leading-none" style={{ fontSize: "14pt" }}>*</p>
-          </div>
-          <div>
-            <div className="inline-flex flex-col items-center">
-              <p className="font-bold whitespace-nowrap" style={{ fontSize: "15pt" }}>ĐẢNG CỘNG SẢN VIỆT NAM</p>
-              {/* Nét liền 100% bằng độ dài chữ ĐẢNG CỘNG SẢN VIỆT NAM theo HD 05 */}
-              <div className="w-full border-b border-black mt-0.5" />
-            </div>
-          </div>
-          <div className="mt-1">
+            <p className="font-bold" style={{ fontSize: "14pt" }}>*</p>
             <p style={{ fontSize: "14pt" }}>{doc.referenceNumber || <span className="df-preview-placeholder no-print">Chưa nhập số hiệu</span>}</p>
             {isPartyOfficialLetter && doc.subject && (
               <p className="text-[12pt] italic font-normal mt-2 text-center leading-snug">
@@ -365,7 +363,16 @@ export const A4DocumentPreview: React.FC<A4DocumentPreviewProps> = ({
               </p>
             )}
           </div>
-          <p className="mt-1 italic text-right" style={{ fontSize: "14pt" }}>{doc.locationAndDate || <span className="df-preview-placeholder no-print">Chưa nhập địa danh, ngày tháng</span>}</p>
+          <div className="text-right">
+            <div className="inline-flex flex-col items-stretch text-right">
+              <p className="font-bold whitespace-nowrap" style={{ fontSize: "15pt" }}>ĐẢNG CỘNG SẢN VIỆT NAM</p>
+              {/* Nét liền 100% bằng độ dài chữ ĐẢNG CỘNG SẢN VIỆT NAM theo HD 05 */}
+              <div className="w-full border-b border-black mt-0.5" />
+            </div>
+            <p className="italic text-right whitespace-nowrap" style={{ fontSize: "14pt", marginTop: "9pt" }}>
+              {doc.locationAndDate || <span className="df-preview-placeholder no-print">Chưa nhập địa danh, ngày tháng</span>}
+            </p>
+          </div>
         </div>
       )}
       {!hasEmbeddedHeader && !isCompanyHeader && !isCompanyHeaderHD05 && (
@@ -905,3 +912,67 @@ export const A4DocumentPreview: React.FC<A4DocumentPreviewProps> = ({
     </div>
   );
 };
+
+/** Main Workspace preview: consumes validated bytes; never composes or regenerates a DOCX. */
+export function CandidateDocumentPreview({bytes,sha256,instanceId}:{bytes:Uint8Array;sha256:string;instanceId:string}) {
+  const host=useRef<HTMLDivElement>(null);
+  const viewport=useRef<HTMLDivElement>(null);
+  const [error,setError]=useState('');
+  const [ready,setReady]=useState(false);
+  const [renderedSha,setRenderedSha]=useState('');
+  const [zoomMode,setZoomMode]=useState<'fit'|'actual'>('fit');
+  const [viewportWidth,setViewportWidth]=useState(0);
+  const [geometry,setGeometry]=useState<{width:number;height:number;pageWidth:number;pageCount:number}|null>(null);
+  useEffect(()=>{
+    let cancelled=false;
+    setReady(false);setRenderedSha('');setError('');setGeometry(null);setZoomMode('fit');host.current?.replaceChildren();
+    const staging=document.createElement('div');
+    const renderBytes=new Uint8Array(bytes);
+    const render=async()=>{const hash=await crypto.subtle.digest('SHA-256',renderBytes.buffer);const actualSha=[...new Uint8Array(hash)].map(b=>b.toString(16).padStart(2,'0')).join('');if(actualSha!==sha256)throw Error('Bytes bản xem không khớp ứng viên.');await renderAsync(renderBytes.buffer,staging,undefined,{inWrapper:true,breakPages:true,ignoreFonts:false,experimental:true});await document.fonts?.ready;const images=[...staging.querySelectorAll('img')];await Promise.all(images.map(image=>image.decode?.().catch(()=>undefined)));return actualSha;};
+    const nextFrame=()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())));
+    render().then(async actualSha=>{
+      if(cancelled||!host.current)return;
+      host.current.replaceChildren(...Array.from(staging.childNodes));
+      await nextFrame();
+      if(cancelled||!host.current)return;
+      const wrapper=(host.current.querySelector('.docx-wrapper') as HTMLElement|null)??host.current.firstElementChild as HTMLElement|null;
+      if(!wrapper)throw Error('Bản DOCX không có trang để xem.');
+      const pageEls=[...wrapper.querySelectorAll<HTMLElement>(':scope > .docx, section.docx, .docx-page')];
+      const pages=pageEls.length?pageEls:[...wrapper.children].filter((node):node is HTMLElement=>node instanceof HTMLElement);
+      pages.forEach((page,index)=>page.dataset.previewPage=String(index+1));
+      const widths=pages.map(page=>page.getBoundingClientRect().width||page.offsetWidth).filter(width=>width>0);
+      const width=Math.max(wrapper.scrollWidth,wrapper.getBoundingClientRect().width,wrapper.offsetWidth);
+      const height=Math.max(wrapper.scrollHeight,wrapper.getBoundingClientRect().height,wrapper.offsetHeight);
+      const pageWidth=Math.max(...widths,width);
+      setGeometry({width,height,pageWidth,pageCount:pages.length});setRenderedSha(actualSha);setReady(true);
+    }).catch(e=>{if(!cancelled)setError(String(e));});
+    return()=>{cancelled=true;};
+  },[bytes,sha256,instanceId]);
+  useEffect(()=>{
+    const node=viewport.current;if(!node)return;
+    const measure=()=>setViewportWidth(node.clientWidth);
+    measure();
+    const observer=new ResizeObserver(measure);observer.observe(node);
+    return()=>observer.disconnect();
+  },[]);
+  const scale=ready&&geometry&&zoomMode==='fit'&&viewportWidth>0?Math.min(1,Math.max(.1,(viewportWidth-32)/geometry.pageWidth)):1;
+  const layoutWidth=geometry?geometry.width*scale:undefined;
+  const layoutHeight=geometry?geometry.height*scale:undefined;
+  return <section data-candidate-preview data-preview-bytes-sha={renderedSha||undefined} data-candidate-sha={sha256} data-candidate-instance={instanceId} data-preview-page-count={ready?geometry?.pageCount:undefined} aria-label="Bản xem DOCX ứng viên">
+    <p>Phân trang tham khảo · docx-preview. Cần đối chiếu bản in trong Word trước khi phát hành.</p>
+    {!ready&&!error&&<p role="status">Đang dựng bản xem từ DOCX đã kiểm…</p>}
+    {error&&<p role="alert">Không dựng được bản xem: {error}. Không thay bằng bản dựng khác.</p>}
+    <div className="df-candidate-preview-toolbar" role="toolbar" aria-label="Tỉ lệ bản xem">
+      <button type="button" data-preview-fit aria-pressed={zoomMode==='fit'} disabled={!ready} onClick={()=>setZoomMode('fit')}>Vừa khung</button>
+      <button type="button" data-preview-actual aria-pressed={zoomMode==='actual'} disabled={!ready} onClick={()=>setZoomMode('actual')}>100%</button>
+      {ready&&geometry&&<span role="status">{geometry.pageCount} trang · {zoomMode==='fit'?'Vừa khung':'100%'}</span>}
+    </div>
+    <div className="df-candidate-preview-scroll" ref={viewport} data-preview-mode={zoomMode} data-preview-ready={String(ready)}>
+      <div className="df-candidate-preview-frame" style={{width:layoutWidth,height:layoutHeight}}>
+        <div className="df-candidate-preview-scaled" style={{width:geometry?.width,height:geometry?.height,transform:`scale(${scale})`}}>
+          <div className="df-candidate-preview-rendered" ref={host}/>
+        </div>
+      </div>
+    </div>
+  </section>;
+}

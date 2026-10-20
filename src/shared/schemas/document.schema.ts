@@ -308,6 +308,9 @@ export interface TableCellCoordinate {
 export interface PartitionProposal {
   id?: string;
   sourceBlockId: string;
+  /** Monotonic source context that produced this proposal; absent only on legacy/local fixtures. */
+  sourceGeneration?: number;
+  partitionRevision?: number;
   currentRole: SourceRegion;
   suggestedRole: SourceRegion;
   fieldKey?: string;
@@ -315,11 +318,14 @@ export interface PartitionProposal {
   cellLocation?: {
     rowIndex: number;
     colIndex: number;
+    /** Stable source cell identity for AI proposals; optional on legacy rule proposals. */
+    cellId?: string;
   };
   reason: string;
   confidence: "high" | "medium" | "low";
   status: "pending" | "accepted" | "rejected" | "skipped";
   regime: "administrative" | "party";
+  source?: "gemini_ai" | "rule_fallback";
   componentGroupIndex?: number; // 1 to 9
   requiresUserVerification?: boolean;
 }
@@ -330,10 +336,21 @@ export interface PartitionCheckResult {
   reviewedBlocksCount: number;
   unreviewedBlocksCount: number;
   proposals: PartitionProposal[];
-  source: "gemini_ai" | "rule_fallback" | "unverified";
+  source: "gemini_ai" | "rule_fallback" | "mixed" | "unverified";
   model?: string;
   isFallback: boolean;
   notice?: string;
+  coverage?: {
+    aiReviewedBlockIds: string[];
+    ruleFallbackBlockIds: string[];
+    unreviewedBlockIds: string[];
+    chunks: Array<{
+      chunkIndex: number;
+      status: "completed" | "failed" | "timed_out" | "invalid_response";
+      blockIds: string[];
+      error?: string;
+    }>;
+  };
 }
 
 export interface SourceBlock {
@@ -364,6 +381,57 @@ export interface ExtractedField<T = string> {
   status: "extracted" | "missing" | "ambiguous" | "user_confirmed";
   sourceBlockIds: string[];
   note?: string;
+  /**
+   * Optional provenance for fields extracted from a table cell (Chặng 2).
+   * Kept optional so records written before the schema extension remain readable.
+   */
+  sourceCell?: {
+    rowIndex: number;
+    colIndex: number;
+  };
+  /** Exact original text that produced this value, when available. */
+  exactQuote?: string;
+}
+
+/** Evidence cell coordinates for a raw table block (0-based row/column). */
+export interface RegimeEvidenceCell {
+  rowIndex: number;
+  colIndex: number;
+}
+
+/**
+ * Persistent provenance of the pre-partition regime decision (Chặng 2).
+ * Stored as an optional field so older v3 drafts/versions without it still load.
+ */
+export interface RegimeEvidenceRecord {
+  kind: string;
+  regime: "state" | "party";
+  strength: "high" | "medium";
+  sourceBlockId: string;
+  blockIndex: number;
+  lineIndex?: number;
+  cell?: RegimeEvidenceCell;
+  exactQuote: string;
+}
+
+export interface DocumentTypeEvidenceRecord {
+  value: string;
+  sourceBlockId: string;
+  blockIndex: number;
+  lineIndex?: number;
+  cell?: RegimeEvidenceCell;
+  exactQuote: string;
+}
+
+export interface RegimeDetectionRecord {
+  suggestedRegime: "state" | "party" | null;
+  confirmedRegime: "state" | "party";
+  confidence: "high" | "medium" | "low";
+  conflict: boolean;
+  insufficient: boolean;
+  decidedBy: "auto" | "user";
+  evidence: RegimeEvidenceRecord[];
+  documentType: DocumentTypeEvidenceRecord | null;
 }
 
 export interface AppendixDocument {
@@ -446,10 +514,14 @@ export interface StructuredImport {
   unclassified: SourceBlock[];
   blocks?: SourceBlock[];
   importFidelityManifest?: ImportFidelityManifest;
+  /** Chặng 2: provenance of the regime detection decision for this import. */
+  regimeDetection?: RegimeDetectionRecord;
   order: string[];
 }
 
 export interface DocumentState {
+  /** User-added physical tables. Source tables remain in immutable provenance. */
+  importedTables?: Record<string, TableModel>;
   headerProfile?: "generic" | typeof COMPANY_HEADER_PROFILE_ID | typeof COMPANY_HEADER_HD05_PROFILE_ID;
   orgHeader1: string;
   orgHeader2: string;

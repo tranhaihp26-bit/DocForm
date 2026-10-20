@@ -14,10 +14,11 @@
  * 5. Giữ vững font Times New Roman và giãn dòng 1.15 - 1.25 chuẩn NĐ 30.
  */
 
-import React, { useEffect } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import DOMPurify from "dompurify";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
+import {workspaceEditorSafety, type EditorSafety} from '../utils/workspaceProjection.ts';
 import TextAlign from "@tiptap/extension-text-align";
 import Underline from "@tiptap/extension-underline";
 import { Table, TableRow, TableHeader, TableCell } from "@tiptap/extension-table";
@@ -678,3 +679,60 @@ export const ND30Editor: React.FC<ND30EditorProps> = ({
 };
 
 export default ND30Editor;
+
+/** Strict DOM roundtrip: preserve text, attributes and structure, allowing only equivalent mark tags. */
+function editorDomIdentity(html: string): string {
+  const root = new DOMParser().parseFromString(html, 'text/html').body;
+  const visit = (node: Node): unknown => {
+    if (node.nodeType === Node.TEXT_NODE) return node.textContent;
+    if (!(node instanceof Element)) return null;
+    const tag = ({b:'strong',i:'em',strike:'s'} as Record<string,string>)[node.localName] ?? node.localName;
+    return [tag, [...node.attributes].map(a=>[a.name,a.value]).sort((a,b)=>a[0].localeCompare(b[0])), [...node.childNodes].map(visit)];
+  };
+  return JSON.stringify([...root.childNodes].filter(n=>n.nodeType!==Node.TEXT_NODE||n.textContent?.trim()).map(visit));
+}
+
+function readonlyEditorNotice(reason:string):string{
+  if(reason==='schema_roundtrip_pending')return 'Đang kiểm tra khả năng giữ nguyên nội dung.';
+  if(reason==='schema_roundtrip_mismatch')return 'Trình soạn thảo chưa giữ nguyên được cấu trúc và định dạng của nội dung này.';
+  if(reason.includes('inline_style'))return 'Định dạng trực tiếp của nguồn chưa được chứng minh bảo toàn khi biên tập.';
+  if(reason.includes('table'))return 'Bảng, ô gộp và định danh ô nguồn chưa được chứng minh bảo toàn trong trình soạn thảo.';
+  if(reason.includes('img'))return 'Ảnh nguồn hiện chỉ được đối chiếu, chưa hỗ trợ biên tập bảo toàn.';
+  return 'Nội dung chứa thành phần hoặc thuộc tính nguồn chưa hỗ trợ biên tập bảo toàn.';
+}
+
+/** Each canvas stays mounted by ID. Opening the editor never emits normalized HTML. */
+export function WorkspaceCanvasEditor({id,content,safety,onChange,onEditorReady,onActive}:{id:string;content:string;safety:EditorSafety;onChange:(html:string)=>boolean;onEditorReady:(editor:any)=>void;onActive:()=>void}) {
+  const changeRef=useRef(onChange),activeRef=useRef(onActive),readyRef=useRef(onEditorReady);
+  changeRef.current=onChange;activeRef.current=onActive;readyRef.current=onEditorReady;
+  const committed=useRef(content);
+  const [proof,setProof]=useState<EditorSafety>({editable:false,reasons:['schema_roundtrip_pending']});
+  const editor=useEditor({
+    extensions:[StarterKit.configure({underline:false}),Underline,TextAlign.configure({types:['heading','paragraph'],alignments:['left','center','right','justify']})],
+    parseOptions:{preserveWhitespace:'full'},
+    content:safety.editable?DOMPurify.sanitize(content||'<p></p>'):'<p></p>',
+    editable:false,
+    editorProps:{attributes:{'aria-label':id==='body'?'Nội dung văn bản':`Nội dung phụ lục ${id}`,class:'df-workspace-prose'}},
+    onFocus:()=>activeRef.current(),
+    onUpdate:({editor})=>{
+      if(!editor.isEditable)return;
+      const html=editor.getHTML(),check=workspaceEditorSafety(html);
+      if(!check.editable||!changeRef.current(html)){editor.commands.setContent(committed.current,{emitUpdate:false,parseOptions:{preserveWhitespace:'full'}});return;}
+      committed.current=html;
+    },
+  });
+  useEffect(()=>{
+    if(!editor)return;
+    readyRef.current(editor);
+    if(!safety.editable){setProof(safety);editor.setEditable(false,false);return;}
+    if(content!==committed.current){editor.commands.setContent(content||'<p></p>',{emitUpdate:false,parseOptions:{preserveWhitespace:'full'}});committed.current=content;}
+    const valid=editorDomIdentity(content||'<p></p>')===editorDomIdentity(editor.getHTML());
+    const next={editable:valid,reasons:valid?[]:['schema_roundtrip_mismatch']};
+    setProof(next);editor.setEditable(valid,false);
+  },[editor,content,safety.editable,safety.reasons.join('|')]);
+  const permitted=safety.editable&&proof.editable;
+  return <div className="df-workspace-canvas-content">
+    {!permitted&&<div data-editor-readonly role="status"><strong>Chỉ đọc để bảo toàn nội dung.</strong><p>{(safety.editable?proof:safety).reasons.map(readonlyEditorNotice).join(' · ')}</p><div className="df-ws-source-html" dangerouslySetInnerHTML={{__html:DOMPurify.sanitize(content,{ADD_ATTR:['data-cell-id','data-source-table-id','style','colspan','rowspan']})}}/></div>}
+    <div hidden={!permitted}><EditorContent editor={editor}/></div>
+  </div>;
+}

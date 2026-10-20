@@ -1,3 +1,4 @@
+import { composeDocumentFormatData } from "./utils/documentComposer.ts";
 import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { 
   FileText, Upload, Sparkles, Download, Printer, History, RotateCcw, 
@@ -15,6 +16,7 @@ import JSZip from "jszip";
 import DOMPurify from "dompurify";
 import ND30Editor from "./components/ND30Editor.tsx";
 import { A4DocumentPreview } from "./components/A4DocumentPreview.tsx";
+import {printCandidate} from "./components/CandidatePrintView.tsx";
 import { 
   exportToDocx as generateAndDownloadDocx, 
   generateND30DocxUint8Array, 
@@ -25,7 +27,19 @@ import {
 } from "./utils/docxExport.ts";
 import { verifyCandidateExportFidelity } from "./utils/tableRoundtrip.ts";
 import { syncImportedTablesFromHtml, syncTableModelFromHtml } from "./utils/tableFormatUtils.ts";
-import { parseLocalFile } from "./utils/localFileImport.ts";
+import {
+  extractLocalFile,
+  persistSourceBlob,
+  segmentLocalExtraction,
+  buildParsedImport,
+  type LocalFileExtraction,
+} from "./utils/localFileImport.ts";
+import {
+  detectRegimeFromRawBlocks,
+  regimeNeedsConfirmation,
+  toRegimeDetectionRecord,
+  type RegimeDetectionResult,
+} from "./utils/regimeDetection.ts";
 import { 
   composeImportedBodyHtml, 
   deriveImportStatus, 
@@ -37,8 +51,22 @@ import {
   applySingleProposal, 
   applyAllProposalsSequentially, 
   changeBlockRole, 
-  type CanonicalWorkflowState 
+  type CanonicalWorkflowState,
+  type ReviewProposalBatchContext,
+  type RefineProposalContext,
+  computePartitionFingerprint,
+  isReviewProposalBatchValid,
+  isRefineProposalContextValid
 } from "./utils/proposalState.ts";
+import { createDocumentSessionGate, type SessionRequestToken } from "./utils/documentSessionGate.ts";
+import {
+  prepareImportedFileBundle,
+  commitImportedFileBundle,
+  commitTemplateOrPilotReplacement,
+  commitVersionRestore,
+  createInitialImportSessionState,
+  type ImportSessionState,
+} from "./utils/importSessionLifecycle.ts";
 import { saveDraft, loadDraft, clearDraft, loadSourceBlob, type OriginalDocumentSnapshot } from "./utils/draftStore.ts";
 import { computeVisualDiff } from "./utils/diffUtils.ts";
 import { 
@@ -63,6 +91,17 @@ import {
 } from "./shared/schemas/document.schema.ts";
 export type { DocumentState };
 import { checkProposalValidityBeforeApply } from "./shared/partitionValidation.ts";
+import { validateProposalAgainstSource } from "./shared/partitionValidation.ts";
+import { applyPartitionProposalBatch } from "./shared/partitionApply.ts";
+import { analyzePartitionFallback } from "./shared/partitionFallback.ts";
+import {
+  PARTITION_AI_SCHEMA_VERSION,
+  toPartitionAiBlocks,
+  validatePartitionAiRequest,
+  validatePartitionAiResponse,
+  type PartitionAiRequest,
+  type PartitionAiResponse,
+} from "./shared/partitionAiProtocol.ts";
 import { formatStandardDate, extractLocation } from "./server/middleware/compliance.middleware.ts";
 import { detectDocumentType } from "./server/parser.ts";
 import { COMPANY_HEADER_PROFILE_ID, COMPANY_HEADER_PARENT_LINES, applyCompanyProfile, LOCKED_COMPANY_FIELDS } from "./canonical/nd30/companyHeader.ts";
@@ -86,12 +125,27 @@ import {
 } from "./canonical/ruleEngine.ts";
 
 import {
-  Step1View,
-  Step2View,
-  Step4View,
   SafeRegimeModal,
+  RegimeConfirmModal,
   AdvancedDrawer,
+  ExportStepView,
 } from "./components/OfficeWorkerViews.tsx";
+import {WorkspaceEditor} from './components/WorkspaceEditor.tsx';
+import {WorkspaceExport} from './components/WorkspaceExport.tsx';
+import {createWorkspaceSnapshot,canonicalWorkspaceValue,makePartition,canEnterWorkspaceStep,hasWorkspaceApproval,workspaceInvariantErrors,type WorkspaceState,type WorkspaceSnapshot} from './utils/workspaceState.ts';
+import {transactWorkspace,approveWorkspacePartition,stageWorkspacePartition,cancelWorkspacePartition,confirmWorkspacePartition,changeWorkspaceRegime,type WorkspaceAction,type WorkspaceResult} from './utils/workspaceTransactions.ts';
+import {prepareTemplateTables} from './utils/templateWorkspace.ts';
+import {restoreWorkspaceVersion} from './utils/workspacePersistence.ts';
+import {createExportCandidateManager,exportCandidateKey,type ExportCandidate} from './utils/exportCandidate.ts';
+import {createWorkspaceAiTarget,receiveWorkspaceAiResult,applyWorkspaceAiResult,type WorkspaceAiTarget} from './utils/workspaceAiTarget.ts';
+import { ImportStepView } from "./components/ImportStepView.tsx";
+import { useAccessibleDialog } from "./utils/useAccessibleDialog.ts";
+import {
+  deriveSourceMismatch,
+  docTypeDecisionCovers,
+  inferDraftSourceOrigin,
+  type DocTypeDecision,
+} from "./utils/sourceMismatch.ts";
 
 const PILOT_CATEGORIES = [
   { id: "all", name: "Tất cả", count: 27, icon: "📁" },
@@ -113,11 +167,20 @@ const EDGE_CASE_CATEGORIES = [
 
 
 export interface Version {
+  workspace?: WorkspaceState;
+  docTypeOverride?: DocTypeDecision|null;
   id: string;
   timestamp: string;
   title: string;
   data: DocumentState;
   standardType: "state" | "party";
+  originalSnapshot?: OriginalDocumentSnapshot | null;
+  reviewBlocks?: SourceBlock[];
+  structuredImport?: StructuredImport | null;
+  uploadedBlocks?: SourceBlock[];
+  uploadedFileName?: string;
+  uploadedFileType?: "docx" | "txt" | null;
+  rawText?: string;
 }
 
 export interface TemplatePreset {
@@ -447,6 +510,8 @@ export default function App() {
   const [autoSaveStatus, setAutoSaveStatus] = useState<string>("Đã sẵn sàng");
   const [isAutoSaving, setIsAutoSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  /** Chỉ báo "Đã lưu" chỉ hiển thị sau khi IndexedDB commit thành công. */
+  const [hasPersistedDraft, setHasPersistedDraft] = useState(false);
 
   // Loading flags
   const [isAiLoading, setIsAiLoading] = useState(false);
@@ -481,21 +546,74 @@ export default function App() {
   // Structured Import state
   const [structuredImport, setStructuredImport] = useState<StructuredImport | null>(null);
   const [importReviewAccepted, setImportReviewAccepted] = useState(false);
+  /**
+   * S3-F01 (tái audit 20/10/2026): hash của nguồn tệp đã được người dùng DUYỆT
+   * ở bước "Đối Chiếu & Phân Vùng". Bản nhập chưa duyệt không được mở Bước 3
+   * hay nút xuất/in. Gắn theo hash nguồn để quyết định không áp nhầm sang
+   * nguồn khác và vẫn sống qua reload.
+   */
+  const [importReviewApprovedSourceHash, setImportReviewApprovedSourceHash] = useState<string | null>(null);
   const [showSideBySideModal, setShowSideBySideModal] = useState(false);
   const [importReviewTab, setImportReviewTab] = useState<"source" | "mapped">("source");
   const [pendingTemplate, setPendingTemplate] = useState<TemplatePreset | null>(null);
+  const pendingTemplateDialogRef = useAccessibleDialog<HTMLDivElement>(
+    Boolean(pendingTemplate),
+    () => setPendingTemplate(null),
+  );
+  const [workspace,setWorkspace]=useState<WorkspaceState|null>(null);
   const [reviewBlocks, setReviewBlocks] = useState<SourceBlock[]>([]);
   const [reviewBlockFilter, setReviewBlockFilter] = useState<"all" | SourceRegion>("all");
+  const sideBySideDialogRef = useAccessibleDialog<HTMLDivElement>(
+    Boolean(showSideBySideModal && (structuredImport || reviewBlocks.length > 0)),
+    () => closePartitionReview(),
+  );
 
   // AI-Assisted Partition Review state
   const [isCheckingPartitions, setIsCheckingPartitions] = useState(false);
   const [partitionProposals, setPartitionProposals] = useState<PartitionProposal[]>([]);
   const [verifiedPartitionProposalIds, setVerifiedPartitionProposalIds] = useState<Set<string>>(new Set());
   const [partitionCheckNotice, setPartitionCheckNotice] = useState<string>("");
-  const [partitionCheckSource, setPartitionCheckSource] = useState<"gemini_ai" | "rule_fallback" | "unverified">("unverified");
+  const [partitionCheckSource, setPartitionCheckSource] = useState<"gemini_ai" | "rule_fallback" | "mixed" | "unverified">("unverified");
+  const [partitionCoverage, setPartitionCoverage] = useState<PartitionCheckResult["coverage"] | null>(null);
+  const [partitionProgress, setPartitionProgress] = useState<{
+    processedChunks: number;
+    totalChunks: number;
+    lastChunkStatus?: "completed" | "failed" | "timed_out" | "invalid_response";
+  } | null>(null);
+  const [aiPartitionConsent, setAiPartitionConsent] = useState(false);
+  const aiPartitionConsentRef = useRef(false);
+  const partitionRunKeyRef = useRef("");
   const [partitionHistory, setPartitionHistory] = useState<SourceBlock[][]>([]);
   const [userModifiedBlockIds, setUserModifiedBlockIds] = useState<string[]>([]);
-  const partitionRequestIdRef = useRef<number>(0);
+  const sessionGateRef = useRef(createDocumentSessionGate());
+  const standardTypeRef = useRef<"state" | "party">(standardType);
+  standardTypeRef.current = standardType;
+  const userInteractedRef = useRef<boolean>(false);
+  const draftHydratedRef = useRef<boolean>(false);
+
+  const markUserInteraction = () => {
+    userInteractedRef.current = true;
+    draftHydratedRef.current = true;
+    sessionGateRef.current.cancelKind("draft_restore");
+  };
+
+  const invalidateActiveAiSession = (notice?: string) => {
+    markUserInteraction();
+    sessionGateRef.current.invalidate();
+    setIsUploading(false);
+    setIsCheckingPartitions(false);
+    setPartitionProgress(null);
+    setIsReviewingProposals(false);
+    setPartitionCoverage(null);
+    setPartitionCheckSource("unverified");
+    // Chặng 2: a regime/document/session change invalidates a pending import
+    // confirmation so its stale "confirm" can never commit file B.
+    setPendingImport(null);
+    // S1-F01: đề xuất "AI tinh chỉnh" ghi đè toàn bộ thân bài nên phải bị
+    // loại khi phiên AI bị vô hiệu hoá (đổi nguồn, đổi hệ, sửa phân vùng).
+    setRefineProposal(null);
+    setPartitionCheckNotice(notice ?? "Kết quả kiểm tra cũ đã hết hiệu lực sau khi nguồn, thể thức hoặc phân vùng thay đổi.");
+  };
 
   const togglePartitionProposalVerification = (propId: string) => {
     setVerifiedPartitionProposalIds(prev => {
@@ -510,77 +628,345 @@ export default function App() {
   };
 
   const [sourceStorageStatus, setSourceStorageStatus] = useState<{ persisted: boolean; storage: "indexeddb" | "memory"; error?: string } | null>(null);
+  const [sourceBlobAvailability,setSourceBlobAvailability]=useState<'checking'|'available'|'missing'|'error'>('missing');
+  useEffect(()=>{
+    let active=true;
+    const sourceHash=originalSnapshot?.sourceHash;
+    if(originalSnapshot?.sourceType!=='uploaded_file'||!sourceHash){setSourceBlobAvailability('missing');return()=>{active=false;};}
+    setSourceBlobAvailability('checking');
+    void loadSourceBlob(sourceHash).then(handle=>{if(active)setSourceBlobAvailability(handle?.bytes?'available':'missing');}).catch(()=>{if(active)setSourceBlobAvailability('error');});
+    return()=>{active=false;};
+  },[originalSnapshot?.sourceType,originalSnapshot?.sourceHash]);
 
   const handleUpdateBlockRole = (blockId: string, newRole: SourceRegion) => {
-    setUserModifiedBlockIds(prev => prev.includes(blockId) ? prev : [...prev, blockId]);
-    const { nextBlocks, nextImport } = changeBlockRole(reviewBlocks, blockId, newRole, structuredImport);
-    setReviewBlocks(nextBlocks);
-    if (nextImport) {
-      setStructuredImport(nextImport);
+    if(workspaceSnapshotRef.current.workspace.partition.approval||workspaceSnapshotRef.current.workspace.staged){
+      const original=workspaceSnapshotRef.current;
+      const base=original.workspace.staged?cancelWorkspacePartition(original):{ok:true as const,snapshot:original};
+      if(!base.ok)return;
+      const blocks=structuredClone(original.workspace.staged?.reviewBlocks??original.reviewBlocks);
+      const block=blocks.find(b=>b.id===blockId);if(!block)return;block.role=newRole;
+      applyWorkspaceResult(stageWorkspacePartition(base.snapshot,blocks,original.workspace.staged?.partition.cells??original.workspace.partition.cells));
+      invalidateActiveAiSession();return;
     }
+    const wasChecking = isCheckingPartitions;
+    invalidateActiveAiSession(
+      wasChecking
+        ? "Người dùng đã chỉnh sửa phân vùng trong lúc AI đang chạy. Đề xuất cũ không áp dụng."
+        : undefined
+    );
+    partitionRevisionRef.current += 1;
+    setPartitionRevision(partitionRevisionRef.current);
+    setUserModifiedBlockIds(prev => prev.includes(blockId) ? prev : [...prev, blockId]);
+    setPartitionProposals(previous => previous.map(proposal =>
+      proposal.sourceBlockId === blockId && proposal.status === "pending"
+        ? { ...proposal, status: "rejected" }
+        : proposal,
+    ));
+    setVerifiedPartitionProposalIds(previous => {
+      const next = new Set(previous);
+      for (const proposal of partitionProposals) {
+        if (proposal.sourceBlockId === blockId) next.delete(proposal.id || "");
+      }
+      return next;
+    });
+    const { nextBlocks, nextImport } = changeBlockRole(reviewBlocks, blockId, newRole, structuredImport);
+    installPendingPartition(nextBlocks,nextImport??structuredImport);
   };
 
-  const handleAiCheckPartitions = async () => {
-    const blocksToCheck = reviewBlocks.length > 0 ? reviewBlocks : (structuredImport?.blocks || uploadedBlocks);
-    if (!blocksToCheck || blocksToCheck.length === 0) return;
+  const startPartitionAiCall = (
+    sourceBlocks: SourceBlock[],
+    regime: "administrative" | "party",
+    generation: number,
+    revision: number,
+  ) => {
+    if (!aiPartitionConsentRef.current || sourceBlocks.length === 0) return null;
+    const runKey = `${generation}:${regime}:${revision}`;
+    if (partitionRunKeyRef.current === runKey) return null;
 
+    const token = sessionGateRef.current.begin("partition", runKey);
+    const request: PartitionAiRequest = {
+      schemaVersion: PARTITION_AI_SCHEMA_VERSION,
+      consent: true,
+      requestId: `partition-${generation}-${revision}-${token.requestId}`,
+      regime,
+      sourceGeneration: generation,
+      partitionRevision: revision,
+      blocks: toPartitionAiBlocks(sourceBlocks),
+    };
+    const validation = validatePartitionAiRequest(request);
+    if (!validation.valid) {
+      partitionRunKeyRef.current = "";
+      sessionGateRef.current.cancelKind("partition");
+      setIsCheckingPartitions(false);
+      setPartitionCheckNotice(`${validation.reason || "Yêu cầu AI không hợp lệ."} Các quy tắc phân vùng vẫn hoạt động.`);
+      return null;
+    }
+
+    partitionRunKeyRef.current = runKey;
     setIsCheckingPartitions(true);
-    setPartitionCheckNotice("Đang gửi đặc trưng cấu trúc lên máy chủ để AI kiểm định phân vùng...");
-    const currentReqId = Date.now();
-    partitionRequestIdRef.current = currentReqId;
-    const clientFingerprint = blocksToCheck.map(b => `${b.id}:${b.role || "unclassified"}`).join(";");
-
-    try {
-      const res = await fetch("/api/ai/check-partitions", {
+    setPartitionProgress({ processedChunks: 0, totalChunks: Math.ceil(request.blocks.length / 25) });
+    setPartitionCheckNotice("AI đang kiểm tra bản nguồn độc lập với phân vùng quy tắc. Quy tắc nội bộ vẫn dùng được trong lúc chờ.");
+    const promise = (async (): Promise<PartitionAiResponse> => {
+      const response = await fetch("/api/ai/check-partitions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          blocks: blocksToCheck,
-          regime: standardType === "party" ? "party" : "administrative",
-          filename: uploadedFileName,
-          userModifiedBlockIds,
-          requestFingerprint: clientFingerprint,
-          mode: "ai",
-        }),
+        signal: token.signal,
+        body: JSON.stringify(request),
       });
-
-      if (!res.ok) {
-        throw new Error(`Máy chủ phản hồi HTTP ${res.status}`);
+      if (!response.ok) {
+        let message = `Máy chủ AI phản hồi HTTP ${response.status}.`;
+        try {
+          const errorBody = await response.json();
+          if (typeof errorBody?.error === "string") message = errorBody.error;
+        } catch {}
+        throw new Error(message);
       }
+      let rawResponse: unknown;
+      if (response.headers.get("content-type")?.includes("application/json")) {
+        rawResponse = await response.json();
+      } else if (response.body) {
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        const totalChunks = Math.ceil(request.blocks.length / 25);
+        const observedChunks = new Map<number, { status: string; blockIds: string[] }>();
+        let pendingText = "";
+        let finalResponse: unknown;
+        let sawFinal = false;
 
-      const data: PartitionCheckResult = await res.json();
+        const consumeLine = (line: string) => {
+          if (!line.trim()) return;
+          let event: unknown;
+          try {
+            event = JSON.parse(line);
+          } catch {
+            throw new Error("Luồng tiến độ AI không phải JSON hợp lệ.");
+          }
+          if (!event || typeof event !== "object" || Array.isArray(event)) {
+            throw new Error("Luồng tiến độ AI có sự kiện không hợp lệ.");
+          }
+          const record = event as Record<string, unknown>;
+          if (record.type === "chunk") {
+            if (sawFinal || !record.chunk || typeof record.chunk !== "object" || Array.isArray(record.chunk)) {
+              throw new Error("Sự kiện lô AI không hợp lệ.");
+            }
+            const chunk = record.chunk as Record<string, unknown>;
+            const chunkIndex = chunk.chunkIndex;
+            const status = chunk.status;
+            const blockIds = chunk.blockIds;
+            if (!Number.isSafeInteger(chunkIndex) || (chunkIndex as number) < 0 || (chunkIndex as number) >= totalChunks ||
+                !["completed", "failed", "timed_out", "invalid_response"].includes(String(status)) ||
+                !Array.isArray(blockIds) || blockIds.some(id => typeof id !== "string")) {
+              throw new Error("Trạng thái hoặc phạm vi lô AI không hợp lệ.");
+            }
+            const index = chunkIndex as number;
+            const expectedIds = request.blocks.slice(index * 25, (index + 1) * 25).map(block => block.id);
+            if (observedChunks.has(index) || JSON.stringify(blockIds) !== JSON.stringify(expectedIds)) {
+              throw new Error("Lô AI bị lặp hoặc không khớp các khối nguồn.");
+            }
+            observedChunks.set(index, { status: status as string, blockIds: expectedIds });
+            const isCurrentRequest = sessionGateRef.current.isCurrent(token, runKey) &&
+              sourceGenerationRef.current === request.sourceGeneration &&
+              partitionRevisionRef.current === request.partitionRevision &&
+              standardTypeRef.current === (request.regime === "party" ? "party" : "state") &&
+              aiPartitionConsentRef.current;
+            if (isCurrentRequest) {
+              setPartitionProgress({
+                processedChunks: observedChunks.size,
+                totalChunks,
+                lastChunkStatus: status as "completed" | "failed" | "timed_out" | "invalid_response",
+              });
+            }
+            return;
+          }
+          if (record.type === "final" && !sawFinal && "response" in record) {
+            sawFinal = true;
+            finalResponse = record.response;
+            return;
+          }
+          throw new Error("Luồng tiến độ AI có sự kiện lạ hoặc trùng.");
+        };
 
-      // Check if user modified blocks or switched regime while request was in flight
-      if (partitionRequestIdRef.current !== currentReqId) {
-        setPartitionCheckNotice("Phân vùng đã thay đổi trong lúc chờ AI phản hồi. Đề xuất cũ đã bị hủy để tránh xung đột.");
-        return;
+        while (true) {
+          const { done, value } = await reader.read();
+          pendingText += decoder.decode(value, { stream: !done });
+          const lines = pendingText.split("\n");
+          pendingText = lines.pop() || "";
+          lines.forEach(consumeLine);
+          if (done) break;
+        }
+        if (pendingText.trim()) consumeLine(pendingText);
+        if (observedChunks.size !== totalChunks || !sawFinal) {
+          throw new Error("Luồng AI kết thúc khi chưa nhận đủ trạng thái lô hoặc kết quả cuối.");
+        }
+        const finalRecord = finalResponse as { chunks?: unknown } | null;
+        if (!finalRecord || !Array.isArray(finalRecord.chunks) || finalRecord.chunks.length !== totalChunks) {
+          throw new Error("Kết quả cuối AI không khớp số lô đã nhận.");
+        }
+        for (let index = 0; index < totalChunks; index++) {
+          const observed = observedChunks.get(index)!;
+          const finalChunk = finalRecord.chunks[index] as { status?: unknown; blockIds?: unknown };
+          if (finalChunk.status !== observed.status || JSON.stringify(finalChunk.blockIds) !== JSON.stringify(observed.blockIds)) {
+            throw new Error("Kết quả cuối AI không khớp tiến độ từng lô.");
+          }
+        }
+        rawResponse = finalResponse;
+      } else {
+        throw new Error("Máy chủ AI không trả nội dung phản hồi.");
       }
+      const responseValidation = validatePartitionAiResponse(rawResponse, request);
+      if (!responseValidation.valid) throw new Error(responseValidation.reason);
+      return responseValidation.response;
+    })();
+    // The import can take longer than a fast mock/provider response. Attach a
+    // rejection observer now, then the commit path consumes the result later.
+    void promise.catch(() => {});
+    return { request, token, runKey, promise };
+  };
 
-      const currentSignature = (reviewBlocks.length > 0 ? reviewBlocks : (structuredImport?.blocks || uploadedBlocks))
-        .map(b => `${b.id}:${b.role || "unclassified"}`).join(";");
+  const applyPartitionAiCallResult = (
+    call: NonNullable<ReturnType<typeof startPartitionAiCall>>,
+    activeBlocks: SourceBlock[],
+    modifiedBlockIds: string[],
+    response?: PartitionAiResponse,
+    error?: unknown,
+  ) => {
+    const current = sessionGateRef.current.isCurrent(call.token, call.runKey) &&
+      sourceGenerationRef.current === call.request.sourceGeneration &&
+      partitionRevisionRef.current === call.request.partitionRevision &&
+      standardTypeRef.current === (call.request.regime === "party" ? "party" : "state") &&
+      aiPartitionConsentRef.current;
+    if (!current) return;
 
-      if (currentSignature !== clientFingerprint) {
-        setPartitionCheckNotice("Người dùng đã chỉnh sửa phân vùng trong lúc AI đang chạy. Đề xuất cũ không áp dụng.");
-        return;
-      }
-
-      setPartitionCheckSource(data.source);
-      setPartitionProposals(data.proposals || []);
+    const ruleProposals = analyzePartitionFallback(activeBlocks, call.request.regime, modifiedBlockIds).map(proposal => ({
+      ...proposal,
+      sourceGeneration: call.request.sourceGeneration,
+      partitionRevision: call.request.partitionRevision,
+    }));
+    if (!response) {
+      const allIds = activeBlocks.map(block => block.id);
+      setPartitionProposals(ruleProposals);
       setVerifiedPartitionProposalIds(new Set());
-      setPartitionCheckNotice(data.notice || (data.source === "gemini_ai" ? "Đã hoàn thành kiểm tra AI." : "Chưa kiểm tra bằng AI."));
-      showToast(data.source === "gemini_ai" ? `AI đã phân tích ${data.reviewedBlocksCount}/${data.totalBlocks} khối` : "Đã rà soát phân vùng bằng quy tắc nội bộ", "info");
-    } catch (err: any) {
-      console.warn("AI partition check error:", err);
       setPartitionCheckSource("rule_fallback");
-      setPartitionCheckNotice("Chưa kiểm tra bằng AI (Lỗi kết nối hoặc dịch vụ bận).");
-      showToast("Không thể kết nối AI, giữ nguyên phân vùng quy tắc", "info");
-    } finally {
+      setPartitionCoverage({
+        aiReviewedBlockIds: [],
+        ruleFallbackBlockIds: allIds,
+        unreviewedBlockIds: allIds,
+        chunks: [{
+          chunkIndex: 0,
+          status: "failed",
+          blockIds: call.request.blocks.map(block => block.id),
+          error: error instanceof Error ? error.message : "Dịch vụ AI không khả dụng.",
+        }],
+      });
+      setPartitionCheckNotice(`Chưa kiểm tra được bằng AI. Bộ quy tắc đã rà soát ${allIds.length}/${allIds.length} khối; nội dung soạn và xuất vẫn sẵn sàng.`);
+      showToast("AI không khả dụng; đang dùng đề xuất quy tắc nội bộ", "info");
+      return;
+    }
+
+    const aiProposals: PartitionProposal[] = [];
+    for (const chunkResult of response.chunks) {
+      if (chunkResult.status !== "completed") continue;
+      for (const suggestion of chunkResult.proposals) {
+        const sourceBlock = activeBlocks.find(block => block.id === suggestion.sourceBlockId);
+        if (!sourceBlock) continue;
+        const validated = validateProposalAgainstSource({
+          ...suggestion,
+          id: `ai-${call.request.requestId}-${suggestion.sourceBlockId}`,
+          sourceGeneration: call.request.sourceGeneration,
+          partitionRevision: call.request.partitionRevision,
+          currentRole: sourceBlock.role || "unclassified",
+          status: "pending",
+          regime: call.request.regime,
+        }, activeBlocks, modifiedBlockIds, call.request.regime);
+        if (validated) aiProposals.push({
+          ...validated,
+          source: "gemini_ai",
+          sourceGeneration: call.request.sourceGeneration,
+          partitionRevision: call.request.partitionRevision,
+        });
+      }
+    }
+
+    const mergedByBlock = new Map<string, PartitionProposal>(ruleProposals.map(proposal => [proposal.sourceBlockId, proposal]));
+    aiProposals.forEach(proposal => mergedByBlock.set(proposal.sourceBlockId, proposal));
+    const mergedProposals = [...mergedByBlock.values()];
+    const allIds = activeBlocks.map(block => block.id);
+    const requestIds = new Set(call.request.blocks.map(block => block.id));
+    const failedIds = new Set(response.failedBlockIds);
+    const unreviewedIds = allIds.filter(id => failedIds.has(id) || !requestIds.has(id));
+    const hasAiCoverage = response.aiReviewedBlockIds.length > 0;
+    setPartitionCheckSource(hasAiCoverage ? (ruleProposals.length > 0 ? "mixed" : "gemini_ai") : "rule_fallback");
+    setPartitionProposals(mergedProposals);
+    setVerifiedPartitionProposalIds(new Set());
+    setPartitionCoverage({
+      aiReviewedBlockIds: response.aiReviewedBlockIds,
+      ruleFallbackBlockIds: allIds,
+      unreviewedBlockIds: unreviewedIds,
+      chunks: response.chunks.map(chunkResult => ({
+        chunkIndex: chunkResult.chunkIndex,
+        status: chunkResult.status,
+        blockIds: chunkResult.blockIds,
+        error: chunkResult.error,
+      })),
+    });
+    const failedCount = response.failedBlockIds.length + allIds.filter(id => !requestIds.has(id)).length;
+    const aiSummary = `AI đã kiểm tra ${response.aiReviewedBlockIds.length}/${call.request.blocks.length} khối`;
+    const fallbackSummary = `quy tắc nội bộ đã rà soát ${allIds.length}/${allIds.length} khối`;
+    const errorSummary = failedCount > 0 ? `; ${failedCount} khối chưa được AI kiểm tra` : "";
+    setPartitionCheckNotice(`${aiSummary}; ${fallbackSummary}${errorSummary}. Đề xuất chưa được tự áp dụng.`);
+    showToast(`${aiSummary}${errorSummary}`, "info");
+  };
+
+  const finishPartitionAiCall = (
+    call: NonNullable<ReturnType<typeof startPartitionAiCall>>,
+    activeBlocks: SourceBlock[],
+    modifiedBlockIds: string[],
+  ) => {
+    void call.promise
+      .then(response => applyPartitionAiCallResult(call, activeBlocks, modifiedBlockIds, response))
+      .catch(error => applyPartitionAiCallResult(call, activeBlocks, modifiedBlockIds, undefined, error))
+      .finally(() => {
+        if (sessionGateRef.current.isCurrent(call.token, call.runKey)) {
+          setIsCheckingPartitions(false);
+          setPartitionProgress(null);
+        }
+      });
+  };
+
+  const handleAiCheckPartitions = () => {
+    if (!aiPartitionConsentRef.current) {
+      setPartitionCheckNotice("Bật xác nhận cho phép AI ở Bước 1 trước khi gửi nguồn.");
+      return;
+    }
+    const sourceBlocks = uploadedBlocks;
+    const activeBlocks = reviewBlocks.length > 0 ? reviewBlocks : (structuredImport?.blocks || uploadedBlocks);
+    const targetRegime = standardTypeRef.current === "party" ? "party" : "administrative";
+    const call = startPartitionAiCall(sourceBlocks, targetRegime, sourceGenerationRef.current, partitionRevisionRef.current);
+    if (call) finishPartitionAiCall(call, activeBlocks, userModifiedBlockIds);
+  };
+
+  const handleAiPartitionConsentChange = (enabled: boolean) => {
+    aiPartitionConsentRef.current = enabled;
+    setAiPartitionConsent(enabled);
+    if (!enabled) {
+      sessionGateRef.current.cancelKind("partition");
+      partitionRunKeyRef.current = "";
       setIsCheckingPartitions(false);
+      setPartitionProgress(null);
+      setPartitionCheckNotice("Đã tắt AI. Phân vùng quy tắc nội bộ vẫn hoạt động.");
+      return;
+    }
+    if (uploadedFileName && uploadedBlocks.length > 0) {
+      const activeBlocks = reviewBlocks.length > 0 ? reviewBlocks : (structuredImport?.blocks || uploadedBlocks);
+      const regime = standardTypeRef.current === "party" ? "party" : "administrative";
+      const call = startPartitionAiCall(uploadedBlocks, regime, sourceGenerationRef.current, partitionRevisionRef.current);
+      if (call) finishPartitionAiCall(call, activeBlocks, userModifiedBlockIds);
     }
   };
 
   const handleApplyPartitionProposal = (proposal: PartitionProposal) => {
-    const blocksToUse = reviewBlocks.length > 0 ? reviewBlocks : (structuredImport?.blocks || uploadedBlocks);
+    if(workspace?.partition.approval||workspace?.staged){setErrorMsg('Sau duyệt, chỉnh role qua phân vùng có kiểm xung đột.');return;}
+    const blocksToUse = partitionReviewBlocks.length > 0 ? partitionReviewBlocks : (structuredImport?.blocks || uploadedBlocks);
     const currentRegime = standardType === "party" ? "party" : "administrative";
 
     // 1. Kiểm tra xác nhận đối chiếu thủ công cho đề xuất liên quan đến bảng biểu
@@ -590,22 +976,60 @@ export default function App() {
     }
 
     // 2. Ngay trước khi áp dụng, kiểm tra lại proposal với trạng thái tài liệu hiện tại
-    const validity = checkProposalValidityBeforeApply(proposal, blocksToUse, currentRegime);
+    const validity = checkProposalValidityBeforeApply(
+      proposal,
+      blocksToUse,
+      currentRegime,
+      userModifiedBlockIds,
+      { sourceGeneration: sourceGenerationRef.current, partitionRevision: partitionRevisionRef.current },
+    );
     if (!validity.valid) {
       setPartitionProposals(prev => prev.map(p => p.id === proposal.id ? { ...p, status: "rejected" } : p));
       showToast(`Đề xuất hết hiệu lực: ${validity.reason}`, "error");
       return;
     }
 
+    invalidateActiveAiSession();
+    partitionRevisionRef.current += 1;
+    setPartitionRevision(partitionRevisionRef.current);
     setPartitionHistory(prev => [...prev, blocksToUse.map(b => ({ ...b }))]);
     const { nextBlocks, nextImport } = changeBlockRole(blocksToUse, proposal.sourceBlockId, proposal.suggestedRole, structuredImport);
-    setReviewBlocks(nextBlocks);
-    if (nextImport) {
-      setStructuredImport(nextImport);
-    }
+    installPendingPartition(nextBlocks,nextImport??structuredImport);
     setUserModifiedBlockIds(prev => prev.includes(proposal.sourceBlockId) ? prev : [...prev, proposal.sourceBlockId]);
     setPartitionProposals(prev => prev.map(p => p.id === proposal.id ? { ...p, status: "accepted" } : p));
     showToast(`Đã chuyển khối #${proposal.sourceBlockId} sang vùng "${proposal.suggestedRole}"`, "success");
+  };
+
+  const handleApplyVerifiedPartitionProposals = () => {
+    if(workspace?.partition.approval||workspace?.staged){setErrorMsg('Sau duyệt, chỉnh role qua phân vùng có kiểm xung đột.');return;}
+    const blocksToUse = reviewBlocks.length > 0 ? reviewBlocks : (structuredImport?.blocks || uploadedBlocks);
+    const currentRegime = standardTypeRef.current === "party" ? "party" : "administrative";
+    const batch = applyPartitionProposalBatch(
+      partitionProposals,
+      blocksToUse,
+      currentRegime,
+      userModifiedBlockIds,
+      verifiedPartitionProposalIds,
+      { sourceGeneration: sourceGenerationRef.current, partitionRevision: partitionRevisionRef.current },
+    );
+    if (batch.appliedProposalIds.length === 0) {
+      showToast(batch.skipped[0]?.reason || "Không có đề xuất đang chờ đủ điều kiện áp dụng.", "info");
+      return;
+    }
+
+    invalidateActiveAiSession();
+    partitionRevisionRef.current += 1;
+    setPartitionRevision(partitionRevisionRef.current);
+    setPartitionHistory(previous => [...previous, blocksToUse.map(block => ({ ...block }))]);
+    installPendingPartition(batch.nextBlocks,structuredImport?{...structuredImport,blocks:batch.nextBlocks}:null);
+    setUserModifiedBlockIds(batch.modifiedBlockIds);
+    setPartitionProposals(previous => previous.map(proposal =>
+      batch.appliedProposalIds.includes(proposal.id || `prop-part-${proposal.sourceBlockId}`)
+        ? { ...proposal, status: "accepted" }
+        : proposal,
+    ));
+    const skippedSuffix = batch.skipped.length > 0 ? `; bỏ qua ${batch.skipped.length} đề xuất chưa xác minh hoặc hết hiệu lực` : "";
+    showToast(`Đã áp dụng ${batch.appliedProposalIds.length} đề xuất đã kiểm tra${skippedSuffix}.`, "success");
   };
 
   const handleDismissPartitionProposal = (proposal: PartitionProposal) => {
@@ -613,23 +1037,14 @@ export default function App() {
   };
 
   const handleUndoPartitionProposal = () => {
+    if(workspace?.partition.approval||workspace?.staged){setErrorMsg('Sau duyệt, phân vùng phải được thay qua bản staged có kiểm xung đột.');return;}
     if (partitionHistory.length === 0) return;
+    invalidateActiveAiSession();
+    partitionRevisionRef.current += 1;
+    setPartitionRevision(partitionRevisionRef.current);
     const previous = partitionHistory[partitionHistory.length - 1];
     setPartitionHistory(prev => prev.slice(0, -1));
-    setReviewBlocks(previous);
-    if (structuredImport) {
-      const activeContentTableIds = previous
-        .filter(b => b.kind === "table" && b.role !== "header" && b.role !== "signature")
-        .map(b => b.tableModel?.tableId || b.id);
-      setStructuredImport({
-        ...structuredImport,
-        blocks: previous,
-        importFidelityManifest: structuredImport.importFidelityManifest ? {
-          ...structuredImport.importFidelityManifest,
-          tableIds: activeContentTableIds,
-        } : undefined,
-      });
-    }
+    installPendingPartition(previous,structuredImport?{...structuredImport,blocks:previous}:null);
     showToast("Đã hoàn tác thao tác phân vùng gần nhất", "info");
   };
 
@@ -640,6 +1055,57 @@ export default function App() {
   const [uploadedBlocks, setUploadedBlocks] = useState<SourceBlock[]>([]);
   const [showPayloadInspector, setShowPayloadInspector] = useState(false);
 
+  // Proposal Batch Validity Context (Chặng 1 S01)
+  const [sourceGeneration, setSourceGeneration] = useState<number>(1);
+  const sourceGenerationRef = useRef<number>(1);
+  const [partitionRevision, setPartitionRevision] = useState<number>(1);
+  const partitionRevisionRef = useRef<number>(1);
+  const [reviewProposalBatchContext, setReviewProposalBatchContext] = useState<ReviewProposalBatchContext | null>(null);
+  const reviewProposalBatchContextRef = useRef<ReviewProposalBatchContext | null>(null);
+
+  const getCurrentPartitionFingerprint = useCallback((blocks?: SourceBlock[]): string => {
+    const blocksToUse = blocks && blocks.length > 0
+      ? blocks
+      : (reviewBlocks.length > 0 ? reviewBlocks : (structuredImport?.blocks || uploadedBlocks));
+    return computePartitionFingerprint(blocksToUse);
+  }, [reviewBlocks, structuredImport?.blocks, uploadedBlocks]);
+
+  const getCurrentProposalBatchContext = useCallback((): ReviewProposalBatchContext => {
+    return {
+      sourceGeneration: sourceGenerationRef.current,
+      standardType: standardTypeRef.current,
+      partitionRevision: partitionRevisionRef.current,
+      partitionFingerprint: getCurrentPartitionFingerprint(),
+    };
+  }, [getCurrentPartitionFingerprint]);
+
+  /**
+   * S1-F01 (tái audit 20/10/2026): ngữ cảnh nguồn của đề xuất "AI tinh chỉnh".
+   * Đề xuất này ghi đè toàn bộ thân bài nên phải khớp thế hệ nguồn, thể thức,
+   * revision phân vùng và mã băm nguồn — cả lúc nhận phản hồi lẫn lúc áp dụng.
+   */
+  const getCurrentRefineContext = useCallback((): RefineProposalContext => ({
+    sourceGeneration: sourceGenerationRef.current,
+    standardType: standardTypeRef.current,
+    partitionRevision: partitionRevisionRef.current,
+    sourceHash: originalSnapshot?.sourceHash ?? "",
+  }), [originalSnapshot?.sourceHash]);
+
+  const isReviewProposalsBatchValid = useMemo(() => {
+    const currentCtx: ReviewProposalBatchContext = {
+      sourceGeneration,
+      standardType,
+      partitionRevision,
+      partitionFingerprint: getCurrentPartitionFingerprint(),
+    };
+    return isReviewProposalBatchValid(reviewProposalBatchContext, currentCtx);
+  }, [reviewProposalBatchContext, sourceGeneration, standardType, partitionRevision, getCurrentPartitionFingerprint]);
+
+  const visibleReviewProposals = useMemo(() => {
+    return isReviewProposalsBatchValid ? reviewProposals : [];
+  }, [isReviewProposalsBatchValid, reviewProposals]);
+
+  const partitionReviewBlocks=workspace?.staged?.reviewBlocks??reviewBlocks;
   const liveReconstructed = useMemo(() => {
     const blocksToUse = reviewBlocks.length > 0 ? reviewBlocks : (structuredImport?.blocks || uploadedBlocks);
     return reconstructFromReviewedBlocks(
@@ -647,7 +1113,7 @@ export default function App() {
       standardType,
       structuredImport || undefined
     );
-  }, [reviewBlocks, standardType, structuredImport, uploadedBlocks]);
+  }, [partitionReviewBlocks, standardType, structuredImport, uploadedBlocks]);
 
   const liveValidationErrors = useMemo(() => {
     return liveReconstructed.validationErrors;
@@ -675,6 +1141,7 @@ export default function App() {
 
   // AI Refine Review Modal state
   const [refineProposal, setRefineProposal] = useState<{
+    target?: WorkspaceAiTarget;
     action: "proofread" | "formalize";
     originalHtml: string;
     refinedHtml: string;
@@ -682,14 +1149,40 @@ export default function App() {
     source: "gemini_ai" | "rule_fallback";
     isFallback: boolean;
     notice?: string;
+    /** S1-F01: ngữ cảnh nguồn của đề xuất, dùng để chặn đề xuất cũ. */
+    context: RefineProposalContext;
   } | null>(null);
+  const refineDialogRef=useAccessibleDialog(Boolean(refineProposal),()=>setRefineProposal(null));
+  const complianceDialogRef=useAccessibleDialog(showComplianceModal,()=>setShowComplianceModal(false));
   const [aiRefineTab, setAiRefineTab] = useState<"original" | "refined">("refined");
   const [aiRefineMode, setAiRefineMode] = useState<"visual_diff" | "side_by_side" | "refined">("visual_diff");
 
-  // 4-Step Office Worker Wizard State (starts at Step 1 for new documents)
-  const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
+  // Chặng 3: 3-step Office Worker Wizard (Tải & nhận diện → Soạn & kiểm tra → Xuất văn bản).
+  // Bước được giới hạn bởi dữ liệu đã hoàn thành thật, không dựa vào vị trí điều hướng.
+  const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1);
   useEffect(() => { window.scrollTo(0, 0); }, [currentStep]);
+  /**
+   * Nguồn người dùng đã chủ động chọn. Giá trị mặc định "none" nghĩa là tài liệu
+   * minh họa trong bộ nhớ chưa phải là nguồn do người dùng chọn.
+   */
+  const [sourceOrigin, setSourceOrigin] = useState<"none" | "uploaded_file" | "system_template">("none");
+  /**
+   * S3-F01: khi nguồn nhận diện một loại văn bản khác loại đang chọn, người dùng
+   * phải chọn lại loại hoặc xác nhận rõ quyết định giữ loại này. Quyết định được
+   * lưu kèm mốc thời gian (provenance) và chỉ có hiệu lực cho đúng cặp nguồn/loại/hệ.
+   */
+  const [editorState,setEditorState]=useState({activeCanvasId:"body"});
+  const [docTypeOverride, setDocTypeOverride] = useState<DocTypeDecision | null>(null);
   const [safeRegimeModal, setSafeRegimeModal] = useState<{ isOpen: boolean; targetRegime: "state" | "party" } | null>(null);
+  // Chặng 2: pending extracted source awaiting an explicit regime confirmation.
+  // While set, document A is untouched and no source blob has been stored.
+  const [pendingImport, setPendingImport] = useState<{
+    token: SessionRequestToken;
+    extraction: LocalFileExtraction;
+    detection: RegimeDetectionResult;
+    chosenRegime: "state" | "party";
+    filename: string;
+  } | null>(null);
   const [showAdvancedDrawer, setShowAdvancedDrawer] = useState(false);
   const [step4ViewMode, setStep4ViewMode] = useState<"proposed" | "original" | "diff">("proposed");
   const [activeGroupFilter, setActiveGroupFilter] = useState<ComponentGroupId | "all">("all");
@@ -704,6 +1197,58 @@ export default function App() {
   // Primary document state (default is Kế hoạch NĐ 30 Hoa tiêu)
   const [doc, setDoc] = useState<DocumentState>(applyCompanyProfile(TEMPLATES[0].defaultData));
 
+  const workspaceSnapshot=useMemo<WorkspaceSnapshot>(()=>workspace?{doc,standardType,reviewBlocks,structuredImport,workspace}:createWorkspaceSnapshot({doc,standardType,reviewBlocks,structuredImport},sourceOrigin==='uploaded_file'?{blobHash:originalSnapshot?.sourceHash||'legacy-unverified',generation:sourceGeneration,blocks:uploadedBlocks.length?uploadedBlocks:reviewBlocks}:undefined),[doc,standardType,reviewBlocks,structuredImport,workspace,sourceOrigin,originalSnapshot,sourceGeneration,uploadedBlocks]);
+  const workspaceSnapshotRef=useRef(workspaceSnapshot);workspaceSnapshotRef.current=workspaceSnapshot;
+  const candidateManager=useRef<ReturnType<typeof createExportCandidateManager>|null>(null);
+  if(!candidateManager.current)candidateManager.current=createExportCandidateManager();
+  const [candidate,setCandidate]=useState<ExportCandidate|null>(null);
+  const [candidatePending,setCandidatePending]=useState(false);
+  const [candidateError,setCandidateError]=useState('');
+  const candidateInput={...workspaceSnapshot,uploadedBlocks,docTypeOverride};
+  const candidateKey=exportCandidateKey(candidateInput);
+  const visibleCandidate=candidate&&candidateManager.current.isCurrent(candidate,candidateInput)?candidate:null;
+  const invalidateCandidate=()=>{candidateManager.current!.invalidate();setCandidate(null);setCandidateError('');setOoxmlEvidence(undefined);setOoxmlStatus('not_evaluated');};
+  const installWorkspace=(next:WorkspaceSnapshot)=>{
+    workspaceSnapshotRef.current=next;setWorkspace(next.workspace);setDoc(next.doc);setStandardType(next.standardType);standardTypeRef.current=next.standardType;setReviewBlocks(next.reviewBlocks);setStructuredImport(next.structuredImport);invalidateCandidate();
+  };
+  const applyWorkspaceResult=(result:WorkspaceResult):boolean=>{
+    if(!result.ok){setErrorMsg(result.error==='rebase_conflict'?'Xung đột phân vùng: '+result.details.join(' · '):'Không thể thay đổi: '+result.error+' · '+result.details.join(' · '));return false;}
+    installWorkspace(result.snapshot);markUserInteraction();return true;
+  };
+  const workspaceAction=(action:WorkspaceAction)=>applyWorkspaceResult(transactWorkspace(workspaceSnapshotRef.current,workspaceSnapshotRef.current.workspace.workingRevision,action));
+  const installPendingPartition=(blocks:SourceBlock[],nextImport:StructuredImport|null,nextDoc?:DocumentState)=>{
+    const current=workspaceSnapshotRef.current,source=current.workspace.source;
+    const structure=nextImport?{...nextImport,importFidelityManifest:source?.fidelityManifest??nextImport.importFidelityManifest}:null;
+    const pending=structuredClone(createWorkspaceSnapshot({doc:nextDoc??current.doc,standardType:current.standardType,reviewBlocks:blocks,structuredImport:structure},source?{blobHash:source.blobHash,generation:source.generation,blocks:source.blocks,identity:source.identity}:undefined,current.workspace.overrides));
+    pending.workspace.partition=makePartition(pending.workspace.source,pending.standardType,blocks,current.workspace.partition.revision+1,current.workspace.partition.cells);
+    installWorkspace(pending);
+  };
+  const handleUpdateCellRole=(sourceBlockId:string,cellId:string,role:SourceRegion)=>{
+    const current=workspaceSnapshotRef.current;
+    const cells=structuredClone(current.workspace.staged?.partition.cells??current.workspace.partition.cells).filter(c=>c.sourceBlockId!==sourceBlockId||c.cellId!==cellId);cells.push({sourceBlockId,cellId,role});
+    if(current.workspace.partition.approval||current.workspace.staged){const base=current.workspace.staged?cancelWorkspacePartition(current):{ok:true as const,snapshot:current};if(base.ok)applyWorkspaceResult(stageWorkspacePartition(base.snapshot,current.workspace.staged?.reviewBlocks??current.reviewBlocks,cells));}
+    else {const pending=structuredClone(current);pending.workspace.partition=makePartition(pending.workspace.source,pending.standardType,pending.reviewBlocks,pending.workspace.partition.revision+1,cells);installWorkspace(pending);}
+  };
+  const closePartitionReview=()=>{
+    const current=workspaceSnapshotRef.current;
+    if(current.workspace.staged&&!applyWorkspaceResult(cancelWorkspacePartition(current)))return;
+    setErrorMsg('');setShowSideBySideModal(false);
+  };
+  const prepareCandidate=async()=>{
+    const input={...workspaceSnapshotRef.current,uploadedBlocks,docTypeOverride};
+    if(!canEnterStep(3)){setCandidateError('Cần duyệt phân vùng hợp lệ trước khi tạo ứng viên.');return;}
+    setCandidatePending(true);setCandidateError('');
+    try{
+      const next=await candidateManager.current!.prepare(input);
+      if(!next||!candidateManager.current!.isCurrent(next,{...workspaceSnapshotRef.current,uploadedBlocks,docTypeOverride}))return;
+      setCandidate(next);
+      if(next.safe){setOoxmlEvidence({...next.evidence,header_profile:next.formatData.headerProfile,draft_key:computeDraftRevisionKey(input.doc,input.standardType),candidate_fidelity_result:next.tableFidelity,candidate_sha:next.sha256,candidate_instance:next.instanceId});setOoxmlStatus('evaluated_current_draft');}
+      else {setOoxmlEvidence(undefined);setOoxmlStatus('not_evaluated');}
+    }catch(e){if(exportCandidateKey(input)===exportCandidateKey({...workspaceSnapshotRef.current,uploadedBlocks,docTypeOverride}))setCandidateError(String(e));}
+    finally{if(exportCandidateKey(input)===exportCandidateKey({...workspaceSnapshotRef.current,uploadedBlocks,docTypeOverride}))setCandidatePending(false);}
+  };
+  useEffect(()=>{if(currentStep===3)void prepareCandidate();else {setOoxmlEvidence(undefined);setOoxmlStatus('not_evaluated');}},[currentStep,candidateKey]);
+
   // Version History state
   const [versions, setVersions] = useState<Version[]>([
     {
@@ -717,6 +1262,15 @@ export default function App() {
 
   const currentDraftKey = computeDraftRevisionKey(doc, standardType);
   const currentDraftKeyRef = useRef<string>(currentDraftKey);
+  /**
+   * Chặng 5 — rủi ro do người kiểm độc lập chỉ ra: đề xuất "AI tinh chỉnh"
+   * được ràng buộc theo nguồn/thể thức/revision, nhưng **chưa** ràng buộc theo
+   * nội dung thân bài tại thời điểm tạo đề xuất. Người dùng sửa thân bài trong
+   * cùng nguồn thì đề xuất cũ vẫn có thể ghi đè phần vừa sửa. Ref này giữ
+   * `bodyHtml` **mới nhất** để kiểm ở lúc nhận phản hồi và lúc áp dụng.
+   */
+  const bodyHtmlRef = useRef<string>(doc.bodyHtml);
+  bodyHtmlRef.current = doc.bodyHtml;
   currentDraftKeyRef.current = currentDraftKey;
 
   // Unified Canonical Rule Engine Evaluation (3 Decoupled Metrics + Live OOXML Evidence)
@@ -731,6 +1285,7 @@ export default function App() {
 
 
   const requestRegimeSwitch = (target: "state" | "party") => {
+    markUserInteraction();
     if (target === standardType) return;
     const hasContent = Boolean(
       (doc.bodyHtml && doc.bodyHtml.length > 50) || 
@@ -745,7 +1300,26 @@ export default function App() {
   };
 
   const executeRegimeSwitch = (target: "state" | "party") => {
+    if(workspace){
+      invalidateActiveAiSession();setReviewProposals([]);setRefineProposal(null);setImportReviewApprovedSourceHash(null);
+      const result=changeWorkspaceRegime(workspaceSnapshotRef.current,workspaceSnapshotRef.current.workspace.workingRevision,target);
+      if(applyWorkspaceResult(result)){setCurrentStep(1);setSafeRegimeModal(null);}return;
+    }
+    const wasChecking = isCheckingPartitions;
+    invalidateActiveAiSession(
+      wasChecking
+        ? "Thể thức đã thay đổi trong lúc chờ AI phản hồi. Đề xuất cũ đã bị hủy để tránh xung đột."
+        : undefined
+    );
+    partitionRevisionRef.current += 1;
+    setPartitionRevision(partitionRevisionRef.current);
+    // Explicitly invalidate and clear review proposals and batch context for previous regime (S01)
+    setReviewProposals([]);
+    setReviewProposalBatchContext(null);
+    reviewProposalBatchContextRef.current = null;
+    setAcceptedProposalIds(new Set());
     pushVersion(`Trước khi chuyển sang ${target === "party" ? "Đảng (HD 05)" : "Hành chính (NĐ 30)"}`, doc);
+    standardTypeRef.current = target;
     setStandardType(target);
     setDoc(prev => {
       const isComp = prev.headerProfile === COMPANY_HEADER_PROFILE_ID || prev.headerProfile === COMPANY_HEADER_HD05_PROFILE_ID;
@@ -780,7 +1354,6 @@ export default function App() {
   const a4CanvasObserverRef = useRef<ResizeObserver | null>(null);
   const [canvasInnerHeight, setCanvasInnerHeight] = useState<number>(1123);
   const [, setActiveCanvasSection] = useState<string>("all");
-  const uploadRequestIdRef = useRef<number>(0);
 
   const measureCanvasHeight = useCallback((node: HTMLElement | null) => {
     if (!node) return;
@@ -815,9 +1388,9 @@ export default function App() {
     };
   }, []);
 
-  // Re-measure when entering Step 3, view mode changes, or document content changes
+  // Re-measure when entering Step 2 (Soạn & kiểm tra), view mode changes, or document content changes
   useEffect(() => {
-    if (currentStep === 3 && studioViewMode === "canvas" && a4CanvasNodeRef.current) {
+    if (currentStep === 2 && studioViewMode === "canvas" && a4CanvasNodeRef.current) {
       measureCanvasHeight(a4CanvasNodeRef.current);
     }
   }, [currentStep, studioViewMode, doc.bodyHtml, doc.appendices, doc.signTitle, doc.signName, doc.recipients, measureCanvasHeight]);
@@ -842,8 +1415,18 @@ export default function App() {
   // 1. Initial Load from IndexedDB Draft Store (Zero data loss upon refresh)
   useEffect(() => {
     let mounted = true;
+    const restoreToken = sessionGateRef.current.begin("draft_restore");
     loadDraft().then((savedDraft) => {
-      if (mounted && savedDraft && savedDraft.doc) {
+      if (
+        !mounted ||
+        userInteractedRef.current ||
+        !sessionGateRef.current.isCurrent(restoreToken)
+      ) {
+        return;
+      }
+      draftHydratedRef.current = true;
+      sessionGateRef.current.cancelKind("draft_restore");
+      if (savedDraft && savedDraft.doc) {
         let restoredDoc = savedDraft.doc;
         // Auto-heal corrupted signatures from drafts saved before the patch
         const hasCorruptedSignTitle = Boolean(
@@ -860,7 +1443,7 @@ export default function App() {
           )
         );
 
-        if (hasCorruptedSignTitle || hasCorruptedSignName) {
+        if (!savedDraft.workspace && (hasCorruptedSignTitle || hasCorruptedSignName)) {
           console.warn("[DRAFT RECOVERY] Auto-healing corrupted signature table from legacy draft.");
           restoredDoc = {
             ...restoredDoc,
@@ -869,6 +1452,7 @@ export default function App() {
           };
           // Persist the healed draft
           saveDraft({
+            ...savedDraft,
             id: savedDraft.id || "current_active_draft",
             updatedAt: new Date().toISOString(),
             doc: restoredDoc,
@@ -878,17 +1462,24 @@ export default function App() {
           }).catch(() => {});
         }
 
+        const restoredWorkspace=restoreWorkspaceVersion({id:savedDraft.id,title:'Bản nháp',timestamp:savedDraft.updatedAt,data:restoredDoc,standardType:savedDraft.standardType||'state',workspace:savedDraft.workspace,reviewBlocks:savedDraft.reviewBlocks,structuredImport:savedDraft.structuredImport,uploadedBlocks:savedDraft.uploadedBlocks,uploadedFileName:savedDraft.uploadedFileName,originalSnapshot:savedDraft.originalSnapshot});
         // Restore original snapshot or explicitly set null for legacy draft without snapshot
         if (savedDraft.originalSnapshot !== undefined) {
           setOriginalSnapshot(savedDraft.originalSnapshot);
           if (savedDraft.originalSnapshot?.bodyHtml) {
             setUploadedHtml(savedDraft.originalSnapshot.bodyHtml);
+          } else {
+            setUploadedHtml("");
           }
           if (savedDraft.originalSnapshot?.rawText) {
             setRawText(savedDraft.originalSnapshot.rawText);
+          } else {
+            setRawText("");
           }
           if (savedDraft.originalSnapshot?.fileName) {
             setUploadedFileName(savedDraft.originalSnapshot.fileName);
+          } else {
+            setUploadedFileName("");
           }
         } else {
           // Legacy draft: no original snapshot
@@ -898,139 +1489,161 @@ export default function App() {
           setUploadedFileName("");
         }
 
-        setDoc(restoredDoc);
-        setStandardType(savedDraft.standardType || "state");
+        const restoredStandardType = savedDraft.standardType || "state";
+        standardTypeRef.current = restoredStandardType;
+
+        setEditorState(savedDraft.editorState??{activeCanvasId:"body"});
+        setWorkspace(restoredWorkspace.workspace);
+        setDoc(restoredWorkspace.doc);
+        setStandardType(restoredStandardType);
         if (savedDraft.versions && savedDraft.versions.length > 0) {
           setVersions(savedDraft.versions);
         }
-        if (savedDraft.reviewBlocks && savedDraft.reviewBlocks.length > 0) {
-          setReviewBlocks(savedDraft.reviewBlocks);
-        }
-        if (savedDraft.structuredImport) {
-          setStructuredImport(savedDraft.structuredImport);
-        }
-        if (savedDraft.uploadedBlocks && savedDraft.uploadedBlocks.length > 0) {
-          setUploadedBlocks(savedDraft.uploadedBlocks);
-        }
+        setReviewBlocks(savedDraft.reviewBlocks && savedDraft.reviewBlocks.length > 0 ? savedDraft.reviewBlocks : []);
+        setStructuredImport(savedDraft.structuredImport || null);
+        setUploadedBlocks(savedDraft.uploadedBlocks && savedDraft.uploadedBlocks.length > 0 ? savedDraft.uploadedBlocks : []);
         if (savedDraft.uploadedFileName) {
           setUploadedFileName(savedDraft.uploadedFileName);
         }
-        if (savedDraft.uploadedFileType) {
-          setUploadedFileType(savedDraft.uploadedFileType);
-        }
+        setUploadedFileType(savedDraft.uploadedFileType || null);
         if (savedDraft.rawText) {
           setRawText(savedDraft.rawText);
         }
+
+        // Chặng 3: khôi phục vị trí wizard trong khoảng 1–3, nhưng kẹp lại theo
+        // dữ liệu thật để không bao giờ mở thẳng bước Xuất khi nguồn chưa đủ.
+        // S3-F02: bản nháp tạo trước Chặng 3 không có `sourceOrigin`; phải suy từ
+        // snapshot gốc trước, không suy từ tên tệp (tên mẫu cũng là "tên tệp").
+        const restoredOrigin = inferDraftSourceOrigin(savedDraft);
+        const restoredReviewBlocks = savedDraft.reviewBlocks && savedDraft.reviewBlocks.length > 0
+          ? savedDraft.reviewBlocks
+          : [];
+        const restoredStructureReady = restoredOrigin !== "none" && (
+          restoredOrigin === "uploaded_file"
+            ? restoredReviewBlocks.length > 0 || Boolean(savedDraft.structuredImport?.body?.html)
+            : Boolean(restoredDoc.bodyHtml && restoredDoc.bodyHtml.trim().length > 0)
+        );
+        // S3-F01: mâu thuẫn loại văn bản đã lưu chỉ mở bước Xuất khi quyết định
+        // override còn hiệu lực cho đúng cặp nguồn/loại/hệ.
+        const restoredDecision = savedDraft.docTypeOverride ?? null;
+        // S3-F01: quyết định duyệt bản nhập được khôi phục theo hash nguồn.
+        const restoredApproval = savedDraft.importReviewApprovedSourceHash ?? null;
+        setImportReviewApprovedSourceHash(restoredApproval);
+        const restoredMismatch = deriveSourceMismatch({
+          hasSelectedSource: restoredOrigin !== "none",
+          hasImportedFile: Boolean(
+            savedDraft.uploadedFileName || (savedDraft.uploadedBlocks?.length ?? 0) > 0
+          ),
+          structuredImport: savedDraft.structuredImport ?? null,
+          originalSnapshot: savedDraft.originalSnapshot ?? null,
+          templates: TEMPLATES,
+          isCompanyProfile:
+            savedDraft.standardType === "party"
+              ? restoredDoc.headerProfile === COMPANY_HEADER_HD05_PROFILE_ID
+              : restoredDoc.headerProfile === COMPANY_HEADER_PROFILE_ID,
+          chosenRegime: savedDraft.standardType,
+          chosenDocType: restoredDoc.documentType,
+        });
+        const restoredCanExport =
+          restoredStructureReady &&
+          (restoredOrigin !== "uploaded_file" ||
+            (restoredApproval !== null &&
+              restoredApproval === (savedDraft.originalSnapshot?.sourceHash ?? ""))) &&
+          (!restoredMismatch.docTypeMismatch ||
+            docTypeDecisionCovers(restoredDecision, restoredMismatch, savedDraft.standardType));
+        const restoredMaxStep: 1 | 2 | 3 = restoredCanExport ? 3 : restoredOrigin !== "none" ? 2 : 1;
+        const requestedStep = (savedDraft.currentStep ?? 1) as 1 | 2 | 3;
+        setCurrentStep(restoredWorkspace.workspace.staged||!canEnterWorkspaceStep(restoredWorkspace,2)?1:(requestedStep > restoredMaxStep ? restoredMaxStep : requestedStep) as 1 | 2 | 3);
+        if(restoredWorkspace.workspace.staged)setShowSideBySideModal(true);
+        setSourceOrigin(restoredOrigin);
+        setDocTypeOverride(restoredDecision);
+        setHasPersistedDraft(true);
         setAutoSaveStatus("Đã khôi phục bản nháp lưu lúc " + new Date(savedDraft.updatedAt).toLocaleTimeString("vi-VN"));
       }
     }).catch((err) => {
+      draftHydratedRef.current = true;
+      sessionGateRef.current.cancelKind("draft_restore");
+      restoreBlockedRef.current=true;
+      setSaveError('Không khôi phục được bản nháp: '+String(err));setAutoSaveStatus('Lỗi khôi phục bản nháp');setErrorMsg('Không khôi phục được bản nháp. Dữ liệu đã lưu được giữ nguyên; hãy chọn nguồn mới nếu muốn thay thế.');
       console.warn("Could not restore draft:", err);
     });
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+      sessionGateRef.current.cancelKind("draft_restore");
+    };
   }, []);
 
-  // 2. Debounced Auto-save to IndexedDB
+  // 2. Auto-save to IndexedDB.
+  //    - Nội dung soạn thảo: gộp (debounce) 1000ms.
+  //    - Lựa chọn hệ/profile/loại văn bản/mẫu và bước wizard: commit NGAY để việc
+  //      tải lại trang ~120ms sau đó không mất lựa chọn (không dựa vào pagehide).
+  const saveQueueRef=useRef<Promise<void>>(Promise.resolve());
+  const restoreBlockedRef=useRef(false);
+  const draftPayloadRef = useRef<Parameters<typeof saveDraft>[0] | null>(null);
+  draftPayloadRef.current = {
+    id: "current_active_draft",
+    updatedAt: new Date().toISOString(),
+    standardType,
+    doc,
+    workspace:workspaceSnapshot.workspace,
+    editorState,
+    versions,
+    originalSnapshot,
+    reviewBlocks,
+    structuredImport,
+    uploadedBlocks,
+    uploadedFileName,
+    uploadedFileType,
+    rawText,
+    currentStep,
+    sourceOrigin,
+    docTypeOverride,
+    importReviewApprovedSourceHash,
+  };
+
+  const persistDraftNow = React.useCallback(async () => {
+    const payload = draftPayloadRef.current;
+    if (!payload) return;
+    setIsAutoSaving(true);
+    try {
+      if(restoreBlockedRef.current)throw Error('Bản nháp chưa khôi phục được. Chọn nguồn mới để thay thế rõ ràng.');
+      const saveJob=saveQueueRef.current.catch(()=>{}).then(()=>saveDraft(payload));
+      saveQueueRef.current=saveJob;await saveJob;
+      if(canonicalWorkspaceValue({...draftPayloadRef.current,updatedAt:undefined})!==canonicalWorkspaceValue({...payload,updatedAt:undefined}))return;
+      setIsAutoSaving(false);
+      setSaveError(null);
+      setHasPersistedDraft(true);
+      const timeStr = new Date().toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
+      setAutoSaveStatus(`Đã lưu (${timeStr})`);
+    } catch (err) {
+      setIsAutoSaving(false);
+      setSaveError(err instanceof Error ? err.message : "Lỗi lưu trữ cục bộ");
+      setAutoSaveStatus("Lỗi lưu trữ cục bộ");
+    }
+  }, []);
+
   useEffect(() => {
+    if (!draftHydratedRef.current && !userInteractedRef.current) {
+      return;
+    }
     setIsAutoSaving(true);
     const timer = setTimeout(() => {
-      saveDraft({
-        id: "current_active_draft",
-        updatedAt: new Date().toISOString(),
-        standardType,
-        doc,
-        versions,
-        originalSnapshot,
-        reviewBlocks,
-        structuredImport,
-        uploadedBlocks,
-        uploadedFileName,
-        uploadedFileType,
-        rawText,
-      }).then(() => {
-        setIsAutoSaving(false);
-        setSaveError(null);
-        const timeStr = new Date().toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
-        setAutoSaveStatus(`Đã lưu tự động (${timeStr})`);
-      }).catch((err) => {
-        setIsAutoSaving(false);
-        setSaveError(err instanceof Error ? err.message : "Lỗi lưu trữ cục bộ");
-        setAutoSaveStatus("Lỗi lưu trữ cục bộ");
-      });
+      void persistDraftNow();
     }, 1000);
     return () => clearTimeout(timer);
-  }, [doc, standardType, versions, originalSnapshot, reviewBlocks, structuredImport, uploadedBlocks, uploadedFileName, uploadedFileType, rawText]);
+  }, [doc, workspace,editorState,standardType, versions, originalSnapshot, reviewBlocks, structuredImport, uploadedBlocks, uploadedFileName, uploadedFileType, rawText, currentStep, sourceOrigin, persistDraftNow]);
 
-  const buildDocumentFormatData = React.useCallback((currentDoc: DocumentState, currentStandard: "state" | "party"): DocumentFormatType => {
-    const isParty = currentStandard === "party";
-    let exportDoc = currentDoc;
-    let effectiveProfile: "generic" | typeof COMPANY_HEADER_PROFILE_ID | typeof COMPANY_HEADER_HD05_PROFILE_ID = "generic";
-    if (!isParty && currentDoc.headerProfile === COMPANY_HEADER_PROFILE_ID) {
-      exportDoc = applyCompanyProfile(currentDoc);
-      effectiveProfile = COMPANY_HEADER_PROFILE_ID;
-    } else if (isParty && currentDoc.headerProfile === COMPANY_HEADER_HD05_PROFILE_ID) {
-      exportDoc = applyCompanyHD05Profile(currentDoc);
-      effectiveProfile = COMPANY_HEADER_HD05_PROFILE_ID;
+  useEffect(() => {
+    if (!draftHydratedRef.current && !userInteractedRef.current) {
+      return;
     }
+    void persistDraftNow();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentStep, sourceOrigin, standardType, doc.headerProfile, doc.documentType, uploadedFileName, docTypeOverride]);
 
-    const importedTables: Record<string, any> = {};
-    const sourceBlocks = reviewBlocks.length > 0 ? reviewBlocks : (structuredImport?.blocks || uploadedBlocks);
-    if (sourceBlocks) {
-      for (const block of sourceBlocks) {
-        // Chỉ lưu các bảng nội dung (body, appendix, unclassified);
-        // KHÔNG đưa bảng metadata (header, signature) vào importedTables vì chúng tuân theo layout quy chuẩn NĐ30/HD05
-        if (block.tableModel && block.role !== "header" && block.role !== "signature") {
-          importedTables[block.id] = block.tableModel;
-          if (block.tableModel.tableId) {
-            importedTables[block.tableModel.tableId] = block.tableModel;
-          }
-        }
-      }
-    }
-
-    // Đồng bộ nội dung sửa đổi mới nhất trong HTML vào importedTables (cả body và appendices)
-    if (Object.keys(importedTables).length > 0) {
-      if (exportDoc.bodyHtml) {
-        const { syncedTables } = syncImportedTablesFromHtml(exportDoc.bodyHtml, importedTables);
-        for (const [id, model] of Object.entries(syncedTables)) {
-          importedTables[id] = model;
-        }
-      }
-      if (exportDoc.appendices && exportDoc.appendices.length > 0) {
-        for (const app of exportDoc.appendices) {
-          if (app.html) {
-            const { syncedTables } = syncImportedTablesFromHtml(app.html, importedTables);
-            for (const [id, model] of Object.entries(syncedTables)) {
-              importedTables[id] = model;
-            }
-          }
-        }
-      }
-    }
-
-    return {
-      regime: isParty ? "party" : "administrative",
-      headerProfile: effectiveProfile,
-      nationalHeader1: isParty ? "ĐẢNG CỘNG SẢN VIỆT NAM" : "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM",
-      nationalHeader2: (isParty ? "" : "Độc lập - Tự do - Hạnh phúc") as "" | "Độc lập - Tự do - Hạnh phúc",
-      fontFamily: "Times New Roman",
-      fontSize: isParty ? 14 : 13,
-      orgHeader1: exportDoc.orgHeader1,
-      orgHeader2: exportDoc.orgHeader2,
-      draftNote: exportDoc.draftNote,
-      includeDraftNoteInExport: exportDoc.includeDraftNoteInExport,
-      locationAndDate: exportDoc.locationAndDate,
-      documentType: exportDoc.documentType,
-      referenceNumber: exportDoc.referenceNumber,
-      subject: exportDoc.subject,
-      bodyHtml: sanitizeHtmlForDocx(exportDoc.bodyHtml),
-      signTitle: exportDoc.signTitle,
-      signName: exportDoc.signName,
-      recipients: exportDoc.recipients,
-      appendices: exportDoc.appendices || [],
-      unclassified: exportDoc.unclassified || [],
-      importedTables: Object.keys(importedTables).length > 0 ? importedTables : undefined,
-    };
-  }, [structuredImport, reviewBlocks, uploadedBlocks]);
+  const buildDocumentFormatData = React.useCallback((currentDoc: DocumentState, currentStandard: "state" | "party"): DocumentFormatType =>
+    composeDocumentFormatData({ doc: currentDoc, standardType: currentStandard, reviewBlocks, structuredImport, uploadedBlocks }),
+    [structuredImport, reviewBlocks, uploadedBlocks]);
 
   // 3. Run compliance check & extract real OOXML evidence whenever doc or standardType changes
   useEffect(() => {
@@ -1047,37 +1660,7 @@ export default function App() {
     );
     setComplianceReport(report);
 
-    const targetKey = currentDraftKey;
-    let cancelled = false;
-    setOoxmlEvidence(undefined);
-    setOoxmlStatus("measuring");
-    const timer = setTimeout(async () => {
-      try {
-        const formatData = buildDocumentFormatData(doc, standardType);
-        const buf = await generateND30DocxUint8Array(formatData);
-        if (cancelled || currentDraftKeyRef.current !== targetKey) return;
-        const zip = await JSZip.loadAsync(buf);
-        const xml = await zip.file("word/document.xml")?.async("string");
-        if (!cancelled && currentDraftKeyRef.current === targetKey && xml) {
-          const ev = extractOoxmlEvidenceFromXml(xml, effectiveRegime);
-          setOoxmlEvidence({ ...ev, header_profile: formatData.headerProfile, draft_key: targetKey });
-          setOoxmlStatus("evaluated_current_draft");
-        } else if (!cancelled && currentDraftKeyRef.current === targetKey) {
-          setOoxmlStatus("not_evaluated");
-        }
-      } catch (err) {
-        console.warn("[OOXML Audit] Could not extract live OOXML evidence:", err);
-        if (!cancelled && currentDraftKeyRef.current === targetKey) {
-          setOoxmlStatus("error");
-        }
-      }
-    }, 200);
-
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [doc, standardType, buildDocumentFormatData, currentDraftKey]);
+  }, [doc, standardType]);
 
   // 4. Responsive Screen Detection & Adaptive Auto-fit
   const calculateFitZoom = useCallback(() => {
@@ -1107,7 +1690,7 @@ export default function App() {
       if (width < 1024) {
         setShowSidebarLeft(false);
       }
-      if (currentStep === 3 && isAutoFitZoom) {
+      if (currentStep === 2 && isAutoFitZoom) {
         requestAnimationFrame(() => {
           const fit = calculateFitZoom();
           setZoomLevel(fit);
@@ -1120,7 +1703,7 @@ export default function App() {
   }, [currentStep, isAutoFitZoom, calculateFitZoom]);
 
   useEffect(() => {
-    if (currentStep === 3 && isAutoFitZoom) {
+    if (currentStep === 2 && isAutoFitZoom) {
       const timer = setTimeout(() => {
         const fit = calculateFitZoom();
         setZoomLevel(fit);
@@ -1145,23 +1728,7 @@ export default function App() {
     }
   };
 
-  const handleManualSave = async () => {
-    try {
-      await saveDraft({
-        id: "current_active_draft",
-        updatedAt: new Date().toISOString(),
-        standardType,
-        doc,
-        versions,
-        originalSnapshot,
-      });
-      const timeStr = new Date().toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-      setAutoSaveStatus(`Đã lưu thủ công (${timeStr})`);
-      showToast("Đã lưu bản nháp an toàn vào IndexedDB!", "success");
-    } catch {
-      showToast("Không thể lưu trữ vào bộ nhớ cục bộ.", "error");
-    }
-  };
+  const handleManualSave = async () => {await persistDraftNow();};
 
   // 5. Global Keyboard Shortcuts: Ctrl+S (Lưu), Ctrl+E (Xuất Word)
   useEffect(() => {
@@ -1177,32 +1744,225 @@ export default function App() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [doc, standardType, versions, originalSnapshot]);
+  }, [doc, workspace,standardType, versions, originalSnapshot,currentStep]);
 
-  const pushVersion = (title: string, newDoc: DocumentState, versionStandardType: "state" | "party" = standardType) => {
+  const applyImportSessionState = (next: ImportSessionState,workspaceOverride?:WorkspaceSnapshot):WorkspaceSnapshot => {
+    restoreBlockedRef.current=false;
+    const nextGeneration = sourceGenerationRef.current + 1;
+    sourceGenerationRef.current = nextGeneration;
+    setSourceGeneration(nextGeneration);
+
+    partitionRevisionRef.current += 1;
+    setPartitionRevision(partitionRevisionRef.current);
+    setPartitionCoverage(null);
+
+    const nextBatchContext: ReviewProposalBatchContext | null =
+      next.reviewProposals && next.reviewProposals.length > 0
+        ? {
+            sourceGeneration: nextGeneration,
+            standardType: next.standardType,
+            partitionRevision: partitionRevisionRef.current,
+            partitionFingerprint: computePartitionFingerprint(next.reviewBlocks),
+          }
+        : null;
+
+    setReviewProposalBatchContext(nextBatchContext);
+    reviewProposalBatchContextRef.current = nextBatchContext;
+
+    const nextWorkspace=workspaceOverride??createWorkspaceSnapshot({doc:next.doc,standardType:next.standardType,reviewBlocks:next.reviewBlocks,structuredImport:next.structuredImport},next.originalSnapshot?.sourceType==='uploaded_file'?{blobHash:next.originalSnapshot.sourceHash||'unverified',generation:nextGeneration,blocks:next.uploadedBlocks}:undefined);
+    setEditorState({activeCanvasId:"body"});
+    setWorkspace(nextWorkspace.workspace);workspaceSnapshotRef.current=nextWorkspace;invalidateCandidate();
+    standardTypeRef.current = nextWorkspace.standardType;
+    setDoc(nextWorkspace.doc);
+    setStandardType(nextWorkspace.standardType);
+    setRawText(next.rawText);
+    setUploadedFileName(next.uploadedFileName);
+    setUploadedHtml(next.uploadedHtml);
+    setUploadedFileType(next.uploadedFileType);
+    setOriginalSnapshot(next.originalSnapshot);
+    setSourceStorageStatus(next.sourceStorageStatus);
+    setUploadedBlocks(next.uploadedBlocks);
+    setStructuredImport(nextWorkspace.structuredImport);
+    setReviewBlocks(nextWorkspace.reviewBlocks);
+    setImportReviewAccepted(next.importReviewAccepted);
+    // S3-F01: một nguồn mới chưa được duyệt — quyết định duyệt của nguồn cũ
+    // không được mang sang.
+    setImportReviewApprovedSourceHash(null);
+    // S1-F01: đề xuất tinh chỉnh của nguồn cũ không được áp vào nguồn mới.
+    setRefineProposal(null);
+    setPartitionProposals(next.partitionProposals);
+    setVerifiedPartitionProposalIds(next.verifiedPartitionProposalIds);
+    setPartitionHistory(next.partitionHistory);
+    setUserModifiedBlockIds(next.userModifiedBlockIds);
+    setPartitionCheckNotice(next.partitionCheckNotice);
+    setPartitionCheckSource(next.partitionCheckSource);
+    setReviewProposals(next.reviewProposals);
+    setAcceptedProposalIds(next.acceptedProposalIds);
+    return nextWorkspace;
+  };
+
+  // ---------------------------------------------------------------------------
+  // Chặng 3 — tiến trình wizard suy ra từ dữ liệu đã hoàn thành thật.
+  // Dấu ✓, quyền nhảy bước và quyền xuất KHÔNG dựa vào `currentStep > n`.
+  // ---------------------------------------------------------------------------
+  const sourceChosen = sourceOrigin !== "none";
+
+  const structureReady = React.useMemo(() => {
+    if (!sourceChosen) return false;
+    if (sourceOrigin === "uploaded_file") {
+      return reviewBlocks.length > 0 || Boolean(structuredImport?.body?.html);
+    }
+    // Mẫu hệ thống / pilot: `reviewBlocks: []` là hợp lệ theo thiết kế.
+    return Boolean(doc.bodyHtml && doc.bodyHtml.trim().length > 0);
+  }, [sourceChosen, sourceOrigin, reviewBlocks.length, structuredImport, doc.bodyHtml]);
+
+  // Mâu thuẫn nguồn ↔ lựa chọn (loại văn bản, mẫu cơ quan, hệ của mẫu). Dùng chung
+  // một phép suy luận với Bước 1 để giao diện và cổng xuất không nói hai điều khác nhau.
+  const sourceMismatch = React.useMemo(
+    () =>
+      deriveSourceMismatch({
+        hasSelectedSource: sourceChosen,
+        hasImportedFile: Boolean(uploadedFileName || uploadedBlocks.length > 0),
+        structuredImport,
+        originalSnapshot,
+        templates: TEMPLATES,
+        isCompanyProfile:
+          standardType === "party"
+            ? doc.headerProfile === COMPANY_HEADER_HD05_PROFILE_ID
+            : doc.headerProfile === COMPANY_HEADER_PROFILE_ID,
+        chosenRegime: standardType,
+        chosenDocType: doc.documentType,
+      }),
+    [
+      sourceChosen,
+      uploadedFileName,
+      uploadedBlocks.length,
+      structuredImport,
+      originalSnapshot,
+      standardType,
+      doc.headerProfile,
+      doc.documentType,
+    ],
+  );
+
+  /** Quyết định override còn hiệu lực cho đúng cặp nguồn/loại/hệ hiện tại hay không. */
+  const docTypeDecisionValid = docTypeDecisionCovers(docTypeOverride, sourceMismatch, standardType);
+
+  /**
+   * S3-F01 (tái audit 20/10/2026): bản nhập từ tệp chỉ được coi là hợp lệ
+   * sau khi người dùng đã **duyệt** ở bước "Đối Chiếu & Phân Vùng". Bấm
+   * "Hủy bỏ" (hoặc đóng hộp thoại) KHÔNG được đánh dấu đã duyệt.
+   * Mẫu hệ thống / tạo mới không qua bước rà soát nên được miễn.
+   */
+  const currentSourceHash = originalSnapshot?.sourceHash ?? "";
+  const importReviewSatisfied=sourceOrigin!=='uploaded_file'||hasWorkspaceApproval(workspaceSnapshot);
+  const canExportSource=structureReady&&importReviewSatisfied&&(!sourceMismatch.docTypeMismatch||docTypeDecisionValid)&&canEnterWorkspaceStep(workspaceSnapshot,3);
+  const canEnterStep=(step:1|2|3)=>step===1||sourceChosen&&canEnterWorkspaceStep(workspaceSnapshot,step)&&(step!==3||canExportSource);
+  const stepIsComplete=(step:1|2|3)=>step===1?sourceChosen&&canEnterWorkspaceStep(workspaceSnapshot,2):step===2?canExportSource:Boolean(visibleCandidate?.safe);
+
+  const goToStep = (step: 1 | 2 | 3) => {
+    if (step === currentStep) return;
+    if (!canEnterStep(step)) {
+      showToast(
+        !sourceChosen
+          ? "Cần một nguồn tài liệu (tệp Word/TXT hoặc mẫu chuẩn) trước khi sang bước soạn thảo."
+          : sourceOrigin === "uploaded_file" && !importReviewSatisfied
+            ? workspaceSnapshot.workspace.staged
+              ? "Phân vùng đang chờ xác nhận. Hãy hoàn tất đối chiếu nguồn ở Bước 1 trước khi soạn."
+              : workspaceSnapshot.workspace.legacyNeedsApproval
+                ? "Bản nháp nhập cũ cần được duyệt lại ở Bước 1 trước khi tiếp tục."
+                : "Bản nhập chưa được duyệt. Hãy mở \"Đối chiếu nguồn\" ở Bước 1 và chọn \"Duyệt & sang Bước 2\"."
+            : sourceMismatch.docTypeMismatch && step === 3
+              ? `Nguồn nhận diện là ${sourceMismatch.sourceDocType} nhưng bạn đang chọn ${sourceMismatch.chosenDocType}. Hãy chọn lại đúng loại hoặc xác nhận giữ loại này trước khi xuất.`
+              : "Cần phân vùng và duyệt nguồn ở Bước 1 trước khi mở bước xem và xuất.",
+        "info"
+      );
+      return;
+    }
+    setCurrentStep(step);
+  };
+
+  /**
+   * S3-F01 — người dùng xác nhận rõ: giữ loại đang chọn trên một nguồn vốn là loại
+   * khác. Ghi provenance (nguồn, loại, hệ, thời điểm) vào bản nháp.
+   */
+  const handleConfirmDocTypeOverride = () => {
+    if (!sourceMismatch.docTypeMismatch) return;
+    const decision: DocTypeDecision = {
+      sourceDocType: sourceMismatch.sourceDocType,
+      chosenDocType: sourceMismatch.chosenDocType,
+      regime: standardType,
+      decidedAt: new Date().toISOString(),
+    };
+    setDocTypeOverride(decision);
+    showToast(
+      `Đã ghi nhận quyết định: giữ loại ${decision.chosenDocType} trên nguồn ${decision.sourceDocType}.`,
+      "success"
+    );
+  };
+
+  const pushVersion = (
+    title: string,
+    newDoc: DocumentState,
+    versionStandardType: "state" | "party" = standardType,
+    snapshotOverride?: {
+      originalSnapshot: OriginalDocumentSnapshot | null;
+      reviewBlocks: SourceBlock[];
+      structuredImport: StructuredImport | null;
+      uploadedBlocks: SourceBlock[];
+      uploadedFileName: string;
+      uploadedFileType: "docx" | "txt" | null;
+      rawText: string;
+      workspace?: WorkspaceState;
+    }
+  ) => {
     const newV: Version = {
       id: "v_" + crypto.randomUUID(),
       timestamp: new Date().toLocaleTimeString("vi-VN") + " " + new Date().toLocaleDateString("vi-VN"),
       title,
       data: { ...newDoc },
+      workspace:snapshotOverride?.workspace?structuredClone(snapshotOverride.workspace):versionStandardType===workspaceSnapshotRef.current.standardType&&JSON.stringify(newDoc)===JSON.stringify(workspaceSnapshotRef.current.doc)?structuredClone(workspaceSnapshotRef.current.workspace):undefined,
       standardType: versionStandardType,
+      docTypeOverride,
+      originalSnapshot: snapshotOverride ? snapshotOverride.originalSnapshot : originalSnapshot,
+      reviewBlocks: snapshotOverride ? snapshotOverride.reviewBlocks : workspaceSnapshotRef.current.reviewBlocks,
+      structuredImport: snapshotOverride ? snapshotOverride.structuredImport : workspaceSnapshotRef.current.structuredImport,
+      uploadedBlocks: snapshotOverride ? snapshotOverride.uploadedBlocks : uploadedBlocks,
+      uploadedFileName: snapshotOverride ? snapshotOverride.uploadedFileName : uploadedFileName,
+      uploadedFileType: snapshotOverride ? snapshotOverride.uploadedFileType : uploadedFileType,
+      rawText: snapshotOverride ? snapshotOverride.rawText : rawText,
     };
     setVersions(prev => [newV, ...prev]);
   };
 
   const handleFieldChange = (field: keyof DocumentState, value: string) => {
+    markUserInteraction();
     if (field === "headerProfile") {
       handleHeaderProfileChange(value as "generic" | typeof COMPANY_HEADER_PROFILE_ID | typeof COMPANY_HEADER_HD05_PROFILE_ID);
       return;
     }
     if (standardType === "state" && doc.headerProfile === COMPANY_HEADER_PROFILE_ID && LOCKED_COMPANY_FIELDS.has(field)) return;
     if (standardType === "party" && doc.headerProfile === COMPANY_HEADER_HD05_PROFILE_ID && LOCKED_COMPANY_HD05_FIELDS.has(field)) return;
-    setDoc(prev => ({ ...prev, [field]: value }));
+    if(workspaceSnapshotRef.current.workspace.partition.approval||sourceOrigin==='system_template'){
+      workspaceAction(field==='bodyHtml'?{type:'editBody',html:value}:{type:'editField',field,value});return;
+    }
+    setWorkspace(null);setDoc(prev => ({ ...prev, [field]: value }));
   };
 
   const handleHeaderProfileChange = (profile: "generic" | typeof COMPANY_HEADER_PROFILE_ID | typeof COMPANY_HEADER_HD05_PROFILE_ID) => {
+    markUserInteraction();
+    if(doc.headerProfile===profile)return;
+    if(workspaceSnapshotRef.current.workspace.partition.approval||sourceOrigin==='system_template'){workspaceAction({type:'setProfile',profile});return;}
     const isPartyMode = standardType === "party";
     const targetCompanyProfile = isPartyMode ? COMPANY_HEADER_HD05_PROFILE_ID : COMPANY_HEADER_PROFILE_ID;
+    const desiredProfile = profile === "generic" ? "generic" : targetCompanyProfile;
+
+    // Chặng 3: bấm lại đúng mẫu cơ quan đang chọn là no-op — không tạo phiên bản
+    // mới và không ghi đè phần đầu tệp nguồn.
+    if (doc.headerProfile === desiredProfile) {
+      return;
+    }
+
     const isActivating = profile === targetCompanyProfile || profile !== "generic";
 
     if (isActivating && doc.headerProfile !== targetCompanyProfile) {
@@ -1211,7 +1971,7 @@ export default function App() {
     const updated = isActivating
       ? (isPartyMode ? applyCompanyHD05Profile(doc) : applyCompanyProfile(doc))
       : { ...doc, headerProfile: "generic" as const };
-    setDoc(updated);
+    setWorkspace(null);setDoc(updated);
     pushVersion(isActivating
       ? (isPartyMode ? "Áp dụng profile Đảng bộ Công ty Hoa tiêu MB" : "Áp dụng profile Công ty Hoa tiêu MB")
       : "Chuyển phần đầu sang tùy chỉnh", updated);
@@ -1224,11 +1984,12 @@ export default function App() {
     if (JSON.stringify(doc) !== JSON.stringify(versions[0]?.data)) {
       pushVersion("Bản soạn trước khi đổi mẫu", doc);
     }
-    setStandardType(t.type);
-    const selectedDoc = t.type === "state" 
+    invalidateActiveAiSession();
+
+    const selectedBaseDoc = t.type === "state" 
       ? applyCompanyProfile({...t.defaultData}) 
       : applyCompanyHD05Profile({...t.defaultData});
-    setDoc(selectedDoc);
+    const preparedTemplate=prepareTemplateTables(t.id,selectedBaseDoc),selectedDoc=preparedTemplate.doc;
 
     const snapshot: OriginalDocumentSnapshot = {
       sourceType: "system_template",
@@ -1239,20 +2000,44 @@ export default function App() {
       bodyHtml: t.defaultData.bodyHtml,
       rawText: t.defaultData.bodyHtml.replace(/<[^>]+>/g, " "),
     };
-    setOriginalSnapshot(snapshot);
-    setUploadedFileName(t.name);
-    setUploadedHtml(t.defaultData.bodyHtml);
-    setRawText(t.defaultData.bodyHtml.replace(/<[^>]+>/g, " "));
 
-    pushVersion(`Áp dụng mẫu: ${t.name}`, selectedDoc, t.type);
+    const nextSession = commitTemplateOrPilotReplacement(
+      createInitialImportSessionState(doc, standardType, originalSnapshot),
+      {
+        doc: selectedDoc,
+        standardType: t.type,
+        originalSnapshot: snapshot,
+      }
+    );
+    let nextWorkspace=createWorkspaceSnapshot({doc:nextSession.doc,standardType:nextSession.standardType,reviewBlocks:nextSession.reviewBlocks,structuredImport:nextSession.structuredImport});
+    if(preparedTemplate.models.length){
+      const registered=transactWorkspace(nextWorkspace,0,{type:'registerTemplateTables',templateId:t.id,models:preparedTemplate.models});
+      if(!registered.ok){setErrorMsg(`Không thể khởi tạo bảng của mẫu ${t.name}; mẫu trước được giữ nguyên. ${registered.details.join(' · ')}`);return;}
+      nextWorkspace=registered.snapshot;
+    }
+    applyImportSessionState(nextSession,nextWorkspace);
+
+    pushVersion(`Áp dụng mẫu: ${t.name}`, nextWorkspace.doc, t.type, {
+      originalSnapshot: nextSession.originalSnapshot,
+      reviewBlocks: nextSession.reviewBlocks,
+      structuredImport: nextSession.structuredImport,
+      uploadedBlocks: nextSession.uploadedBlocks,
+      uploadedFileName: nextSession.uploadedFileName,
+      uploadedFileType: nextSession.uploadedFileType,
+      rawText: nextSession.rawText,
+      workspace: nextWorkspace.workspace,
+    });
     setSuccessMsg(`Đã tải mẫu "${t.name}". Bạn có thể bắt đầu soạn thảo và chỉnh sửa ngay!`);
     setPendingTemplate(null);
-    if (currentStep === 2) {
-      setCurrentStep(3);
-    }
+    // Chặng 3: chọn mẫu là một nguồn do người dùng chủ động chọn. Bước 1 hiển thị
+    // lại nguồn + thể thức đã xác nhận thay vì tự nhảy sang bước soạn.
+    setSourceOrigin("system_template");
+    // Nguồn mới ⇒ quyết định override của nguồn cũ không còn hiệu lực.
+    setDocTypeOverride(null);
   };
 
   const selectTemplate = (tId: string) => {
+    markUserInteraction();
     const t = TEMPLATES.find(x => x.id === tId);
     if (!t) return;
     if (JSON.stringify(doc) !== JSON.stringify(versions[0]?.data)) {
@@ -1266,8 +2051,9 @@ export default function App() {
     if (JSON.stringify(doc) !== JSON.stringify(versions[0]?.data)) {
       pushVersion("Bản soạn trước khi nạp Pilot", doc);
     }
+    invalidateActiveAiSession();
+
     const standard: "state" | "party" = (item.doc.regime === "party" || ("category" in item && item.category === "dang")) ? "party" : "state";
-    setStandardType(standard);
     const newDoc: DocumentState = {
       headerProfile: "generic",
       orgHeader1: item.doc.orgHeader1,
@@ -1290,7 +2076,6 @@ export default function App() {
         sourceFilename: `pilot_${item.id}.docx`
       }
     };
-    setDoc(newDoc);
 
     const snapshot: OriginalDocumentSnapshot = {
       sourceType: "system_template",
@@ -1301,14 +2086,30 @@ export default function App() {
       bodyHtml: item.doc.bodyHtml,
       rawText: item.doc.bodyHtml.replace(/<[^>]+>/g, " "),
     };
-    setOriginalSnapshot(snapshot);
-    setUploadedFileName(item.title);
-    setUploadedHtml(item.doc.bodyHtml);
-    setRawText(item.doc.bodyHtml.replace(/<[^>]+>/g, " "));
 
-    pushVersion(`Nạp Pilot: ${item.code} - ${item.title.substring(0, 30)}...`, newDoc, standard);
+    const nextSession = commitTemplateOrPilotReplacement(
+      createInitialImportSessionState(doc, standardType, originalSnapshot),
+      {
+        doc: newDoc,
+        standardType: standard,
+        originalSnapshot: snapshot,
+      }
+    );
+    applyImportSessionState(nextSession);
+
+    pushVersion(`Nạp Pilot: ${item.code} - ${item.title.substring(0, 30)}...`, newDoc, standard, {
+      originalSnapshot: nextSession.originalSnapshot,
+      reviewBlocks: nextSession.reviewBlocks,
+      structuredImport: nextSession.structuredImport,
+      uploadedBlocks: nextSession.uploadedBlocks,
+      uploadedFileName: nextSession.uploadedFileName,
+      uploadedFileType: nextSession.uploadedFileType,
+      rawText: nextSession.rawText,
+    });
     setShowPilotModal(false);
-    setCurrentStep(3);
+    setSourceOrigin("system_template");
+    setDocTypeOverride(null);
+    setCurrentStep(2);
     setSuccessMsg(`Đã nạp thành công tài liệu "${item.title}" (${item.badge}) vào Studio soạn thảo!`);
   };
 
@@ -1389,110 +2190,171 @@ export default function App() {
     }, 350);
   };
 
-  const handleFileUpload = async (file: File) => {
-    const requestId = ++uploadRequestIdRef.current;
+  // ===========================================================================
+  // Chặng 2: detect the regime on RAW blocks, confirm before partitioning.
+  // ===========================================================================
 
+  /**
+   * Segment exactly once under the confirmed regime, persist the source blob,
+   * build the bundle and commit atomically. Only called once the regime is
+   * decided (auto with strong matching evidence, or explicit user confirmation).
+   */
+  const commitExtraction = async (
+    extraction: LocalFileExtraction,
+    regime: "state" | "party",
+    detection: RegimeDetectionResult,
+    decidedBy: "auto" | "user",
+    token: SessionRequestToken
+  ): Promise<boolean> => {
+    const regimeRecord = toRegimeDetectionRecord(detection, regime, decidedBy);
+    const activeRegime: "administrative" | "party" = regime === "party" ? "party" : "administrative";
+    // Start the opt-in source-only request before rule segmentation. The upload
+    // flow does not wait for this promise, and its expected generation/revision
+    // are the values applyImportSessionState will commit below.
+    const aiCall = aiPartitionConsentRef.current
+      ? startPartitionAiCall(
+          extraction.rawBlocks,
+          activeRegime,
+          sourceGenerationRef.current + 1,
+          partitionRevisionRef.current + 1,
+        )
+      : null;
+    const structured = segmentLocalExtraction(
+      extraction,
+      activeRegime,
+      regimeRecord
+    );
+    const storageStatus = await persistSourceBlob(extraction);
+    const parsed = buildParsedImport(extraction, structured, storageStatus);
+
+    // Prepare the entire bundle before mutating any source-bound state. If this
+    // throws, the currently open document A remains completely intact.
+    const bundle = prepareImportedFileBundle(parsed, regime);
+    if (!sessionGateRef.current.isCurrent(token, standardTypeRef.current)) return false;
+
+    sessionGateRef.current.cancelKind("review");
+    setIsReviewingProposals(false);
+    const nextSession = commitImportedFileBundle(
+      createInitialImportSessionState(doc, regime, originalSnapshot),
+      bundle
+    );
+    applyImportSessionState(nextSession);
+
+    const localPartitionProposals = analyzePartitionFallback(bundle.reviewBlocks, activeRegime).map(proposal => ({
+      ...proposal,
+      sourceGeneration: sourceGenerationRef.current,
+      partitionRevision: partitionRevisionRef.current,
+    }));
+    const blockIds = bundle.reviewBlocks.map(block => block.id);
+    setPartitionProposals(localPartitionProposals);
+    setVerifiedPartitionProposalIds(new Set());
+    setPartitionCheckSource("rule_fallback");
+    setPartitionCoverage({
+      aiReviewedBlockIds: [],
+      ruleFallbackBlockIds: blockIds,
+      unreviewedBlockIds: blockIds,
+      chunks: [],
+    });
+    setPartitionCheckNotice(aiCall
+      ? `Quy tắc nội bộ đã rà soát ${blockIds.length}/${blockIds.length} khối. AI đang kiểm tra nguồn độc lập ở nền.`
+      : `Quy tắc nội bộ đã rà soát ${blockIds.length}/${blockIds.length} khối. AI chưa được cho phép.`);
+    if (aiCall) finishPartitionAiCall(aiCall, bundle.reviewBlocks, []);
+    else setIsCheckingPartitions(false);
+
+    if (bundle.storageStatus?.storage === "memory") {
+      showToast("Lưu ý: Tệp nguồn hiện chỉ được lưu tạm trong bộ nhớ phiên (có thể mất khi tải lại trang).", "info");
+    }
+
+    setShowSideBySideModal(true);
+    setSourceOrigin("uploaded_file");
+    setDocTypeOverride(null);
+    setSuccessMsg(`Đã bóc tách thành công tệp "${bundle.uploadedFileName}" (${bundle.blockCount} khối dữ liệu).`);
+    return true;
+  };
+
+  const confirmPendingImport = async (regime: "state" | "party") => {
+    const pending = pendingImport;
+    if (!pending) return;
+    // Stale guards: a newer upload, a regime switch or an invalidated session must
+    // never commit the old pending import.
+    if (!sessionGateRef.current.isCurrent(pending.token, pending.chosenRegime)) {
+      setPendingImport(null);
+      return;
+    }
+    if (standardTypeRef.current !== pending.chosenRegime) {
+      setPendingImport(null);
+      showToast("Hệ thể thức đã thay đổi trong lúc chờ xác nhận. Vui lòng tải lại tệp.", "info");
+      return;
+    }
+    setIsUploading(true);
+    try {
+      const ok = await commitExtraction(pending.extraction, regime, pending.detection, "user", pending.token);
+      if (ok) setPendingImport(null);
+    } catch (err: any) {
+      if (sessionGateRef.current.isCurrent(pending.token, pending.chosenRegime)) {
+        setErrorMsg(err?.message || "Không thể đọc tệp tin đã tải lên.");
+      }
+      setPendingImport(null);
+    } finally {
+      if (sessionGateRef.current.isCurrent(pending.token)) {
+        sessionGateRef.current.cancelKind("upload");
+      }
+      setIsUploading(false);
+    }
+  };
+
+  const cancelPendingImport = () => {
+    const pending = pendingImport;
+    if (pending && sessionGateRef.current.isCurrent(pending.token)) {
+      sessionGateRef.current.cancelKind("upload");
+    }
+    setPendingImport(null);
+    setIsUploading(false);
+    showToast("Đã hủy nhập tệp. Tài liệu đang mở được giữ nguyên và không lưu tệp vừa tải.", "info");
+  };
+
+  const handleFileUpload = async (file: File) => {
+    invalidateActiveAiSession();
+    // A new upload invalidates the pending confirmation of any previous file.
+    setPendingImport(null);
+    const uploadRegime = standardTypeRef.current;
+    const uploadToken = sessionGateRef.current.begin("upload", uploadRegime);
     setIsUploading(true);
     setErrorMsg("");
     setSuccessMsg("");
 
+    let keepPending = false;
     try {
-      const parsed = await parseLocalFile(file, standardType === "party" ? "party" : "administrative");
-      if (requestId !== uploadRequestIdRef.current) return;
+      // 1) Extract raw blocks only: no segmentation, no blob save yet.
+      const extraction = await extractLocalFile(file);
+      if (!sessionGateRef.current.isCurrent(uploadToken, standardTypeRef.current)) return;
 
-      setSourceStorageStatus(parsed.storageStatus);
-      if (parsed.storageStatus?.storage === "memory") {
-        showToast("Lưu ý: Tệp nguồn hiện chỉ được lưu tạm trong bộ nhớ phiên (có thể mất khi tải lại trang).", "info");
+      // 2) Detect the regime from raw, unsegmented blocks (two-way, provenance-first).
+      const detection = detectRegimeFromRawBlocks(extraction.rawBlocks);
+
+      // 3) Strong evidence matching the current choice may proceed; otherwise the
+      //    user must confirm (both systems present, insufficient, or mismatch).
+      if (regimeNeedsConfirmation(detection, uploadRegime)) {
+        setPendingImport({
+          token: uploadToken,
+          extraction,
+          detection,
+          chosenRegime: uploadRegime,
+          filename: extraction.filename,
+        });
+        keepPending = true;
+        setIsUploading(false);
+        return;
       }
 
-      const rawBlocks = parsed.blocks || [];
-      const cleanHtml = DOMPurify.sanitize(parsed.html);
-      setUploadedBlocks(rawBlocks);
-      setRawText(parsed.text);
-      setUploadedHtml(cleanHtml);
-      setStructuredImport(parsed.structured);
-      setReviewBlocks(parsed.structured?.blocks || rawBlocks);
-      setImportReviewAccepted(false);
-      setUploadedFileName(parsed.filename);
-      setUploadedFileType(parsed.fileType);
-
-      const snapshot: OriginalDocumentSnapshot = {
-        sourceType: "uploaded_file",
-        fileName: parsed.filename,
-        fileType: parsed.fileType,
-        uploadedAt: new Date().toISOString(),
-        bodyHtml: cleanHtml,
-        rawText: parsed.text,
-        blockCount: parsed.blockCount,
-        tableCount: rawBlocks.filter(b => b.kind === "table").length,
-        sourceHash: parsed.sourceHash,
-      };
-      setOriginalSnapshot(snapshot);
-
-      // Auto-detect party vs state from parsed content
-      const upperText = (parsed.text || "").toUpperCase();
-      const isPartyDetected = upperText.includes("ĐẢNG CỘNG SẢN VIỆT NAM") || upperText.includes("ĐẢNG ỦY") || upperText.includes("CHI BỘ");
-      const effectiveRegime = isPartyDetected ? "party" : standardType;
-      if (effectiveRegime !== standardType) {
-        setStandardType(effectiveRegime);
-      }
-
-      // 1. Generate offline deterministic rule proposals immediately (0ms latency, 100% offline, Zero Privacy Risk)
-      if (parsed.structured) {
-        const initialRuleProps = generateRuleBasedProposals(
-          parsed.structured,
-          effectiveRegime === "party" ? "party" : "administrative",
-          parsed.text,
-          rawBlocks
-        );
-        setReviewProposals(initialRuleProps);
-
-        // Khởi tạo doc state ngay với dữ liệu tài liệu vừa nạp thay vì giữ mẫu ban đầu
-        const reconstructed = reconstructFromReviewedBlocks(
-          parsed.structured.blocks || rawBlocks,
-          effectiveRegime,
-          parsed.structured
-        );
-
-        const newDoc: DocumentState = {
-          headerProfile: "generic",
-          orgHeader1: reconstructed.fields.orgHeader1 || "",
-          orgHeader2: reconstructed.fields.orgHeader2 || "",
-          draftNote: reconstructed.draftNote || "",
-          includeDraftNoteInExport: Boolean(reconstructed.draftNote),
-          nationalHeader1: reconstructed.fields.nationalHeader1 || (effectiveRegime === "party" ? "ĐẢNG CỘNG SẢN VIỆT NAM" : "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM"),
-          nationalHeader2: reconstructed.fields.nationalHeader2 ?? (effectiveRegime === "party" ? "" : "Độc lập - Tự do - Hạnh phúc"),
-          locationAndDate: reconstructed.fields.locationAndDate || "",
-          documentType: reconstructed.fields.documentType || "",
-          referenceNumber: reconstructed.fields.referenceNumber || "",
-          subject: reconstructed.fields.subject || "",
-          bodyHtml: reconstructed.bodyHtml,
-          signTitle: reconstructed.fields.signTitle || "",
-          signName: reconstructed.fields.signName || "",
-          recipients: reconstructed.fields.recipients || "",
-          appendices: reconstructed.appendices,
-          unclassified: reconstructed.unclassified,
-          importMetadata: {
-            sourceType: parsed.fileType || "docx",
-            status: deriveImportStatus({ 
-              ...parsed.structured, 
-              unclassified: reconstructed.unclassified, 
-              appendices: reconstructed.appendices 
-            }, false),
-            sourceFilename: parsed.filename,
-          }
-        };
-        setDoc(newDoc);
-      }
-
-      // Open the Side-by-Side Import Review Studio
-      setShowSideBySideModal(true);
-      setSuccessMsg(`Đã bóc tách thành công tệp "${parsed.filename}" (${parsed.blockCount} khối dữ liệu).`);
+      // 4) Segment once under the confirmed regime, then commit atomically.
+      await commitExtraction(extraction, uploadRegime, detection, "auto", uploadToken);
     } catch (err: any) {
-      if (requestId !== uploadRequestIdRef.current) return;
+      if (!sessionGateRef.current.isCurrent(uploadToken, standardTypeRef.current)) return;
       setErrorMsg(err.message || "Không thể đọc tệp tin đã tải lên.");
     } finally {
-      if (requestId === uploadRequestIdRef.current) {
+      if (!keepPending && sessionGateRef.current.isCurrent(uploadToken)) {
+        sessionGateRef.current.cancelKind("upload");
         setIsUploading(false);
       }
     }
@@ -1500,13 +2362,21 @@ export default function App() {
 
   const fetchAiReviewProposals = async () => {
     if (!structuredImport && reviewBlocks.length === 0) return;
+    const token = sessionGateRef.current.begin("review");
     setIsReviewingProposals(true);
-    setAcceptedProposalIds(new Set());
+    // Note: Do NOT clear acceptedProposalIds here; preserve existing accepted state until new batch is successfully committed.
     const effectiveBlocks = reviewBlocks.length > 0 ? reviewBlocks : (structuredImport?.blocks || uploadedBlocks);
+    const requestContext: ReviewProposalBatchContext = {
+      sourceGeneration: sourceGenerationRef.current,
+      standardType: standardTypeRef.current,
+      partitionRevision: partitionRevisionRef.current,
+      partitionFingerprint: computePartitionFingerprint(effectiveBlocks),
+    };
     try {
       const res = await fetch("/api/ai/review-document", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: token.signal,
         body: JSON.stringify({
           structured: structuredImport,
           standardType: standardType === "party" ? "party" : "administrative",
@@ -1518,29 +2388,81 @@ export default function App() {
           }
         })
       });
+      if (!sessionGateRef.current.isCurrent(token)) {
+        return;
+      }
+      const currentBlocksBeforeJson = reviewBlocks.length > 0 ? reviewBlocks : (structuredImport?.blocks || uploadedBlocks);
+      const currentContextBeforeJson: ReviewProposalBatchContext = {
+        sourceGeneration: sourceGenerationRef.current,
+        standardType: standardTypeRef.current,
+        partitionRevision: partitionRevisionRef.current,
+        partitionFingerprint: computePartitionFingerprint(currentBlocksBeforeJson),
+      };
+      if (!isReviewProposalBatchValid(requestContext, currentContextBeforeJson)) {
+        return;
+      }
       const data = await res.json();
+      if (!sessionGateRef.current.isCurrent(token)) {
+        return;
+      }
+      const currentBlocksAfterJson = reviewBlocks.length > 0 ? reviewBlocks : (structuredImport?.blocks || uploadedBlocks);
+      const currentContextAfterJson: ReviewProposalBatchContext = {
+        sourceGeneration: sourceGenerationRef.current,
+        standardType: standardTypeRef.current,
+        partitionRevision: partitionRevisionRef.current,
+        partitionFingerprint: computePartitionFingerprint(currentBlocksAfterJson),
+      };
+      if (!isReviewProposalBatchValid(requestContext, currentContextAfterJson)) {
+        return;
+      }
       if (data.success && Array.isArray(data.proposals)) {
         setReviewProposals(data.proposals);
+        setReviewProposalBatchContext(requestContext);
+        reviewProposalBatchContextRef.current = requestContext;
+        setAcceptedProposalIds(new Set());
         setSuccessMsg(`AI đã hoàn thành rà soát: tìm thấy ${data.proposals.length} đề xuất chuẩn hóa.`);
       } else {
         setErrorMsg(data.error || "Không thể tải đề xuất rà soát AI.");
       }
     } catch (err: any) {
+      if (!sessionGateRef.current.isCurrent(token)) {
+        return;
+      }
       console.warn("Could not fetch review proposals:", err);
       setErrorMsg("Lỗi kết nối AI rà soát: " + err.message);
     } finally {
-      setIsReviewingProposals(false);
+      if (sessionGateRef.current.isCurrent(token)) {
+        setIsReviewingProposals(false);
+      }
     }
   };
 
   const handleAcceptProposal = (proposal: ReviewProposal) => {
+    if(workspace?.partition.approval||workspace?.staged||workspace?.workingRevision){setErrorMsg('Đề xuất theo khối nguồn cũ chỉ được xem. Hãy dùng AI target Body hiện hành.');return;}
     if (!structuredImport && reviewBlocks.length === 0) return;
 
+    const currentBlocks = reviewBlocks.length > 0 ? reviewBlocks : (structuredImport?.blocks || uploadedBlocks);
+    const currentContext: ReviewProposalBatchContext = {
+      sourceGeneration: sourceGenerationRef.current,
+      standardType: standardTypeRef.current,
+      partitionRevision: partitionRevisionRef.current,
+      partitionFingerprint: computePartitionFingerprint(currentBlocks),
+    };
+
+    if (!isReviewProposalBatchValid(reviewProposalBatchContextRef.current, currentContext)) {
+      const err = "Đề xuất đã hết hiệu lực do thể thức, nguồn hoặc phân vùng tài liệu đã thay đổi.";
+      setErrorMsg(err);
+      showToast(err, "error");
+      return;
+    }
+
     const currentState: CanonicalWorkflowState = {
-      reviewBlocks: reviewBlocks.length > 0 ? reviewBlocks : (structuredImport?.blocks || uploadedBlocks),
+      reviewBlocks: currentBlocks,
       structuredImport,
       doc,
       acceptedProposalIds,
+      proposalBatchContext: reviewProposalBatchContextRef.current,
+      currentContext,
     };
 
     const result = applySingleProposal(proposal, currentState);
@@ -1551,9 +2473,8 @@ export default function App() {
       return;
     }
 
-    setReviewBlocks(result.nextState.reviewBlocks);
-    setStructuredImport(result.nextState.structuredImport || null);
-    setDoc(result.nextState.doc);
+    invalidateActiveAiSession();
+    installPendingPartition(result.nextState.reviewBlocks,result.nextState.structuredImport||null,result.nextState.doc);
     setAcceptedProposalIds(result.nextState.acceptedProposalIds);
     pushVersion(`Áp dụng đề xuất: ${proposal.label || proposal.suggested}`, result.nextState.doc);
     setSuccessMsg(`Đã áp dụng thành công đề xuất: ${proposal.label || proposal.suggested}`);
@@ -1564,23 +2485,42 @@ export default function App() {
   };
 
   const handleAcceptAllProposals = () => {
+    if(workspace?.partition.approval||workspace?.staged||workspace?.workingRevision){setErrorMsg('Không áp hàng loạt đề xuất nguồn lên bản soạn Workspace.');return;}
     if (!structuredImport && reviewBlocks.length === 0) return;
 
+    const currentBlocks = reviewBlocks.length > 0 ? reviewBlocks : (structuredImport?.blocks || uploadedBlocks);
+    const currentContext: ReviewProposalBatchContext = {
+      sourceGeneration: sourceGenerationRef.current,
+      standardType: standardTypeRef.current,
+      partitionRevision: partitionRevisionRef.current,
+      partitionFingerprint: computePartitionFingerprint(currentBlocks),
+    };
+
+    if (!isReviewProposalBatchValid(reviewProposalBatchContextRef.current, currentContext)) {
+      const err = "Đề xuất đã hết hiệu lực do thể thức, nguồn hoặc phân vùng tài liệu đã thay đổi.";
+      setErrorMsg(err);
+      showToast(err, "error");
+      return;
+    }
+
     const initialState: CanonicalWorkflowState = {
-      reviewBlocks: reviewBlocks.length > 0 ? reviewBlocks : (structuredImport?.blocks || uploadedBlocks),
+      reviewBlocks: currentBlocks,
       structuredImport,
       doc,
       acceptedProposalIds: new Set(acceptedProposalIds),
+      proposalBatchContext: reviewProposalBatchContextRef.current,
+      currentContext,
     };
 
     const { finalState, appliedCount, rejectedReasons } = applyAllProposalsSequentially(
-      reviewProposals,
+      visibleReviewProposals,
       initialState
     );
 
-    setReviewBlocks(finalState.reviewBlocks);
-    setStructuredImport(finalState.structuredImport || null);
-    setDoc(finalState.doc);
+    if (appliedCount > 0) {
+      invalidateActiveAiSession();
+    }
+    installPendingPartition(finalState.reviewBlocks,finalState.structuredImport||null,finalState.doc);
     setAcceptedProposalIds(finalState.acceptedProposalIds);
 
     if (appliedCount > 0) {
@@ -1609,6 +2549,9 @@ export default function App() {
   };
 
   const handleConfirmSideBySideImport = () => {
+    const current=workspaceSnapshotRef.current;
+    if(current.workspace.staged){if(applyWorkspaceResult(confirmWorkspacePartition(current))){setShowSideBySideModal(false);setImportReviewApprovedSourceHash(originalSnapshot?.sourceHash??'');setCurrentStep(2);}return;}
+    if(current.workspace.partition.approval||current.workspace.workingRevision>0){if(applyWorkspaceResult(approveWorkspacePartition(current))){setShowSideBySideModal(false);setImportReviewApprovedSourceHash(originalSnapshot?.sourceHash??'');setCurrentStep(2);}return;}
     if (!structuredImport) return;
     if (liveValidationErrors.length > 0) return;
 
@@ -1640,47 +2583,63 @@ export default function App() {
         sourceFilename: uploadedFileName,
       }
     };
-    setDoc(newDoc);
-    if (reviewBlocks.length > 0 && structuredImport) {
-      const activeContentTableIds = reviewBlocks
-        .filter(b => b.kind === "table" && b.role !== "header" && b.role !== "signature")
-        .map(b => b.tableModel?.tableId || b.id);
-
-      setStructuredImport(prev => prev ? {
-        ...prev,
-        blocks: reviewBlocks,
-        importFidelityManifest: prev.importFidelityManifest ? {
-          ...prev.importFidelityManifest,
-          tableIds: activeContentTableIds,
-        } : undefined
-      } : null);
-    }
+    const pending=structuredClone(createWorkspaceSnapshot({doc:newDoc,standardType,reviewBlocks,structuredImport}, {blobHash:originalSnapshot?.sourceHash||'unverified',generation:sourceGeneration,blocks:uploadedBlocks.length?uploadedBlocks:reviewBlocks}));
+    pending.workspace.partition=makePartition(pending.workspace.source,standardType,reviewBlocks,pending.workspace.partition.revision,current.workspace.partition.cells);
+    if(!applyWorkspaceResult(approveWorkspacePartition(pending)))return;
     pushVersion(`Nhập phân vùng từ tệp ${uploadedFileName || "văn bản"}`, newDoc);
     setSuccessMsg(`Đã đưa toàn bộ cấu trúc tệp "${uploadedFileName}" vào Studio soạn thảo thành công!`);
     setShowSideBySideModal(false);
-    setCurrentStep(3);
+    setSourceOrigin("uploaded_file");
+    setDocTypeOverride(null);
+    // S3-F01: người dùng đã duyệt bản nhập này → ghi nhận theo hash nguồn để
+    // mở được Bước 3 và các nút xuất/in.
+    setImportReviewAccepted(true);
+    setImportReviewApprovedSourceHash(originalSnapshot?.sourceHash ?? "");
+    setCurrentStep(2);
   };
 
-  const handleAiRefine = async (action: "proofread" | "formalize") => {
+  const handleAiRefine = async (action: "proofread" | "formalize", nodeId?:string) => {
     setIsRefining(true);
     setErrorMsg("");
+    // S1-F01: ghi nhận ngữ cảnh nguồn TRƯỚC khi gọi AI để đối chiếu khi
+    // phản hồi về và khi người dùng bấm áp dụng.
+    const requestContext = getCurrentRefineContext();
+    const aiTarget=createWorkspaceAiTarget(workspaceSnapshotRef.current,nodeId?{kind:'node',nodeId}:{kind:'body'});
+    if(!aiTarget){setErrorMsg('Không tìm thấy đoạn đang chọn hoặc toàn Body chưa đủ điều kiện để gửi AI.');setIsRefining(false);return;}
+    const requestBodyHtml = aiTarget.originalText;
     try {
       const res = await fetch("/api/ai/refine-text", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: doc.bodyHtml, action })
+        body: JSON.stringify({ text: requestBodyHtml, action })
       });
       const data = await res.json();
       if (data.success && data.refined) {
+        // S1-F01: phản hồi đến muộn sau khi người dùng đã đổi nguồn / đổi hệ
+        // / sửa phân vùng thì đề xuất cũ bị loại, không được hiện ra.
+        if (!isRefineProposalContextValid(requestContext, getCurrentRefineContext())) {
+          setErrorMsg("Nguồn tài liệu đã thay đổi nên đề xuất AI cũ không còn hợp lệ. Hãy chạy lại AI tinh chỉnh.");
+          return;
+        }
+        // Chặng 5: thân bài đã bị sửa trong lúc chờ AI → đề xuất được tính trên
+        // bản cũ, áp vào sẽ xoá mất chỉnh sửa của người dùng.
+        if (aiTarget.kind==='body'&&bodyHtmlRef.current !== requestBodyHtml) {
+          setErrorMsg("Nội dung thân bài đã thay đổi trong lúc chờ AI nên đề xuất cũ không còn hợp lệ. Hãy chạy lại AI tinh chỉnh.");
+          return;
+        }
+        const received=receiveWorkspaceAiResult(workspaceSnapshotRef.current,aiTarget,data.refined);
+        if(received.check.status!=='supported'){setErrorMsg(received.check.status==='stale'?(aiTarget.kind==='node'?'Nội dung thân bài đã thay đổi hoặc đoạn đang chọn đã thay đổi; đề xuất AI cũ không còn hợp lệ.':'Nội dung thân bài đã thay đổi; đề xuất AI cũ không còn hợp lệ.'):'Kết quả AI đổi cấu trúc đoạn hoặc target chưa hỗ trợ; không áp dụng đề xuất này.');return;}
         const actionLabel = action === 'proofread' ? 'Sửa lỗi chính tả & câu từ' : 'Nâng cấp văn phong hành chính';
         setRefineProposal({
           action,
-          originalHtml: doc.bodyHtml,
+          target: aiTarget,
+          originalHtml: requestBodyHtml,
           refinedHtml: data.refined,
-          label: actionLabel,
+          label: aiTarget.kind==='node'?actionLabel+' · đoạn đang chọn':actionLabel,
           source: data.source || (data.isFallback ? "rule_fallback" : "gemini_ai"),
           isFallback: Boolean(data.isFallback),
-          notice: data.notice
+          notice: data.notice,
+          context: requestContext,
         });
       } else {
         setErrorMsg(data.error || "Lỗi xử lý tinh chỉnh văn bản.");
@@ -1694,8 +2653,24 @@ export default function App() {
 
   const acceptRefineProposal = () => {
     if (!refineProposal) return;
-    const updated = { ...doc, bodyHtml: refineProposal.refinedHtml };
-    setDoc(updated);
+    // S1-F01: kiểm lại ngữ cảnh NGUỒN ngay tại thời điểm áp dụng — không chỉ
+    // lúc gửi request. Đề xuất của nguồn A không được ghi đè lên nguồn B.
+    if (!isRefineProposalContextValid(refineProposal.context, getCurrentRefineContext())) {
+      setErrorMsg("Nguồn tài liệu đã thay đổi nên đề xuất này không còn hợp lệ. Đề xuất đã bị loại.");
+      setRefineProposal(null);
+      return;
+    }
+    // Chặng 5: người dùng đã sửa thân bài trong **cùng nguồn** sau khi đề xuất
+    // được tạo → đề xuất cũ không được ghi đè phần vừa sửa.
+    if (refineProposal.target?.kind==='body'&&refineProposal.originalHtml !== bodyHtmlRef.current) {
+      setErrorMsg("Nội dung thân bài đã thay đổi sau khi AI tạo đề xuất nên đề xuất này không còn hợp lệ. Đề xuất đã bị loại.");
+      setRefineProposal(null);
+      return;
+    }
+    if(!refineProposal.target){setErrorMsg('Đề xuất cũ không có target hợp lệ.');setRefineProposal(null);return;}
+    const applied=applyWorkspaceAiResult(workspaceSnapshotRef.current,{target:refineProposal.target,suggestedText:refineProposal.refinedHtml});
+    if(!applyWorkspaceResult(applied as WorkspaceResult)){setRefineProposal(null);return;}
+    const updated=applied.ok?applied.snapshot.doc:doc;
     pushVersion(`AI: ${refineProposal.label}`, updated);
     setSuccessMsg(`Đã phê duyệt và áp dụng: ${refineProposal.label}!`);
     setRefineProposal(null);
@@ -1707,133 +2682,85 @@ export default function App() {
   };
 
   const exportToDocx = async () => {
-    setIsExportingDocx(true);
-    const exportDraftKey = currentDraftKeyRef.current;
-    try {
-      const isParty = standardType === "party";
-      const documentData = buildDocumentFormatData(doc, standardType);
-      const bytes = await generateND30DocxUint8Array(documentData);
-
-      // 1. Kiểm chứng roundtrip trên đúng bytes ứng viên trong bộ nhớ
-      const fidelityResult = await verifyCandidateExportFidelity(
-        bytes,
-        documentData.importedTables,
-        structuredImport?.importFidelityManifest
-      );
-      const roundtripVerified = Boolean(fidelityResult.safe);
-
-      // 2. Đánh giá an toàn xuất bản với kết quả kiểm chứng ứng viên thực tế
-      const safetyResult = assessExportSafety(structuredImport?.importFidelityManifest, {
-        candidateFidelityResult: fidelityResult,
-        roundtripVerified,
-      });
-
-      if (!fidelityResult.safe || safetyResult.decision === "reject") {
-        const diffDetails = fidelityResult?.diffs?.length
-          ? "\nChi tiết sai khác:\n- " + fidelityResult.diffs.slice(0, 5).map((d: any) => d.messageVi).join("\n- ")
-          : (fidelityResult?.summaryVi ? `\n${fidelityResult.summaryVi}` : "");
-        setErrorMsg((safetyResult?.userNotice || "Xuất bản Word biến đổi bị từ chối để bảo vệ toàn vẹn dữ liệu.") + diffDetails);
-        return;
-      }
-      const zip = await JSZip.loadAsync(bytes);
-      const xml = await zip.file("word/document.xml")?.async("string");
-      if (xml && currentDraftKeyRef.current === exportDraftKey) {
-        const ev = extractOoxmlEvidenceFromXml(xml, isParty ? "party" : "administrative");
-        setOoxmlEvidence({
-          ...ev,
-          header_profile: documentData.headerProfile,
-          draft_key: exportDraftKey,
-          candidate_fidelity_result: fidelityResult,
-        });
-        setOoxmlStatus("evaluated_current_draft");
-      }
-
-      const cleanDocType = (documentData.documentType || "Van_Ban")
-        .trim()
-        .replace(/\s+/g, "_")
-        .replace(/[^\w\d_]/g, "");
-
-      const fileName = `${cleanDocType}_${isParty ? "ChuanHD05" : "ChuanND30"}.docx`;
-      downloadDocxUint8Array(bytes, fileName);
-
-
-      const hasErrors = Boolean(complianceReport?.issues.some(i => i.severity === "error"));
-      const passedCount = complianceReport?.passedChecks ?? 0;
-      const totalChecks = complianceReport?.totalChecks ?? 9;
-      const isStrict = Boolean(complianceReport?.isStrictCompliant || (passedCount === totalChecks && !hasErrors));
-
-      if (isStrict) {
-        setSuccessMsg(
-          `Đã xuất tệp Word (.docx). Đạt ${passedCount}/${totalChecks} trường dữ liệu cơ bản (${isParty ? "Hướng dẫn 05-HD/VPTW" : "Nghị định 30/2020/NĐ-CP"}). Vui lòng mở tệp trong Microsoft Word để rà soát trực quan bố cục trang in.`
-        );
-      } else {
-        const issuesCount = complianceReport?.issues.length ?? 0;
-        setSuccessMsg(
-          `Đã xuất bản nháp Word (.docx). Đạt ${passedCount}/${totalChecks} trường dữ liệu cơ bản (còn ${issuesCount} cảnh báo cần rà soát).`
-        );
-      }
-    } catch (err: any) {
-      setErrorMsg("Lỗi khi xuất tệp Word: " + err.message);
-    } finally {
-      setIsExportingDocx(false);
-    }
+    const current=candidateManager.current!.current;
+    if(!current||!current.safe||!candidateManager.current!.isCurrent(current,{...workspaceSnapshotRef.current,uploadedBlocks,docTypeOverride})||!canEnterStep(3)){setErrorMsg('DOCX ứng viên đã cũ hoặc chưa đạt cổng kiểm. Hãy tạo và xem ứng viên hiện hành ở Bước 3.');return;}
+    downloadDocxUint8Array(current.bytes,'Van_Ban_'+(standardType==='party'?'HD05':'ND30')+'.docx');
   };
-
-  const exportToPdf = async () => {
-    window.print();
-  };
+  const exportToPdf=async()=>{setErrorMsg('Lệnh In / Lưu PDF chỉ có ở Bước 3, từ DOCX ứng viên hiện hành.');};
 
   const handleDownloadOriginalFile = async () => {
     if (!originalSnapshot?.sourceHash) {
       setErrorMsg("Không tìm thấy thông tin tệp gốc.");
       return;
     }
-    const handle = await loadSourceBlob(originalSnapshot.sourceHash);
-    if (handle?.bytes) {
-      downloadDocxUint8Array(new Uint8Array(handle.bytes), handle.fileName || "Tep_Goc.docx");
-      setSuccessMsg(`Đã tải lại tệp gốc nguyên vẹn: "${handle.fileName}"`);
-    } else {
-      setErrorMsg("Không tìm thấy tệp gốc trong bộ nhớ cục bộ.");
+    try{
+      const handle = await loadSourceBlob(originalSnapshot.sourceHash);
+      if (handle?.bytes) {
+        downloadDocxUint8Array(new Uint8Array(handle.bytes), handle.fileName || "Tep_Goc.docx");
+        setErrorMsg('');setSuccessMsg(`Đã tải lại tệp gốc nguyên vẹn: "${handle.fileName}"`);
+      } else {
+        const location=sourceStorageStatus?.storage==='memory'?'bộ nhớ tạm của phiên nhập':'IndexedDB hoặc bộ nhớ tạm của phiên nhập';
+        setErrorMsg(`Không tìm thấy byte tệp gốc trong ${location}; không tạo lại tệp từ nội dung đã soạn.`);
+      }
+    }catch(error){setErrorMsg(`Không thể xác minh tệp gốc đã lưu: ${String(error)}. Không tải bản tái tạo.`);}
+  };
+
+  const handlePrintCandidate=async()=>{
+    const current=visibleCandidate;
+    if(!current?.safe||!candidateManager.current?.isCurrent(current,{...workspaceSnapshotRef.current,uploadedBlocks,docTypeOverride})||!canEnterStep(3)){
+      setErrorMsg('Ứng viên DOCX đã cũ hoặc chưa đạt cổng kiểm; chưa thể in.');return;
     }
+    setErrorMsg('');
+    const isCurrent=()=>Boolean(candidateManager.current?.isCurrent(current,{...workspaceSnapshotRef.current,uploadedBlocks,docTypeOverride})&&current.safe&&canEnterStep(3));
+    const result=await printCandidate(current.bytes,current.sha256,current.instanceId,isCurrent);
+    if(result==='stale')setErrorMsg('Ứng viên đã thay đổi trong lúc dựng vùng in; hãy tạo và kiểm ứng viên hiện hành trước khi in.');
+    else if(result==='render_error')setErrorMsg('Không dựng được vùng in từ DOCX ứng viên; nội dung soạn và nguồn vẫn giữ nguyên.');
+    else setSuccessMsg('Đã mở bản xem để in · phân trang tham khảo. Đối chiếu PDF trong Word trước khi phát hành.');
   };
 
   const restoreVersion = (v: Version) => {
-    setDoc(v.data);
-    setStandardType(v.standardType);
-    const rawHtml = v.data?.bodyHtml || "";
-    const matches = rawHtml.match(/<[^>]+>[\s\S]*?<\/[^>]+>/g) || (rawHtml.trim() ? [rawHtml] : []);
-    const restoredBlocks = (v as any).reviewBlocks && (v as any).reviewBlocks.length > 0
-      ? (v as any).reviewBlocks
-      : (matches.length > 0
-        ? matches.map((h, i) => ({
-            id: `restored_${i}_${Date.now()}`,
-            index: i,
-            kind: /<table\b/i.test(h) ? ("table" as const) : ("paragraph" as const),
-            role: "body" as const,
-            text: h.replace(/<[^>]+>/g, "").trim(),
-            html: h,
-          }))
-        : [{
-            id: `restored_0_${Date.now()}`,
-            index: 0,
-            kind: "paragraph" as const,
-            role: "body" as const,
-            text: rawHtml.replace(/<[^>]+>/g, "").trim(),
-            html: rawHtml || "<p></p>",
-          }]);
-    setReviewBlocks(restoredBlocks);
+    let restored:WorkspaceSnapshot;
+    try{restored=restoreWorkspaceVersion(v);}catch(error){setErrorMsg('Không khôi phục phiên bản không hợp lệ; bản đang soạn được giữ nguyên. '+String(error));return;}
+    invalidateActiveAiSession();
+    const nextSession = commitVersionRestore(
+      createInitialImportSessionState(doc, standardType, originalSnapshot),
+      v
+    );
+    applyImportSessionState(nextSession);
+    installWorkspace(restored);setCurrentStep(canEnterWorkspaceStep(restored,2)?2:1);
+    // Nguồn được khôi phục cùng phiên bản: snapshot gốc quyết định trước (mẫu hay
+    // tệp); chỉ khi không có snapshot mới dùng tên tệp. S3-F02: phiên bản mẫu có
+    // `uploadedFileName` = tên mẫu, nên thứ tự ngược lại sẽ biến mẫu thành tệp nhập.
+    setSourceOrigin(prev => {
+      const snapshotType = nextSession.originalSnapshot?.sourceType;
+      if (snapshotType === "system_template") return "system_template";
+      if (snapshotType === "uploaded_file") return "uploaded_file";
+      if (nextSession.uploadedFileName) return "uploaded_file";
+      return prev;
+    });
+    // Mâu thuẫn loại văn bản của phiên bản vừa khôi phục không được thừa hưởng quyết
+    // định override của phiên bản trước.
+    setDocTypeOverride(v.docTypeOverride??null);
+    // S3-F01: khôi phục phiên bản của **cùng nguồn** không làm mất quyết định
+    // duyệt bản nhập; khôi phục sang nguồn khác thì phải duyệt lại.
+    setImportReviewApprovedSourceHash((prev) => {
+      if (prev === null) return null;
+      const restoredHash = nextSession.originalSnapshot?.sourceHash ?? "";
+      return restoredHash === prev ? prev : null;
+    });
     setSuccessMsg(`Đã khôi phục thành công phiên bản: "${v.title}" (${v.timestamp})`);
   };
 
   const applyQuickFix = (issue: any) => {
+    markUserInteraction();
     if (issue.field === "orgHeader2" && issue.suggestion) {
-      setDoc(prev => ({ ...prev, orgHeader2: issue.suggestion }));
+      handleFieldChange("orgHeader2",issue.suggestion);
     } else if (issue.field === "nationalHeader1" && issue.suggestion) {
-      setDoc(prev => ({ ...prev, nationalHeader1: issue.suggestion }));
+      handleFieldChange("nationalHeader1",issue.suggestion);
     } else if (issue.field === "nationalHeader2" && typeof issue.suggestion === "string") {
-      setDoc(prev => ({ ...prev, nationalHeader2: issue.suggestion }));
+      handleFieldChange("nationalHeader2",issue.suggestion);
     } else if (issue.field === "referenceNumber" && issue.suggestion) {
-      setDoc(prev => ({ ...prev, referenceNumber: issue.suggestion }));
+      handleFieldChange("referenceNumber",issue.suggestion);
     } else {
       setSuccessMsg(`Vui lòng chỉnh sửa trực tiếp thông tin vào mặt giấy A4 cho mục: ${issue.title}`);
       return;
@@ -1881,9 +2808,21 @@ export default function App() {
     };
   }, [pilotTestResults, currentPilotDataset]);
 
-  const fullDocumentTitle = uploadedFileName || `${doc.documentType || "Kế hoạch"} ${doc.subject ? `- ${doc.subject}` : "công tác tháng 10"}`;
-  const displayDocumentTitle = uploadedFileName || (doc.documentType ? `${doc.documentType} ${doc.referenceNumber || ""}`.trim() : "Kế hoạch công tác tháng 10");
-  const saveTooltip = isAutoSaving ? "Hệ thống đang tự động lưu dữ liệu vào IndexedDB" : saveError ? `Lỗi lưu trữ: ${saveError}` : "Dữ liệu được lưu an toàn trong trình duyệt (IndexedDB)";
+  const fullDocumentTitle = sourceOrigin === "none" ? "Văn bản mới · chưa chọn nguồn" : uploadedFileName || `${doc.documentType || "Văn bản"} ${doc.subject ? `- ${doc.subject}` : ""}`.trim();
+  const displayDocumentTitle = sourceOrigin === "none" ? "Văn bản mới · chưa chọn nguồn" : uploadedFileName || (doc.documentType ? `${doc.documentType} ${doc.referenceNumber || ""}`.trim() : "Văn bản mới");
+  const saveStatusLabel = isAutoSaving ? "Đang lưu..." : saveError ? "Lỗi lưu" : hasPersistedDraft ? "Đã lưu" : "Chưa lưu";
+  const saveTooltip = isAutoSaving ? "Hệ thống đang tự động lưu dữ liệu vào IndexedDB" : saveError ? `Lỗi lưu trữ: ${saveError}` : hasPersistedDraft ? "Dữ liệu được lưu an toàn trong trình duyệt (IndexedDB)" : "Chưa có thay đổi nào được ghi vào IndexedDB";
+  const partitionBlocksForProposalReview = reviewBlocks.length > 0 ? reviewBlocks : (structuredImport?.blocks || uploadedBlocks);
+  const partitionRegimeForProposalReview = standardType === "party" ? "party" : "administrative";
+  const visiblePartitionProposals = partitionProposals.filter(proposal =>
+    proposal.status !== "pending" || checkProposalValidityBeforeApply(
+      proposal,
+      partitionBlocksForProposalReview,
+      partitionRegimeForProposalReview,
+      userModifiedBlockIds,
+      { sourceGeneration, partitionRevision },
+    ).valid,
+  );
 
   return (
     <div data-current-step={currentStep} className="min-h-screen df-app-shell text-[#17233D] flex flex-col font-sans select-text">
@@ -1920,8 +2859,8 @@ export default function App() {
                 title={saveTooltip}
                 role="status"
               >
-                <span className={`w-2 h-2 rounded-full shrink-0 ${isAutoSaving ? "bg-[#D9822B] animate-ping" : saveError ? "bg-[#DC2626]" : "bg-[#15803D]"}`} />
-                <span className="hidden sm:inline font-medium">{isAutoSaving ? "Đang lưu..." : saveError ? "Lỗi lưu" : "Đã lưu"}</span>
+                <span className={`w-2 h-2 rounded-full shrink-0 ${isAutoSaving ? "bg-[#D9822B] animate-ping" : saveError ? "bg-[#DC2626]" : hasPersistedDraft ? "bg-[#15803D]" : "bg-slate-400"}`} />
+                <span className="font-medium" data-save-status={saveStatusLabel}>{saveStatusLabel}</span>
               </div>
 
               <button
@@ -1936,111 +2875,16 @@ export default function App() {
             </div>
           </div>
 
-          {/* Group 2 (Row 2 on narrow, Center on wide desktop): Stepper + Mobile Prev/Next */}
-          <div className="flex items-center justify-between xl:justify-center min-w-0 py-0.5 xl:py-0 w-full xl:w-auto">
-            {/* Mobile / Narrow (< xl) Previous button */}
-            <button
-              type="button"
-              disabled={currentStep <= 1}
-              onClick={() => setCurrentStep((prev) => Math.max(1, prev - 1) as 1 | 2 | 3 | 4)}
-              aria-label="Quay lại bước trước"
-              className="xl:hidden p-1.5 rounded-xl border border-slate-200 text-[#17233D] hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer shrink-0 transition"
-              title="Bước trước"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-
-            <nav aria-label="Tiến trình 4 bước" className="df-stepper flex items-center gap-1 sm:gap-2 text-xs">
-              {[
-                { step: 1 as const, shortLabel: "Mẫu", fullLabel: "1. Chọn mẫu văn bản" },
-                { step: 2 as const, shortLabel: "Nguồn", fullLabel: "2. Nguồn tài liệu" },
-                { step: 3 as const, shortLabel: "Soạn", fullLabel: "3. Soạn & rà soát" },
-                { step: 4 as const, shortLabel: "Xuất", fullLabel: "4. Xem trước & xuất" },
-              ].map((item, idx) => {
-                const isActive = currentStep === item.step;
-                const isPrevious = currentStep > item.step;
-                return (
-                  <React.Fragment key={item.step}>
-                    {idx > 0 && (
-                      <span className="text-slate-300 select-none text-[10px] sm:text-xs px-0.5" aria-hidden="true">›</span>
-                    )}
-                    <button
-                      type="button"
-                      aria-label={item.fullLabel}
-                      title={item.fullLabel}
-                      aria-current={isActive ? "step" : undefined}
-                      onClick={() => setCurrentStep(item.step)}
-                      className={`min-h-[32px] sm:min-h-[34px] px-2.5 sm:px-3 py-1 rounded-full transition cursor-pointer flex items-center gap-1.5 font-medium select-none focus-visible:ring-2 focus-visible:ring-[#6255E8] focus-visible:outline-none ${
-                        isActive
-                          ? "bg-[#EDE9FE] text-[#6255E8] font-bold shadow-2xs border border-[#6255E8]/30"
-                          : isPrevious
-                          ? "text-[#17233D] hover:bg-slate-100 hover:text-[#6255E8]"
-                          : "text-[#52607A] hover:bg-slate-100 hover:text-[#17233D]"
-                      }`}
-                    >
-                      <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0 ${
-                        isActive
-                          ? "bg-[#6255E8] text-white"
-                          : isPrevious
-                          ? "bg-[#0D9488] text-white"
-                          : "bg-slate-200 text-slate-600"
-                      }`}>
-                        {isPrevious ? "✓" : item.step}
-                      </span>
-                      <span className="hidden sm:inline text-xs">{item.shortLabel}</span>
-                    </button>
-                  </React.Fragment>
-                );
-              })}
-            </nav>
-
-            {/* Mobile / Narrow (< xl) Next button */}
-            <button
-              type="button"
-              disabled={currentStep >= 4}
-              onClick={() => setCurrentStep((prev) => Math.min(4, prev + 1) as 1 | 2 | 3 | 4)}
-              aria-label="Chuyển sang bước tiếp theo"
-              className="xl:hidden p-1.5 rounded-xl bg-[#6255E8] text-white hover:bg-[#5244d4] disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer shrink-0 transition"
-              title="Bước tiếp theo"
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
-
           {/* Group 3 (Right on wide desktop >= xl): Step Navigation + Save Status + Tools */}
           <div className="hidden xl:flex items-center gap-2.5 shrink-0 justify-end">
-            <div className="flex items-center gap-1.5 mr-1" role="group" aria-label="Điều hướng bước">
-              <button
-                type="button"
-                disabled={currentStep <= 1}
-                onClick={() => setCurrentStep((prev) => Math.max(1, prev - 1) as 1 | 2 | 3 | 4)}
-                aria-label="Quay lại bước trước"
-                className="min-h-[32px] px-2.5 py-1 rounded-xl text-xs font-semibold flex items-center gap-1 border border-slate-200/90 transition cursor-pointer disabled:opacity-35 disabled:cursor-not-allowed hover:bg-slate-100 text-[#17233D]"
-                title={currentStep > 1 ? `Quay lại bước ${currentStep - 1}` : "Đang ở bước đầu tiên"}
-              >
-                <ChevronLeft className="w-3.5 h-3.5" />
-                <span>Trước</span>
-              </button>
-              <button
-                type="button"
-                disabled={currentStep >= 4}
-                onClick={() => setCurrentStep((prev) => Math.min(4, prev + 1) as 1 | 2 | 3 | 4)}
-                aria-label="Chuyển sang bước tiếp theo"
-                className="min-h-[32px] px-2.5 py-1 rounded-xl text-xs font-semibold flex items-center gap-1 bg-[#6255E8] hover:bg-[#5244d4] text-white transition cursor-pointer disabled:opacity-35 disabled:cursor-not-allowed shadow-2xs"
-                title={currentStep < 4 ? `Chuyển sang bước ${currentStep + 1}` : "Đang ở bước cuối"}
-              >
-                <span>Sau</span>
-                <ChevronRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
 
             <div 
               className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-50 border border-slate-200/90 text-xs text-[#52607A]"
               title={saveTooltip}
               role="status"
             >
-              <span className={`w-2 h-2 rounded-full shrink-0 ${isAutoSaving ? "bg-[#D9822B] animate-ping" : saveError ? "bg-[#DC2626]" : "bg-[#15803D]"}`} />
-              <span className="font-medium">{isAutoSaving ? "Đang lưu..." : saveError ? "Lỗi lưu" : "Đã lưu"}</span>
+              <span className={`w-2 h-2 rounded-full shrink-0 ${isAutoSaving ? "bg-[#D9822B] animate-ping" : saveError ? "bg-[#DC2626]" : hasPersistedDraft ? "bg-[#15803D]" : "bg-slate-400"}`} />
+              <span className="font-medium" data-save-status={saveStatusLabel}>{saveStatusLabel}</span>
             </div>
 
             <button
@@ -2076,1605 +2920,53 @@ export default function App() {
         </div>
       )}
 
-      {/* STEP 1: CHỌN HỆ THỂ THỨC & LOẠI VĂN BẢN */}
+      <div className="df-workspace-layout">
+        <nav aria-label="Tiến trình 3 bước" className="df-workspace-sidebar">
+          {([{step:1,label:'1. Tải & nhận diện',hint:'Nguồn, chứng cứ và duyệt phân vùng'},{step:2,label:'2. Soạn & kiểm tra',hint:'9 nhóm, Body và phụ lục'},{step:3,label:'3. Xem & xuất',hint:'Xem DOCX ứng viên rồi tải'}] as const).map(item=><section key={item.step}>
+            <button aria-label={item.label} aria-expanded={currentStep===item.step} aria-controls={'workspace-step-panel-'+item.step} aria-current={currentStep===item.step?'step':undefined} aria-disabled={!canEnterStep(item.step)||undefined} data-step={item.step} data-step-complete={String(stepIsComplete(item.step))} data-step-allowed={String(canEnterStep(item.step))} onClick={()=>goToStep(item.step)}>{stepIsComplete(item.step)?'✓ ':''}{item.label}</button>
+            <div id={'workspace-step-panel-'+item.step} hidden={currentStep!==item.step}><p>{item.hint}</p>{item.step===1&&<p>{sourceOrigin==='none'?'Chưa chọn nguồn':uploadedFileName||originalSnapshot?.fileName||'Mẫu chuẩn đang dùng'}</p>}{item.step===2&&<><p>Bản soạn r{workspaceSnapshot.workspace.workingRevision}</p><div className="df-ws-group-links">{evaluationSummary.recognizedComponents.groups.filter(g=>typeof g.id==='number').map(g=><button data-workspace-group-link={g.id} key={String(g.id)} onClick={()=>{const target=document.querySelector<HTMLElement>('[data-workspace-group="'+g.id+'"]');if(!target)return;target.setAttribute('open','');const summary=target.querySelector<HTMLElement>('summary');summary?.focus({preventScroll:true});const main=document.querySelector<HTMLElement>('.df-workspace-main');if(window.matchMedia('(min-width: 1001px)').matches&&main){main.scrollTo({top:main.scrollTop+target.getBoundingClientRect().top-main.getBoundingClientRect().top-16,behavior:'smooth'});}else{target.scrollIntoView({block:'start',behavior:'smooth'});}}}>{g.name}</button>)}</div></>}{item.step===3&&<p>{visibleCandidate?.safe?'Ứng viên đã kiểm':'Chưa có ứng viên an toàn'}</p>}</div>
+          </section>)}
+          {workspaceSnapshot.workspace.staged&&<button onClick={closePartitionReview}>Hủy phân vùng</button>}
+        </nav>
+        <div className="df-workspace-main">
+      {/* BƯỚC 1: TẢI & NHẬN DIỆN (hệ thể thức + mẫu cơ quan + loại văn bản + nguồn) */}
       {currentStep === 1 && (
-        <Step1View
+        <ImportStepView
           regime={standardType}
           onRequestRegimeSwitch={requestRegimeSwitch}
           doc={doc}
+          templates={TEMPLATES}
           onSelectTemplate={(tid) => selectTemplate(tid)}
           onFieldChange={handleFieldChange}
-          onNext={() => setCurrentStep(2)}
-        />
-      )}
-
-      {/* STEP 2: TẢI WORD / CHỌN MẪU & TÓM TẮT TÀI LIỆU NGUỒN */}
-      {currentStep === 2 && (
-        <Step2View
-          regime={standardType}
-          doc={doc}
+          onFileUpload={handleFileUpload}
+          isUploading={isUploading}
           uploadedFileName={uploadedFileName}
           uploadedBlocks={uploadedBlocks}
           structuredImport={structuredImport}
-          templates={TEMPLATES}
-          onSelectTemplate={(tid) => selectTemplate(tid)}
-          onFileUpload={handleFileUpload}
-          isUploading={isUploading}
-          evaluationSummary={evaluationSummary}
-          onPrev={() => setCurrentStep(1)}
-          onNext={() => setCurrentStep(3)}
-          onOpenReviewModal={() => setShowSideBySideModal(true)}
-        />
-      )}
-
-      {/* STEP 4: HOÀN TẤT & SO SÁNH */}
-      {currentStep === 4 && (
-        <Step4View
-          regime={standardType}
-          doc={doc}
-          rawText={rawText}
-          uploadedHtml={uploadedHtml}
           originalSnapshot={originalSnapshot}
-          ooxmlStatus={ooxmlEvidence && ooxmlEvidence.draft_key !== currentDraftKey ? "measuring" : ooxmlStatus}
-          hasOoxmlEvidence={Boolean(ooxmlEvidence && ooxmlEvidence.draft_key === currentDraftKey)}
-          viewMode={step4ViewMode}
-          onViewModeChange={setStep4ViewMode}
-          evaluationSummary={evaluationSummary}
-          onExportDocx={exportToDocx}
-          onExportPdf={exportToPdf}
+          originalAvailable={sourceBlobAvailability==='available'}
+          onOpenReviewModal={() => {setErrorMsg('');setShowSideBySideModal(true);}}
           onDownloadOriginal={handleDownloadOriginalFile}
-          isExportingDocx={isExportingDocx}
-          onPrev={() => setCurrentStep(3)}
+          hasSelectedSource={sourceChosen}
+          aiPartitionConsent={aiPartitionConsent}
+          onAiPartitionConsentChange={handleAiPartitionConsentChange}
+          isCheckingPartitions={isCheckingPartitions}
+          partitionCheckNotice={partitionCheckNotice}
+          partitionCheckSource={partitionCheckSource}
+          partitionProgress={partitionProgress}
+          partitionCoverage={partitionCoverage ?? null}
+          canContinue={canEnterStep(2)}
+          onNext={() => goToStep(2)}
+          docTypeOverride={docTypeDecisionValid ? docTypeOverride : null}
+          onConfirmDocTypeOverride={handleConfirmDocTypeOverride}
         />
       )}
 
-      {/* STEP 3: RÀ SOÁT & XỬ LÝ (CENTERED A4 + SINGLE RIGHT TABBED PANEL) */}
-      {currentStep === 3 && (
-        <div className="flex-1 min-h-0 flex flex-col overflow-hidden df-step-enter pt-1">
-          {/* Accessible Semantic Heading (visually hidden on desktop) */}
-          <h1 className="sr-only">Soạn & rà soát - Chuẩn thể thức</h1>
-
-          <div className="df-workspace-content flex-1 min-h-0 flex gap-2 sm:gap-3 px-2 sm:px-4 pb-1">
-          
-        {/* ========================================================
-            CENTER PANE: IN-SITU A4 DOCUMENT CANVAS OR OOXML PREVIEW
-           ======================================================== */}
-        <main 
-          id="studio-main-canvas"
-          className="df-editor-frame flex-1 min-w-0 min-h-0 p-2 sm:p-3 overflow-hidden flex flex-col items-center rounded-2xl"
-        >
-          
-          {/* Consolidated 1-Row Formatting Toolbar Outside Paper */}
-          <div className="df-studio-toolbar w-full mb-2 bg-white rounded-xl border border-[#CFD8EA] px-2 sm:px-3 py-1.5 flex items-center justify-between text-xs text-[#52607A] gap-1.5 select-none shadow-2xs shrink-0" aria-label="Thanh công cụ soạn thảo">
-            {/* Left Formatting Group */}
-            <div className="df-studio-toolbar-tools flex flex-nowrap items-center gap-1 min-w-0">
-              {/* Heading / Paragraph Type Dropdown */}
-              <select
-                aria-label="Kiểu đoạn"
-                onChange={(e) => {
-                  const val = e.target.value;
-                  if (!tiptapEditor) return;
-                  if (val === "h1") tiptapEditor.chain().focus().toggleHeading({ level: 1 }).setTextAlign("center").run();
-                  else if (val === "h2") tiptapEditor.chain().focus().toggleHeading({ level: 2 }).setTextAlign("center").run();
-                  else if (val === "h3") tiptapEditor.chain().focus().toggleHeading({ level: 3 }).setTextAlign("left").run();
-                  else tiptapEditor.chain().focus().setParagraph().run();
-                }}
-                className="px-2 py-1 rounded-lg border border-[#CFD8EA] bg-white text-xs font-semibold text-[#17233D] cursor-pointer outline-none hover:bg-slate-50"
-              >
-                <option value="p">Nội dung ▾</option>
-                <option value="h1">Tên loại văn bản (H1)</option>
-                <option value="h2">Phân mục (H2)</option>
-                <option value="h3">Điều khoản (H3)</option>
-              </select>
-
-              <span className="h-4 w-px bg-slate-200 mx-0.5" />
-
-              {/* Bold, Italic, Underline */}
-              <button
-                type="button"
-                onClick={() => tiptapEditor?.chain().focus().toggleBold().run()}
-                className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs transition cursor-pointer ${
-                  tiptapEditor?.isActive("bold") ? "bg-[#EEF0FE] text-[#6255E8] font-black" : "text-[#17233D] hover:bg-slate-100"
-                }`}
-                title="In đậm (Ctrl+B)"
-              >
-                B
-              </button>
-              <button
-                type="button"
-                onClick={() => tiptapEditor?.chain().focus().toggleItalic().run()}
-                className={`w-7 h-7 rounded-lg flex items-center justify-center italic text-xs transition cursor-pointer ${
-                  tiptapEditor?.isActive("italic") ? "bg-[#EEF0FE] text-[#6255E8]" : "text-[#17233D] hover:bg-slate-100"
-                }`}
-                title="In nghiêng (Ctrl+I)"
-              >
-                I
-              </button>
-              <button
-                type="button"
-                onClick={() => tiptapEditor?.chain().focus().toggleUnderline().run()}
-                className={`w-7 h-7 rounded-lg flex items-center justify-center underline text-xs transition cursor-pointer ${
-                  tiptapEditor?.isActive("underline") ? "bg-[#EEF0FE] text-[#6255E8]" : "text-[#17233D] hover:bg-slate-100"
-                }`}
-                title="Gạch chân (Ctrl+U)"
-              >
-                U
-              </button>
-
-              <span className="h-4 w-px bg-slate-200 mx-0.5" />
-
-              {/* Align Left, Center, Right, Justify */}
-              <button
-                type="button"
-                onClick={() => tiptapEditor?.chain().focus().setTextAlign("left").run()}
-                className={`w-7 h-7 rounded-lg flex items-center justify-center transition cursor-pointer ${
-                  tiptapEditor?.isActive({ textAlign: "left" }) ? "bg-[#EEF0FE] text-[#6255E8]" : "text-[#52607A] hover:bg-slate-100"
-                }`}
-                title="Căn trái"
-              >
-                <AlignLeft className="w-3.5 h-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={() => tiptapEditor?.chain().focus().setTextAlign("center").run()}
-                className={`w-7 h-7 rounded-lg flex items-center justify-center transition cursor-pointer ${
-                  tiptapEditor?.isActive({ textAlign: "center" }) ? "bg-[#EEF0FE] text-[#6255E8]" : "text-[#52607A] hover:bg-slate-100"
-                }`}
-                title="Căn giữa"
-              >
-                <AlignCenter className="w-3.5 h-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={() => tiptapEditor?.chain().focus().setTextAlign("right").run()}
-                className={`w-7 h-7 rounded-lg flex items-center justify-center transition cursor-pointer ${
-                  tiptapEditor?.isActive({ textAlign: "right" }) ? "bg-[#EEF0FE] text-[#6255E8]" : "text-[#52607A] hover:bg-slate-100"
-                }`}
-                title="Căn phải"
-              >
-                <AlignRight className="w-3.5 h-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={() => tiptapEditor?.chain().focus().setTextAlign("justify").run()}
-                className={`w-7 h-7 rounded-lg flex items-center justify-center transition cursor-pointer ${
-                  tiptapEditor?.isActive({ textAlign: "justify" }) ? "bg-[#EEF0FE] text-[#6255E8]" : "text-[#52607A] hover:bg-slate-100"
-                }`}
-                title="Căn đều hai bên (Chuẩn NĐ 30)"
-              >
-                <AlignJustify className="w-3.5 h-3.5" />
-              </button>
-
-              <span className="h-4 w-px bg-slate-200 mx-0.5" />
-
-              {/* Table Button */}
-              <button
-                type="button"
-                onClick={() => {
-                  if (!tiptapEditor) return;
-                  const tableHtml = `
-                    <table style="width: 100%; border-collapse: collapse; table-layout: fixed; margin: 12px 0;">
-                      <thead>
-                        <tr style="background-color: #f8fafc; font-weight: bold; text-align: center;">
-                          <th style="border: 1px solid #000; padding: 6px; width: 10%;">STT</th>
-                          <th style="border: 1px solid #000; padding: 6px; width: 60%;">Nội dung</th>
-                          <th style="border: 1px solid #000; padding: 6px; width: 30%;">Phụ trách</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr>
-                          <td style="border: 1px solid #000; padding: 6px; text-align: center;">1</td>
-                          <td style="border: 1px solid #000; padding: 6px;">[Nội dung...]</td>
-                          <td style="border: 1px solid #000; padding: 6px;">[Đơn vị...]</td>
-                        </tr>
-                      </tbody>
-                    </table><p></p>
-                  `;
-                  tiptapEditor.chain().focus().insertContent(tableHtml).run();
-                }}
-                className="w-7 h-7 rounded-lg flex items-center justify-center text-[#52607A] hover:bg-slate-100 transition cursor-pointer"
-                title="Chèn bảng tiến độ NĐ 30"
-              >
-                <Layers className="w-3.5 h-3.5" />
-              </button>
-
-              {/* Undo / Redo */}
-              <button
-                type="button"
-                onClick={() => tiptapEditor?.chain().focus().undo().run()}
-                disabled={!tiptapEditor?.can().undo()}
-                className="w-7 h-7 rounded-lg flex items-center justify-center text-[#52607A] hover:bg-slate-100 transition cursor-pointer disabled:opacity-40"
-                title="Hoàn tác (Ctrl+Z)"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={() => tiptapEditor?.chain().focus().redo().run()}
-                disabled={!tiptapEditor?.can().redo()}
-                className="w-7 h-7 rounded-lg flex items-center justify-center text-[#52607A] hover:bg-slate-100 transition cursor-pointer disabled:opacity-40"
-                title="Phục hồi (Ctrl+Y)"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-              </button>
-            </div>
-
-            {/* Right Group: Regime Info + View Mode + Zoom + Inspector Toggle */}
-            <div className="flex items-center gap-1.5 shrink-0 flex-nowrap min-w-max">
-              {/* Regime & Profile Pill with Safe Switch Action */}
-              <button
-                type="button"
-                onClick={() => requestRegimeSwitch(standardType === "party" ? "state" : "party")}
-                aria-label={`Đổi hệ thể thức (hiện tại: ${standardType === "party" ? "Hướng dẫn 05" : "Nghị định 30"})`}
-                title={`Bấm để chuyển sang ${standardType === "party" ? "Nghị định 30/2020/NĐ-CP" : "Hướng dẫn 05-HD/VPTW"} (Bảo toàn nội dung & bảng)`}
-                className="flex items-center gap-1 px-2 py-0.5 rounded-lg border border-[#CFD8EA] bg-[#F5F7FC] hover:bg-[#EEF0FE] text-xs font-semibold text-[#17233D] transition cursor-pointer shrink-0"
-              >
-                <span className="font-bold text-[#6255E8]">
-                  {standardType === "party" ? "☭ HD 05" : "🏛️ NĐ 30"}
-                </span>
-                <span className="text-[#52607A] hidden 2xl:inline text-[11px]">
-                  · {doc.headerProfile === COMPANY_HEADER_PROFILE_ID || doc.headerProfile === COMPANY_HEADER_HD05_PROFILE_ID ? "Hoa Tiêu MB" : "Cơ quan chung"}
-                </span>
-                <RefreshCw className="w-3 h-3 text-[#6255E8]" />
-              </button>
-
-              <div role="group" aria-label="Chế độ xem" className="flex items-center gap-0.5 bg-slate-100 p-0.5 rounded-lg border border-slate-200">
-                <button
-                  type="button"
-                  aria-pressed={studioViewMode === "canvas"}
-                  onClick={() => setStudioViewMode("canvas")}
-                  className={`px-2 py-0.5 rounded text-[11px] font-semibold transition cursor-pointer ${
-                    studioViewMode === "canvas" ? "bg-white text-[#6255E8] shadow-2xs font-bold" : "text-[#52607A] hover:text-[#17233D]"
-                  }`}
-                >
-                  Soạn thảo
-                </button>
-                <button
-                  type="button"
-                  aria-pressed={studioViewMode === "real_docx"}
-                  onClick={() => setStudioViewMode("real_docx")}
-                  className={`px-2 py-0.5 rounded text-[11px] font-semibold transition cursor-pointer ${
-                    studioViewMode === "real_docx" ? "bg-white text-[#6255E8] shadow-2xs font-bold" : "text-[#52607A] hover:text-[#17233D]"
-                  }`}
-                  title="Xem bản dựng Word thật"
-                >
-                  Xem trang
-                </button>
-              </div>
-
-              {/* Zoom Dropdown & Fit */}
-              <div className="flex items-center gap-1">
-                {(() => {
-                  const currentPercent = Math.round(zoomLevel * 100);
-                  const standardOptions = [75, 80, 85, 90, 100, 115];
-                  const isCustom = !standardOptions.includes(currentPercent);
-                  return (
-                    <select
-                      value={currentPercent}
-                      aria-label="Tỷ lệ thu phóng"
-                      onChange={(e) => {
-                        const z = Number(e.target.value) / 100;
-                        setIsAutoFitZoom(false);
-                        setZoomLevel(z);
-                      }}
-                      className="px-1.5 py-0.5 rounded-lg border border-[#CFD8EA] bg-white text-xs font-semibold text-[#17233D] cursor-pointer outline-none hover:bg-slate-50"
-                    >
-                      {isCustom && (
-                        <option value={currentPercent}>
-                          {currentPercent}% {isAutoFitZoom ? "(Vừa khung)" : ""}
-                        </option>
-                      )}
-                      {standardOptions.map((opt) => (
-                        <option key={opt} value={opt}>
-                          {opt}% {isAutoFitZoom && opt === currentPercent ? "(Vừa khung)" : ""}
-                        </option>
-                      ))}
-                    </select>
-                  );
-                })()}
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsAutoFitZoom(true);
-                    handleFitWidth();
-                  }}
-                  className={`px-2 py-0.5 rounded-lg border text-xs font-semibold transition cursor-pointer ${
-                    isAutoFitZoom
-                      ? "border-[#6255E8] bg-[#EEF0FE] text-[#6255E8]"
-                      : "border-[#CFD8EA] bg-white text-[#52607A] hover:text-[#17233D]"
-                  }`}
-                  title="Khôi phục tự động vừa khung màn hình"
-                >
-                  Vừa khung ▾
-                </button>
-              </div>
-
-              {/* Inspector Toggle Button (Shows badge when closed) */}
-              <button
-                type="button"
-                onClick={() => {
-                  setShowInspectorRight(prev => !prev);
-                  setUserClosedInspector(showInspectorRight);
-                }}
-                aria-label={showInspectorRight ? "Thu gọn trợ lý rà soát" : "Mở trợ lý rà soát"}
-                title={showInspectorRight ? "Thu gọn trợ lý rà soát" : "Mở trợ lý rà soát"}
-                className={`flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-xs font-semibold transition cursor-pointer shrink-0 ${
-                  showInspectorRight
-                    ? "border-[#CFD8EA] bg-white text-[#52607A] hover:text-[#17233D] hover:bg-slate-50"
-                    : "border-[#6255E8] bg-[#EEF0FE] text-[#6255E8] shadow-2xs font-bold"
-                }`}
-              >
-                <ShieldCheck className="w-3.5 h-3.5 text-[#6255E8]" />
-                <span className="hidden sm:inline">Trợ lý</span>
-                {evaluationSummary.actionableIssues.length > 0 && (
-                  <span className="w-4 h-4 rounded-full bg-amber-500 text-white text-[10px] font-bold flex items-center justify-center">
-                    {evaluationSummary.actionableIssues.length}
-                  </span>
-                )}
-              </button>
-            </div>
-          </div>
-
-          {/* VIEW MODE 1: IN-SITU A4 DIRECT EDITING CANVAS */}
-          {studioViewMode === "canvas" ? (
-            <div className="df-canvas-scroll w-full flex justify-start items-start overflow-auto">
-              <div 
-                style={{
-                  width: `${Math.round(794 * zoomLevel)}px`,
-                  height: `${Math.round(canvasInnerHeight * zoomLevel) + 100}px`,
-                  minHeight: `${Math.round(1123 * zoomLevel) + 100}px`,
-                }}
-                className="transition-all duration-150 shrink-0 mx-auto"
-              >
-                <div 
-                  ref={setA4CanvasRef}
-                  style={{ 
-                    transform: `scale(${zoomLevel})`, 
-                    transformOrigin: "top left",
-                    fontFamily: '"Times New Roman", Times, serif'
-                  }}
-                  className="w-[794px] min-h-[1123px] df-a4-paper rounded-sm p-[36px_56px_56px_90px] relative text-black text-[13pt] leading-[1.35] select-text font-serif"
-                >
-              
-              {/* ========================================================
-                  PHẦN 1: ĐẦU VĂN BẢN (Cơ quan & Quốc hiệu · Số & Ngày)
-                 ======================================================== */}
-              <section 
-                id="section-header" 
-                className="relative mb-3 p-1.5 rounded-lg border border-transparent hover:border-blue-200 transition group"
-              >
-                <div className="absolute -top-3 left-2 bg-blue-50 text-blue-700 border border-blue-200 text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded opacity-0 group-hover:opacity-100 transition select-none z-10 font-sans">
-                  Phần 1: Đầu văn bản (NĐ 30 Mục I & II)
-                </div>
-
-                <div className="grid grid-cols-[43%_57%] gap-2 items-start">
-                  
-                  {/* Cột trái: Cơ quan ban hành & Số hiệu */}
-                  <div className="text-center group/left relative p-1 rounded hover:bg-blue-50/30 transition">
-                    {standardType === "party" ? (
-                      doc.headerProfile === COMPANY_HEADER_HD05_PROFILE_ID && !doc.orgHeader1 && !doc.orgHeader2 ? (
-                        <div className="flex flex-col items-center">
-                          <p className="text-[14pt] font-normal leading-tight">{COMPANY_HEADER_HD05_PARENT_LINES[0]}<br />{COMPANY_HEADER_HD05_PARENT_LINES[1]}</p>
-                          <p className="text-[14pt] font-bold leading-tight mt-0.5">
-                            {COMPANY_HEADER_HD05_ISSUER_LINES[0]}<br />{COMPANY_HEADER_HD05_ISSUER_LINES[1]}
-                          </p>
-                          <p className="text-[14pt] font-bold mt-0.5 leading-none select-none">*</p>
-                        </div>
-                      ) : (
-                        <div className="flex flex-col items-center">
-                          <input
-                            type="text"
-                            value={doc.orgHeader1}
-                            onChange={(e) => handleFieldChange("orgHeader1", e.target.value.toUpperCase())}
-                            placeholder="CƠ QUAN / ĐẢNG ỦY CẤP TRÊN"
-                            className="w-full text-center text-[14pt] font-normal outline-none bg-transparent hover:bg-white focus:bg-white rounded p-0.5"
-                          />
-                          <div className="flex flex-col items-center w-full mt-0.5">
-                            <textarea
-                              rows={doc.orgHeader2?.includes("\n") ? doc.orgHeader2.split("\n").length : 1}
-                              value={doc.orgHeader2}
-                              onChange={(e) => handleFieldChange("orgHeader2", e.target.value.toUpperCase())}
-                              placeholder="TÊN CẤP ỦY BAN HÀNH (*)"
-                              className="w-full text-center font-bold text-[14pt] outline-none bg-transparent hover:bg-white focus:bg-white rounded px-1 resize-none leading-tight"
-                            />
-                            <p className="text-[14pt] font-bold mt-0.5 leading-none select-none">*</p>
-                          </div>
-                        </div>
-                      )
-                    ) : (
-                      doc.headerProfile === COMPANY_HEADER_PROFILE_ID ? (
-                        <div className="flex flex-col items-center">
-                          <p className="text-[12pt] font-normal leading-tight">TỔNG CÔNG TY BẢO ĐẢM</p>
-                          <p className="text-[12pt] font-normal leading-tight">AN TOÀN HÀNG HẢI VIỆT NAM</p>
-                          <div className="inline-flex flex-col items-center mt-0.5">
-                            <p className="text-[11.5pt] font-bold leading-tight tracking-tight whitespace-nowrap">
-                              CÔNG TY HOA TIÊU HÀNG HẢI MIỀN BẮC
-                            </p>
-                            <div className="w-[42%] border-b-[1.5px] border-black mt-0.5"></div>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="flex flex-col items-center">
-                          <input
-                            type="text"
-                            value={doc.orgHeader1}
-                            onChange={(e) => handleFieldChange("orgHeader1", e.target.value.toUpperCase())}
-                            placeholder="CƠ QUAN CẤP TRÊN"
-                            className="w-full text-center text-[12pt] font-normal outline-none bg-transparent hover:bg-white focus:bg-white rounded p-0.5"
-                          />
-                          {(() => {
-                            const lines = (doc.orgHeader2 || "").split("\n");
-                            if (lines.length <= 1) {
-                              return (
-                                <div className="inline-flex flex-col items-center relative max-w-full mt-0.5">
-                                  <span className="invisible whitespace-pre font-bold text-[12pt] px-1 pointer-events-none select-none">
-                                    {doc.orgHeader2 || "TÊN CƠ QUAN BAN HÀNH (*)"}
-                                  </span>
-                                  <input
-                                    type="text"
-                                    value={doc.orgHeader2}
-                                    onChange={(e) => handleFieldChange("orgHeader2", e.target.value.toUpperCase())}
-                                    placeholder="TÊN CƠ QUAN BAN HÀNH (*)"
-                                    className="absolute inset-0 text-center font-bold text-[12pt] outline-none bg-transparent hover:bg-white focus:bg-white rounded px-1"
-                                  />
-                                  <div className="w-[42%] border-b-[1.5px] border-black mt-0.5 pointer-events-none"></div>
-                                </div>
-                              );
-                            }
-                            const firstLines = lines.slice(0, -1);
-                            const lastLine = lines[lines.length - 1];
-                            return (
-                              <div className="flex flex-col items-center max-w-full">
-                                {firstLines.map((ln, idx) => (
-                                  <p key={idx} className="font-bold text-[12pt] leading-tight uppercase">{ln}</p>
-                                ))}
-                                <div className="inline-flex flex-col items-center relative max-w-full mt-0.5">
-                                  <span className="invisible whitespace-pre font-bold text-[12pt] px-1 pointer-events-none select-none">
-                                    {lastLine || "CƠ QUAN BAN HÀNH"}
-                                  </span>
-                                  <input
-                                    type="text"
-                                    value={lastLine}
-                                    onChange={(e) => {
-                                      const newLines = [...firstLines, e.target.value.toUpperCase()];
-                                      handleFieldChange("orgHeader2", newLines.join("\n"));
-                                    }}
-                                    className="absolute inset-0 text-center font-bold text-[12pt] outline-none bg-transparent hover:bg-white focus:bg-white rounded px-1"
-                                  />
-                                  <div className="w-[42%] border-b-[1.5px] border-black mt-0.5 pointer-events-none"></div>
-                                </div>
-                              </div>
-                            );
-                          })()}
-                        </div>
-                      )
-                    )}
-
-                    <div className="flex flex-col items-center justify-center gap-1 mt-1">
-                      <input
-                        type="text"
-                        value={doc.referenceNumber}
-                        onChange={(e) => handleFieldChange("referenceNumber", e.target.value)}
-                        placeholder={standardType === "party" ? "Số 12-NQ/ĐU" : "Số: .../KH-..."}
-                        className={`text-center font-normal outline-none bg-transparent hover:bg-white focus:bg-white rounded px-2 py-0.5 w-52 ${
-                          standardType === "party" ? "text-[14pt]" : "text-[12pt]"
-                        }`}
-                      />
-                      {/* Ghi chú bản thảo nguồn (ví dụ: BẢN HOÀN THIỆN ĐỂ ĐOÀN GIÁM SÁT XEM XÉT, TRÌNH KÝ) */}
-                      {doc.draftNote && (
-                        <div className="w-full mt-1.5 p-1 rounded bg-purple-50 border border-purple-200 text-center font-sans">
-                          <div className="flex items-center justify-between gap-1 text-[10px] text-purple-900 pb-0.5">
-                            <span className="font-bold">Ghi chú bản thảo nguồn:</span>
-                            <label className="flex items-center gap-1 cursor-pointer font-normal text-purple-800">
-                              <input
-                                type="checkbox"
-                                checked={doc.includeDraftNoteInExport !== false}
-                                onChange={(e) => setDoc(prev => ({ ...prev, includeDraftNoteInExport: e.target.checked }))}
-                                className="rounded text-purple-600 focus:ring-purple-500 w-3 h-3"
-                              />
-                              <span>Xuất vào Word</span>
-                            </label>
-                          </div>
-                          <input
-                            type="text"
-                            value={doc.draftNote}
-                            onChange={(e) => setDoc(prev => ({ ...prev, draftNote: e.target.value }))}
-                            className="w-full text-center text-[10.5pt] italic font-serif text-slate-800 outline-none bg-white rounded border border-purple-300 px-1 py-0.5"
-                            placeholder="Ghi chú bản thảo..."
-                          />
-                        </div>
-                      )}
-                      {isPartyOfficialLetter && (
-                        <div className="w-full mt-2 text-center">
-                          <input
-                            type="text"
-                            value={doc.subject}
-                            onChange={(e) => handleFieldChange("subject", e.target.value)}
-                            placeholder="V/v trích yếu công văn Đảng..."
-                            className="w-full text-center text-[12pt] italic font-normal outline-none bg-transparent hover:bg-white focus:bg-white rounded p-1"
-                          />
-                          <p className="text-[10px] text-blue-600 italic font-sans mt-0.5">
-                            * Công văn Đảng: trích yếu đặt ở cột trái dưới số hiệu (chữ thường, nghiêng)
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Cột phải: Quốc hiệu, Tiêu ngữ & Ngày tháng */}
-                  <div className="text-center p-1 rounded hover:bg-blue-50/30 transition">
-                    {standardType === "party" ? (
-                      <div className="inline-flex flex-col items-center relative max-w-full">
-                        <span className="invisible whitespace-pre font-bold text-[15pt] px-1 pointer-events-none select-none">
-                          ĐẢNG CỘNG SẢN VIỆT NAM
-                        </span>
-                        <p className="absolute inset-0 text-center font-bold text-[15pt] leading-tight whitespace-nowrap">
-                          ĐẢNG CỘNG SẢN VIỆT NAM
-                        </p>
-                        {/* Nét liền 100% bằng độ dài dòng chữ ĐẢNG CỘNG SẢN VIỆT NAM theo HD 05 */}
-                        <div className="w-full border-b-[1.5px] border-black mt-0.5 pointer-events-none"></div>
-                      </div>
-                    ) : (
-                      <>
-                        <p className="text-[12pt] font-bold leading-tight whitespace-nowrap">
-                          CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM
-                        </p>
-                        <div className="inline-flex flex-col items-center relative max-w-full mt-0.5">
-                          <span className="invisible whitespace-pre font-bold text-[13pt] px-1 pointer-events-none select-none">
-                            {doc.nationalHeader2 || "Độc lập - Tự do - Hạnh phúc"}
-                          </span>
-                          <input
-                            type="text"
-                            value={doc.nationalHeader2}
-                            onChange={(e) => handleFieldChange("nationalHeader2", e.target.value)}
-                            placeholder="Độc lập - Tự do - Hạnh phúc"
-                            className="absolute inset-0 text-center font-bold text-[13pt] outline-none bg-transparent hover:bg-white focus:bg-white rounded px-1"
-                          />
-                          <div className="w-full border-b-[1.5px] border-black mt-0.5 pointer-events-none"></div>
-                        </div>
-                      </>
-                    )}
-
-                    <div className="flex items-center justify-end gap-1 mt-1">
-                      <input
-                        type="text"
-                        value={doc.locationAndDate}
-                        onChange={(e) => handleFieldChange("locationAndDate", e.target.value)}
-                        placeholder="Hải Phòng, ngày ... tháng ... năm ..."
-                        className={`text-right italic outline-none bg-transparent hover:bg-white focus:bg-white rounded px-2 py-0.5 w-64 ${
-                          standardType === "party" ? "text-[14pt]" : "text-[13pt]"
-                        }`}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const loc = extractLocation(doc.locationAndDate);
-                          handleFieldChange("locationAndDate", formatStandardDate(loc || "Hải Phòng"));
-                        }}
-                        className="text-[10px] text-blue-600 hover:text-blue-800 bg-blue-50 px-1.5 py-0.5 rounded font-sans cursor-pointer"
-                        title="Chèn ngày hôm nay"
-                      >
-                        Hôm nay
-                      </button>
-                    </div>
-                  </div>
-
-                </div>
-              </section>
-
-              {/* ========================================================
-                  PHẦN 2: TIÊU ĐỀ & TRÍCH YẾU
-                 ======================================================== */}
-              {/* ========================================================
-                  PHẦN 2: TIÊU ĐỀ & TRÍCH YẾU
-                 ======================================================== */}
-              <section 
-                id="section-title" 
-                className="relative mb-3 p-1.5 rounded-lg border border-transparent hover:border-blue-200 transition group text-center"
-              >
-                <div className="absolute -top-3 left-2 bg-blue-50 text-blue-700 border border-blue-200 text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded opacity-0 group-hover:opacity-100 transition select-none z-10 font-sans">
-                  Phần 2: Tên loại & Trích yếu ({doc.documentType || "Văn bản"})
-                </div>
-
-                {isPartyOfficialLetter ? (
-                  <div className="p-3 bg-blue-50/50 rounded-lg border border-blue-200/50 text-blue-900 text-xs text-center">
-                    <p className="font-semibold">Công văn Đảng: trích yếu đặt tại cột trái dưới số hiệu (12pt, nghiêng, không đậm).</p>
-                    <p className="text-[11px] text-slate-500 mt-1">Không có tiêu đề loại văn bản, trích yếu giữa trang hoặc vạch 5 dấu gạch nối.</p>
-                  </div>
-                ) : (
-                  <>
-                    <input
-                      type="text"
-                      value={doc.documentType}
-                      onChange={(e) => handleFieldChange("documentType", e.target.value.toUpperCase())}
-                      placeholder="TÊN LOẠI VĂN BẢN (QUYẾT ĐỊNH, KẾ HOẠCH, BIÊN BẢN...)"
-                      className={`w-full text-center font-bold uppercase tracking-wide outline-none bg-transparent hover:bg-white focus:bg-white rounded p-1 ${
-                        standardType === "party" ? "text-[15pt]" : "text-[14pt]"
-                      }`}
-                    />
-                    <AutoResizeTextarea
-                      rows={1}
-                      value={doc.subject}
-                      onChange={(e) => handleFieldChange("subject", e.target.value)}
-                      placeholder={
-                        isBienBan
-                          ? "Nội dung cuộc họp / kiểm tra / bàn giao..."
-                          : standardType === "party"
-                          ? "Về phương hướng nhiệm vụ năm 2026..."
-                          : "V/v trích yếu nội dung văn bản..."
-                      }
-                      className={`w-full text-center font-bold outline-none bg-transparent hover:bg-white focus:bg-white rounded p-1 mt-0.5 ${
-                        standardType === "party" ? "text-[14pt] not-italic" : "text-[13pt] italic"
-                      }`}
-                    />
-                    {standardType === "party" && (
-                      <p className="text-center font-bold tracking-widest my-1 text-[14pt] select-none">-----</p>
-                    )}
-                    {isBienBan && (
-                      <p className="text-[10px] text-slate-400 italic mt-0.5 font-sans">
-                        * Biên bản làm việc: Ghi rõ nội dung sự việc hoặc cuộc họp (không bắt buộc tiền tố &quot;V/v&quot;)
-                      </p>
-                    )}
-                  </>
-                )}
-              </section>
-
-              {/* ========================================================
-                  PHẦN 3: NỘI DUNG THÂN VĂN BẢN (TIPTAP EDITOR)
-                 ======================================================== */}
-              <section 
-                id="section-body" 
-                className="relative mb-4 p-1 rounded-lg border border-transparent hover:border-blue-200 transition group text-justify"
-              >
-                <div className="absolute -top-3 left-2 bg-blue-50 text-blue-700 border border-blue-200 text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded opacity-0 group-hover:opacity-100 transition select-none z-10 font-sans">
-                  Phần 3: Thân văn bản (Căn cứ · Điều khoản · Bảng biểu)
-                </div>
-
-                <ND30Editor
-                  key={standardType}
-                  content={doc.bodyHtml}
-                  onChange={(html) => handleFieldChange("bodyHtml", html)}
-                  regime={standardType === "party" ? "party" : "administrative"}
-                  minHeight="350px"
-                  compactToolbar={true}
-                  hideToolbar={true}
-                  onEditorReady={setTiptapEditor}
-                />
-              </section>
-
-              {/* ========================================================
-                  PHẦN 4: CUỐI VĂN BẢN (CHỮ KÝ & NƠI NHẬN)
-                 ======================================================== */}
-              <section 
-                id="section-footer" 
-                className="relative mt-6 pt-4 border-t border-slate-200 p-2 rounded-lg hover:border-blue-200 transition group"
-              >
-                <div className="absolute -top-3 left-2 bg-blue-50 text-blue-700 border border-blue-200 text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded opacity-0 group-hover:opacity-100 transition select-none z-10 font-sans">
-                  Phần 4: Cuối văn bản ({isBienBan ? "Chữ ký các bên (Biên bản)" : isMultiSigner ? "Chữ ký các bên song song" : "Chữ ký & Nơi nhận"})
-                </div>
-
-                {isMultiSigner ? (
-                  <div className="space-y-3">
-                    <div className="flex flex-wrap items-center justify-between text-xs text-slate-600 bg-slate-50 p-2 rounded-lg border border-slate-200">
-                      <span className="font-semibold text-slate-800 font-sans">
-                        {isBienBan ? "Chữ ký Biên bản" : "Chữ ký các bên song song"} ({doc.signTitle?.includes("|") ? doc.signTitle.split("|").length : 1} vị trí ký song song)
-                      </span>
-                      <div className="flex items-center gap-1.5 font-sans">
-                        <span className="text-[11px] text-slate-500">Mẫu ký:</span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            handleFieldChange("signTitle", "THƯ KÝ | CHỦ TỌA");
-                            handleFieldChange("signName", "Nguyễn Văn A | Trần Văn B");
-                          }}
-                          className="px-2 py-0.5 rounded bg-white hover:bg-blue-50 text-blue-700 border border-blue-200 text-[10.5px] font-semibold cursor-pointer"
-                        >
-                          2 bên (Thư ký - Chủ tọa)
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            handleFieldChange("signTitle", "ĐẠI DIỆN ĐOÀN KIỂM TRA | ĐẠI DIỆN ĐƠN VỊ ĐƯỢC KIỂM TRA | GIÁM SÁT VIÊN");
-                            handleFieldChange("signName", "Đoàn Văn A | Công Ty B | Giám Sát C");
-                          }}
-                          className="px-2 py-0.5 rounded bg-white hover:bg-blue-50 text-blue-700 border border-blue-200 text-[10.5px] font-semibold cursor-pointer"
-                        >
-                          3 bên
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            handleFieldChange("signTitle", "ĐẠI DIỆN CẢNG VỤ HÀNG HẢI | HOA TIÊU DẪN TÀU | THUYỀN TRƯỞNG | ĐĂNG KIỂM VIÊN");
-                            handleFieldChange("signName", "Nguyễn Văn Hải | Lê Hoàng Nam | Capt. Johnathan Miller | Đỗ Đức Tiến");
-                          }}
-                          className="px-2 py-0.5 rounded bg-white hover:bg-blue-50 text-blue-700 border border-blue-200 text-[10.5px] font-semibold cursor-pointer"
-                        >
-                          4 bên
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            handleFieldChange("signTitle", "TRƯỞNG ĐOÀN KIỂM TRA");
-                            handleFieldChange("signName", "Nguyễn Văn A");
-                          }}
-                          className="px-2 py-0.5 rounded bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 text-[10.5px] cursor-pointer"
-                        >
-                          1 bên
-                        </button>
-                      </div>
-                    </div>
-
-                    {doc.signTitle && doc.signTitle.includes("|") ? (
-                      <div className={`grid gap-4 mt-2 ${doc.signTitle.split("|").length === 2 ? "grid-cols-2" : (doc.signTitle.split("|").length === 4 ? "grid-cols-4" : "grid-cols-3")}`}>
-                        {doc.signTitle.split("|").map((titleItem, idx) => {
-                          const nameList = doc.signName.split("|").map(n => n.trim());
-                          const currentName = nameList[idx] || "";
-                          return (
-                            <div key={idx} className="text-center p-2 rounded-lg bg-slate-50/70 border border-slate-200 hover:border-blue-300 transition space-y-2">
-                              <span className="text-[10px] uppercase font-bold text-slate-400 block font-sans">Vị trí {idx + 1}</span>
-                              <AutoResizeTextarea
-                                rows={2}
-                                value={titleItem.trim()}
-                                onChange={(e) => {
-                                  const currentTitles = doc.signTitle.split("|").map(t => t.trim());
-                                  currentTitles[idx] = e.target.value;
-                                  handleFieldChange("signTitle", currentTitles.join(" | "));
-                                }}
-                                placeholder="Chức danh ký..."
-                                className="w-full text-center text-[11pt] font-bold uppercase leading-tight outline-none bg-transparent hover:bg-white focus:bg-white rounded p-1 border border-transparent focus:border-blue-300"
-                              />
-                              <div className="h-10 flex items-center justify-center text-slate-400 italic text-[10px] select-none">
-                                (Ký, ghi rõ họ tên)
-                              </div>
-                              <input
-                                type="text"
-                                value={currentName}
-                                onChange={(e) => {
-                                  const currentNames = doc.signName.split("|").map(n => n.trim());
-                                  while (currentNames.length <= idx) currentNames.push("");
-                                  currentNames[idx] = e.target.value;
-                                  handleFieldChange("signName", currentNames.join(" | "));
-                                }}
-                                placeholder="Họ và tên..."
-                                className="w-full text-center text-[11.5pt] font-bold outline-none bg-transparent hover:bg-white focus:bg-white rounded p-1 border border-transparent focus:border-blue-300"
-                              />
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      /* Biên bản 1 người ký */
-                      <div className="grid grid-cols-[38%_62%] gap-4 items-start mt-3">
-                        <div className="text-left text-[11pt] p-2 rounded-lg bg-slate-50/40 border border-slate-100">
-                          <p className="font-bold italic text-slate-500 text-xs font-sans">Nơi nhận (Miễn trừ đối với Biên bản):</p>
-                          <AutoResizeTextarea
-                            rows={2}
-                            value={doc.recipients}
-                            onChange={(e) => handleFieldChange("recipients", e.target.value)}
-                            placeholder="Các bên tham gia;&#10;Lưu: VT..."
-                            className="w-full text-left text-[10pt] outline-none bg-transparent hover:bg-white focus:bg-white rounded p-1"
-                          />
-                        </div>
-                        <div className="text-center p-2 rounded-lg hover:bg-blue-50/20 transition">
-                          <AutoResizeTextarea
-                            rows={2}
-                            value={doc.signTitle}
-                            onChange={(e) => handleFieldChange("signTitle", e.target.value)}
-                            placeholder="TRƯỞNG ĐOÀN KIỂM TRA"
-                            className="w-full text-center text-[13pt] font-bold uppercase leading-tight outline-none bg-transparent hover:bg-white focus:bg-white rounded p-1"
-                          />
-                          <div className="h-14 flex items-center justify-center text-slate-400 italic text-xs select-none">
-                            (Ký, ghi rõ họ tên)
-                          </div>
-                          <input
-                            type="text"
-                            value={doc.signName}
-                            onChange={(e) => handleFieldChange("signName", e.target.value)}
-                            placeholder="Họ và tên người ký"
-                            className="w-full text-center text-[13pt] font-bold outline-none bg-transparent hover:bg-white focus:bg-white rounded p-1"
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  /* Văn bản hành chính thông thường (Quyết định, Kế hoạch, Công văn, Tờ trình) */
-                  <div className="grid grid-cols-[38%_62%] gap-4 items-start mt-2">
-                    {/* Nơi nhận bên trái (38%) */}
-                    <div className="text-left text-[11pt] p-2 rounded-lg hover:bg-blue-50/30 border border-transparent hover:border-blue-200 transition">
-                      <p className="font-bold italic text-black">Nơi nhận:</p>
-                      <AutoResizeTextarea
-                        rows={3}
-                        value={doc.recipients}
-                        onChange={(e) => handleFieldChange("recipients", e.target.value)}
-                        placeholder="Như Điều ...&#10;Lãnh đạo đơn vị;&#10;Lưu: VT..."
-                        className="w-full text-left text-[11pt] outline-none bg-transparent hover:bg-white focus:bg-white rounded p-1 leading-relaxed"
-                      />
-                    </div>
-
-                    {/* Chữ ký bên phải (62% - Đủ rộng ~390px, KHÔNG BAO GIỜ bị rớt chữ 'MIỀN BẮC') */}
-                    <div className="text-center p-2 rounded-lg hover:bg-blue-50/30 border border-transparent hover:border-blue-200 transition">
-                      {!doc.signTitle && !doc.signName ? (
-                        <div className="p-3 bg-slate-50/80 border border-dashed border-slate-300 rounded-lg text-center space-y-1">
-                          <p className="text-xs font-semibold text-slate-700">Tài liệu không có khối chữ ký trong nguồn</p>
-                          <p className="text-[10.5px] text-slate-500 italic">Bản kế hoạch / dự thảo chưa ký. Hệ thống bảo toàn nguyên bản, không tự tạo chữ ký giả.</p>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              handleFieldChange("signTitle", "GIÁM ĐỐC");
-                              handleFieldChange("signName", "");
-                            }}
-                            className="mt-1 px-2.5 py-1 text-[11px] font-semibold bg-white border border-slate-300 text-blue-700 rounded-md hover:bg-blue-50 cursor-pointer"
-                          >
-                            + Bổ sung chữ ký nếu cần
-                          </button>
-                        </div>
-                      ) : (
-                        <>
-                          <div className="flex justify-end mb-1">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                handleFieldChange("signTitle", "");
-                                handleFieldChange("signName", "");
-                              }}
-                              className="text-[10px] text-slate-400 hover:text-rose-600 underline cursor-pointer"
-                              title="Xóa chữ ký (đối với văn bản dự thảo/kế hoạch chưa ký)"
-                            >
-                              Xóa chữ ký
-                            </button>
-                          </div>
-                          <AutoResizeTextarea
-                            rows={2}
-                            value={doc.signTitle}
-                            onChange={(e) => handleFieldChange("signTitle", e.target.value)}
-                            placeholder="TM. CÔNG TY HOA TIÊU HÀNG HẢI MIỀN BẮC&#10;GIÁM ĐỐC"
-                            className="w-full text-center text-[12.5pt] font-bold uppercase leading-tight outline-none bg-transparent hover:bg-white focus:bg-white rounded p-1 tracking-tight"
-                          />
-                          <div className="h-14 flex items-center justify-center text-slate-400 italic text-xs select-none">
-                            (Chữ ký, đóng dấu)
-                          </div>
-                          <input
-                            type="text"
-                            value={doc.signName}
-                            onChange={(e) => handleFieldChange("signName", e.target.value)}
-                            placeholder="Họ và tên người ký"
-                            className="w-full text-center text-[13pt] font-bold outline-none bg-transparent hover:bg-white focus:bg-white rounded p-1"
-                          />
-                        </>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </section>
-
-              {/* PHỤ LỤC ĐÍNH KÈM */}
-              {doc.appendices && doc.appendices.length > 0 && (
-                <div id="section-appendices" className="mt-8 pt-4 border-t-2 border-dashed border-amber-300 space-y-3">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-bold text-amber-900 uppercase">
-                      Phụ lục đính kèm ({doc.appendices.length})
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const newApp: AppendixDocument = {
-                          id: `app-${Date.now()}`,
-                          title: `PHỤ LỤC ${doc.appendices!.length + 1}`,
-                          referenceText: `(Kèm theo ${doc.documentType || "Văn bản"} ${doc.referenceNumber || ""})`,
-                          html: "<p>Nội dung phụ lục bổ sung...</p>",
-                          blocks: [],
-                          sourceBlockIds: [],
-                          extractionStatus: "confirmed"
-                        };
-                        setDoc(prev => ({ ...prev, appendices: [...(prev.appendices || []), newApp] }));
-                      }}
-                      className="text-amber-800 bg-amber-100 px-2 py-0.5 rounded text-[11px] font-semibold"
-                    >
-                      + Thêm phụ lục
-                    </button>
-                  </div>
-                  {doc.appendices.map((app, idx) => (
-                    <div key={app.id || idx} className="p-3 bg-amber-50/50 border border-amber-200 rounded-lg text-xs space-y-2">
-                      <div className="flex items-center justify-between font-bold text-amber-950">
-                        <span>{app.title}</span>
-                        <button
-                          type="button"
-                          onClick={() => setDoc(prev => ({ ...prev, appendices: prev.appendices?.filter((_, i) => i !== idx) }))}
-                          className="text-rose-600 hover:underline"
-                        >
-                          Xóa
-                        </button>
-                      </div>
-                      <p className="text-slate-600 italic">{app.referenceText}</p>
-                      <div 
-                        className="p-2 bg-white border border-slate-200 rounded max-h-36 overflow-y-auto"
-                        dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(app.html) }}
-                      />
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* KHỐI CHƯA PHÂN LOẠI CẦN RÀ SOÁT */}
-              {Boolean(doc.unclassified?.length) && (
-                <div className="mt-6 p-3 bg-amber-50 border border-amber-300 rounded-lg text-xs space-y-2">
-                  <span className="font-bold text-amber-950 block">
-                    Khối chưa phân loại ({doc.unclassified?.length}) — cần đối chiếu tệp gốc
-                  </span>
-                  {doc.unclassified?.map(block => (
-                    <div key={block.id} className="p-2 bg-white border border-amber-200 rounded flex items-center justify-between gap-2">
-                      <span className="text-slate-700 truncate">#{block.index + 1}: {block.text || "[Không có text]"}</span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const html = block.html || safeTextToHtml(block.text);
-                          setDoc(prev => ({
-                            ...prev,
-                            bodyHtml: `${prev.bodyHtml || ""}${html}`,
-                            unclassified: (prev.unclassified || []).filter(item => item.id !== block.id)
-                          }));
-                        }}
-                        className="text-blue-700 font-semibold hover:underline shrink-0"
-                      >
-                        Chèn vào thân bài
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-                </div>
-              </div>
-            </div>
-          ) : (
-            /* VIEW MODE 2: REAL WORD DOCX PREVIEW */
-            <div className="df-real-preview w-full max-w-[820px] df-glass-surface shadow-xl rounded-xl p-4">
-              <A4DocumentPreview
-                doc={doc}
-                standardType={standardType}
-                previewRef={previewRef}
-                mode="full"
-                onExportDocx={exportToDocx}
-                onExportPdf={exportToPdf}
-                onPrint={() => window.print()}
-                isExportingDocx={isExportingDocx}
-                isExportingPdf={isExportingPdf}
-              />
-            </div>
-          )}
-
-        </main>
-
-        {/* ========================================================
-            RIGHT PANE: UNIFIED 3-TAB SUPPORT PANEL (Cần sửa · Gợi ý AI · Mục lục)
-           ======================================================== */}
-        {showInspectorRight && (
-          <div className={`${isCompactWorkspace ? "fixed inset-0 z-40 flex justify-end" : "flex shrink-0 h-full"}`}>
-            {/* Backdrop overlay on compact / mobile */}
-            {isCompactWorkspace && (
-              <div 
-                className="fixed inset-0 bg-slate-950/45 backdrop-blur-xs"
-                onClick={() => {
-                  setShowInspectorRight(false);
-                  setUserClosedInspector(true);
-                }}
-              />
-            )}
-            <aside 
-              role={isCompactWorkspace ? "dialog" : "complementary"} 
-              aria-modal={isCompactWorkspace ? true : undefined} 
-              aria-label="Trợ lý rà soát" 
-              className={`df-inspector relative z-10 w-[328px] df-glass-surface border-l border-slate-200/90 flex flex-col shrink-0 h-full overflow-hidden shadow-2xl ${isCompactWorkspace ? "" : "lg:shadow-none"} select-none df-panel-transition`}
-            >
-              
-              {/* Top Panel Header */}
-              <div className="p-3 border-b border-slate-200/80 bg-white/75 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className={`w-7 h-7 rounded-xl flex items-center justify-center border ${
-                    evaluationSummary.actionableIssues.length > 0 
-                      ? "bg-amber-50 border-amber-200 text-[#D9822B]" 
-                      : (evaluationSummary.canonicalStats.counts.NEEDS_REVIEW > 0 || evaluationSummary.canonicalStats.counts.NOT_EVALUATED > 0
-                          ? "bg-indigo-50 border-indigo-200 text-[#6255E8]"
-                          : "bg-emerald-50 border-emerald-200 text-[#15803D]")
-                  }`}>
-                    <AlertCircle className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <span className="font-bold text-sm text-[#17233D] block">Trợ lý rà soát</span>
-                    <span className="text-[11px] text-[#5B6780]">
-                      {evaluationSummary.actionableIssues.length === 0 
-                        ? (evaluationSummary.canonicalStats.counts.NEEDS_REVIEW > 0 || evaluationSummary.canonicalStats.counts.NOT_EVALUATED > 0
-                            ? "Không có việc cần xử lý tự động"
-                            : "Không có lỗi cấu trúc tự động")
-                        : `${evaluationSummary.actionableIssues.length} vấn đề cần rà soát`}
-                    </span>
-                  </div>
-                </div>
-                <button 
-                  type="button"
-                  onClick={() => {
-                    setShowInspectorRight(false);
-                    setUserClosedInspector(true);
-                  }}
-                  aria-label="Đóng trợ lý rà soát"
-                  title="Thu gọn trợ lý rà soát"
-                  className="p-1 rounded-lg text-[#5B6780] hover:text-[#17233D] hover:bg-slate-100 transition cursor-pointer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              {/* 3 Segmented Support Tabs: Cần sửa | Gợi ý AI | Mục lục */}
-              <div role="tablist" aria-label="Công cụ hỗ trợ" className="grid grid-cols-3 gap-1 p-2 bg-slate-100/90 border-b border-slate-200/80 text-sm">
-                <button
-                  type="button"
-                  role="tab"
-                  id="df-tab-issues"
-                  aria-controls="df-panel-issues"
-                  aria-selected={inspectorTab === "issues"}
-                  tabIndex={inspectorTab === "issues" ? 0 : -1}
-                  onKeyDown={(e) => handleTabKeyDown(e, "issues")}
-                  onClick={() => setInspectorTab("issues")}
-                  className={`py-2 px-2 rounded-xl font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
-                    inspectorTab === "issues"
-                      ? "bg-white text-[#17233D] shadow-2xs"
-                      : "text-[#5B6780] hover:text-[#17233D]"
-                  }`}
-                >
-                  <span>Cần sửa</span>
-                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
-                    evaluationSummary.actionableIssues.length > 0
-                      ? "bg-amber-100 text-[#D9822B]"
-                      : "bg-slate-200/80 text-[#5B6780]"
-                  }`}>
-                    {evaluationSummary.actionableIssues.length}
-                  </span>
-                </button>
-
-                <button
-                  type="button"
-                  role="tab"
-                  id="df-tab-ai"
-                  aria-controls="df-panel-ai"
-                  aria-selected={inspectorTab === "ai"}
-                  tabIndex={inspectorTab === "ai" ? 0 : -1}
-                  onKeyDown={(e) => handleTabKeyDown(e, "ai")}
-                  onClick={() => setInspectorTab("ai")}
-                  className={`py-2 px-2 rounded-xl font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
-                    inspectorTab === "ai"
-                      ? "bg-white text-[#6255E8] shadow-2xs"
-                      : "text-[#5B6780] hover:text-[#17233D]"
-                  }`}
-                >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>Gợi ý AI</span>
-                  {reviewProposals.filter(p => !acceptedProposalIds.has(p.id)).length > 0 && (
-                    <span className="px-1.5 py-0.2 rounded-full text-[10px] font-extrabold bg-indigo-100 text-[#6255E8]">
-                      {reviewProposals.filter(p => !acceptedProposalIds.has(p.id)).length}
-                    </span>
-                  )}
-                </button>
-
-                <button
-                  type="button"
-                  role="tab"
-                  id="df-tab-outline"
-                  aria-controls="df-panel-outline"
-                  aria-selected={inspectorTab === "outline"}
-                  tabIndex={inspectorTab === "outline" ? 0 : -1}
-                  onKeyDown={(e) => handleTabKeyDown(e, "outline")}
-                  onClick={() => setInspectorTab("outline")}
-                  className={`py-2 px-2 rounded-xl font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
-                    inspectorTab === "outline"
-                      ? "bg-white text-[#16A6A6] shadow-2xs"
-                      : "text-[#5B6780] hover:text-[#17233D]"
-                  }`}
-                >
-                  <CheckSquare className="w-3.5 h-3.5" />
-                  <span>Mục lục</span>
-                </button>
-              </div>
-
-              {/* TAB 1: CẦN SỬA (Priority #1 Issue at Top + Remaining Issues) */}
-              {inspectorTab === "issues" && (
-                <div role="tabpanel" id="df-panel-issues" aria-labelledby="df-tab-issues" className="flex-1 flex flex-col min-h-0 overflow-hidden">
-                  {/* Filter Bar */}
-                  <div className="px-3.5 py-2.5 border-b border-slate-200/70 bg-white/60 flex items-center justify-between text-xs">
-                    {activeGroupFilter === "all" ? (
-                      <span className="text-[11px] text-[#5B6780] font-semibold">Tất cả 9 nhóm thành phần</span>
-                    ) : (
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[11px] font-bold text-[#6255E8] bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-md">
-                          Lọc: {COMPONENT_GROUPS.find(g => g.id === activeGroupFilter)?.name || `Nhóm ${activeGroupFilter}`}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => setActiveGroupFilter("all")}
-                          className="text-[11px] text-[#5B6780] hover:text-[#17233D] underline cursor-pointer"
-                        >
-                          Bỏ lọc
-                        </button>
-                      </div>
-                    )}
-
-                    {evaluationSummary.actionableIssues.some(i => i.canAutoFix) && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          evaluationSummary.actionableIssues.forEach(issue => {
-                            if (issue.canAutoFix && issue.suggestion && issue.targetField) {
-                              handleFieldChange(issue.targetField as any, issue.suggestion);
-                            }
-                          });
-                          pushVersion("Áp dụng tự động sửa các lỗi thể thức", doc);
-                          showToast("Đã áp dụng các sửa đổi thể thức tự động!", "success");
-                        }}
-                        className="text-[11px] text-[#6255E8] hover:text-indigo-800 font-bold hover:underline cursor-pointer"
-                      >
-                        Sửa nhanh tất cả
-                      </button>
-                    )}
-                  </div>
-
-                  <div className="p-3.5 space-y-3 flex-1 overflow-y-auto">
-                    {(() => {
-                      const filteredIssues = activeGroupFilter === "all"
-                        ? evaluationSummary.actionableIssues
-                        : evaluationSummary.actionableIssues.filter(i => i.componentGroup === activeGroupFilter);
-
-                      if (filteredIssues.length === 0) {
-                        const groupRules = activeGroupFilter === "all"
-                          ? evaluationSummary.results
-                          : evaluationSummary.results.filter(r => r.componentGroup === activeGroupFilter);
-                        const groupNeedsReview = groupRules.filter(r => r.status === "NEEDS_REVIEW").length;
-                        const groupNotEval = groupRules.filter(r => r.status === "NOT_EVALUATED").length;
-                        const groupFail = groupRules.filter(r => r.status === "FAIL").length;
-                        const hasPendingVerification = groupNeedsReview > 0 || groupNotEval > 0;
-
-                        return (
-                          <div className={`p-4 rounded-2xl text-center space-y-2 border ${
-                            hasPendingVerification
-                              ? "bg-white/90 border-slate-200 text-[#17233D]"
-                              : (groupFail > 0 ? "bg-rose-50 border-rose-200 text-rose-900" : "bg-emerald-50/70 border-emerald-200 text-emerald-950")
-                          }`}>
-                            {hasPendingVerification ? (
-                              <Info className="w-8 h-8 text-[#6255E8] mx-auto" />
-                            ) : (
-                              <CheckCircle2 className="w-8 h-8 text-[#15803D] mx-auto" />
-                            )}
-                            <p className="text-xs font-bold">
-                              {hasPendingVerification
-                                ? "Không có việc cần xử lý tự động"
-                                : "Không có vấn đề cần xử lý"}
-                            </p>
-                            <p className="text-[11px] leading-relaxed text-[#5B6780]">
-                              {hasPendingVerification ? (
-                                activeGroupFilter === "all"
-                                  ? `Chưa phát hiện lỗi cấu trúc tự động. Còn ${groupNeedsReview} quy tắc cần rà soát thủ công và ${groupNotEval} quy tắc chưa kiểm định.`
-                                  : `Vị trí này không có lỗi tự động. Còn ${groupNeedsReview} quy tắc cần rà soát thủ công và ${groupNotEval} quy tắc chưa kiểm định.`
-                              ) : (
-                                activeGroupFilter === "all" 
-                                  ? "Văn bản đã tuân thủ đúng quy chuẩn thể thức của " + (standardType === "party" ? "Hướng dẫn 05" : "Nghị định 30") + "."
-                                  : "Nhóm thành phần này đã đạt chuẩn, không có lỗi cần sửa."
-                              )}
-                            </p>
-                          </div>
-                        );
-                      }
-
-                      const currentIdx = Math.min(activeIssueIndex, filteredIssues.length - 1);
-                      const priorityIssue = filteredIssues[currentIdx] || filteredIssues[0];
-                      const remainingIssues = filteredIssues.filter((_, idx) => idx !== currentIdx);
-
-                      const jumpToIssueGroup = (groupNum: number | string) => {
-                        if (groupNum === 1 || groupNum === 2 || groupNum === 3 || groupNum === 4) {
-                          scrollToSection("section-header");
-                        } else if (groupNum === 5) {
-                          scrollToSection("section-title");
-                        } else if (groupNum === 6) {
-                          scrollToSection("section-body");
-                        } else if (groupNum === 7 || groupNum === 8 || groupNum === 9) {
-                          scrollToSection("section-footer");
-                        }
-                      };
-
-                      return (
-                        <>
-                          {/* PRIORITY #1 ACTION CARD AT TOP */}
-                          {priorityIssue && (
-                            <div className="p-3.5 rounded-2xl border-2 border-[#F28C72] bg-gradient-to-br from-orange-50/90 via-white to-rose-50/60 shadow-sm space-y-2.5">
-                              <div className="flex items-center justify-between gap-1.5">
-                                <div className="flex items-center gap-1.5">
-                                  <span className="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-md bg-[#F28C72]/20 text-[#9A3412] border border-[#F28C72]/50">
-                                    Ưu tiên xử lý #1
-                                  </span>
-                                  {filteredIssues.length > 1 && (
-                                    <div className="flex items-center gap-1 bg-white/80 border border-slate-200 rounded-md px-1.5 py-0.5 text-[10px] font-bold text-[#5B6780]">
-                                      <button
-                                        type="button"
-                                        onClick={() => setActiveIssueIndex(prev => Math.max(0, prev - 1))}
-                                        disabled={currentIdx === 0}
-                                        className="hover:text-[#17233D] disabled:opacity-30 cursor-pointer"
-                                        title="Vấn đề trước"
-                                      >
-                                        ‹
-                                      </button>
-                                      <span>{currentIdx + 1} / {filteredIssues.length}</span>
-                                      <button
-                                        type="button"
-                                        onClick={() => setActiveIssueIndex(prev => Math.min(filteredIssues.length - 1, prev + 1))}
-                                        disabled={currentIdx >= filteredIssues.length - 1}
-                                        className="hover:text-[#17233D] disabled:opacity-30 cursor-pointer"
-                                        title="Vấn đề tiếp theo"
-                                      >
-                                        ›
-                                      </button>
-                                    </div>
-                                  )}
-                                </div>
-                                <span className="text-[10px] font-mono font-bold text-[#5B6780]">
-                                  Nhóm {priorityIssue.componentGroup}
-                                </span>
-                              </div>
-
-                              <div>
-                                <h4 className="font-extrabold text-[#17233D] text-xs mb-1">{priorityIssue.title}</h4>
-                                <p className="text-[11px] text-[#5B6780] leading-relaxed">{priorityIssue.message}</p>
-                              </div>
-
-                              {priorityIssue.suggestion && (
-                                <div className="p-2.5 rounded-xl bg-white border border-emerald-200 text-[11px] space-y-1">
-                                  <span className="text-[10px] text-[#5B6780] font-semibold block">Đề xuất chuẩn hóa:</span>
-                                  <ins className="df-diff-ins font-mono text-xs block">{priorityIssue.suggestion}</ins>
-                                </div>
-                              )}
-
-                              <div className="flex items-center justify-between pt-1.5 border-t border-orange-200/60">
-                                <button
-                                  type="button"
-                                  onClick={() => jumpToIssueGroup(priorityIssue.componentGroup)}
-                                  className="text-[11px] font-semibold text-[#5B6780] hover:text-[#17233D] flex items-center gap-1 cursor-pointer"
-                                >
-                                  <Eye className="w-3.5 h-3.5" /> Xem vị trí trên A4
-                                </button>
-
-                                {priorityIssue.canAutoFix && priorityIssue.suggestion && priorityIssue.targetField && (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      handleFieldChange(priorityIssue.targetField as any, priorityIssue.suggestion!);
-                                      pushVersion(`Sửa ${priorityIssue.title}`, doc);
-                                      showToast(`Đã áp dụng: ${priorityIssue.title}`, "success");
-                                    }}
-                                    className="df-btn-primary px-3 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1 cursor-pointer"
-                                  >
-                                    <Check className="w-3.5 h-3.5" /> Áp dụng ngay
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                          )}
-
-                          {/* REMAINING ISSUES COLLAPSIBLE */}
-                          {remainingIssues.length > 0 && (
-                            <details className="group space-y-2 pt-1" open>
-                              <summary className="text-[11px] font-bold text-[#5B6780] uppercase tracking-wider cursor-pointer hover:text-[#17233D] list-none flex items-center justify-between px-0.5">
-                                <span>Chi tiết kiểm tra & vấn đề khác ({remainingIssues.length})</span>
-                                <span className="text-[10px] text-slate-400 group-open:rotate-180 transition-transform">▾</span>
-                              </summary>
-                              <div className="space-y-2 pt-1">
-                                {remainingIssues.map((issue) => {
-                                  const isLegalError = issue.severity === "LEGAL_ERROR";
-                                  return (
-                                    <div 
-                                      key={issue.id}
-                                      className={`p-3 rounded-xl border text-xs space-y-2 bg-white/90 transition ${
-                                        isLegalError ? "border-rose-200" : "border-amber-200"
-                                      }`}
-                                    >
-                                      <div className="flex items-center justify-between gap-1">
-                                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${
-                                          isLegalError ? "bg-rose-50 text-[#DC2626] border-rose-200" : "bg-amber-50 text-[#D9822B] border-amber-200"
-                                        }`}>
-                                          {isLegalError ? "Lỗi thể thức bắt buộc" : "Cảnh báo thể thức"}
-                                        </span>
-                                        <span className="text-[10px] text-[#5B6780] font-mono">
-                                          Nhóm {issue.componentGroup}
-                                        </span>
-                                      </div>
-
-                                      <div>
-                                        <h4 className="font-bold text-[#17233D] text-xs mb-0.5">{issue.title}</h4>
-                                        <p className="text-[11px] text-[#5B6780] leading-relaxed">{issue.message}</p>
-                                      </div>
-
-                                      {issue.suggestion && (
-                                        <div className="p-2 rounded-lg bg-slate-50 border border-slate-200 text-[11px] font-mono text-[#15803D]">
-                                          <span className="text-[10px] text-[#5B6780] block font-sans">Đề xuất chuẩn hóa:</span>
-                                          {issue.suggestion}
-                                        </div>
-                                      )}
-
-                                      <div className="flex items-center justify-between pt-1 border-t border-slate-100">
-                                        <button
-                                          type="button"
-                                          onClick={() => jumpToIssueGroup(issue.componentGroup)}
-                                          className="text-[11px] text-[#5B6780] hover:text-[#17233D] flex items-center gap-1 cursor-pointer"
-                                        >
-                                          <Eye className="w-3 h-3" /> Xem vị trí
-                                        </button>
-
-                                        {issue.canAutoFix && issue.suggestion && issue.targetField && (
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              handleFieldChange(issue.targetField as any, issue.suggestion!);
-                                              pushVersion(`Sửa ${issue.title}`, doc);
-                                              showToast(`Đã áp dụng: ${issue.title}`, "success");
-                                            }}
-                                            className="px-2.5 py-1 bg-[#6255E8] hover:bg-indigo-700 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer"
-                                          >
-                                            <Check className="w-3 h-3" /> Áp dụng
-                                          </button>
-                                        )}
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </details>
-                          )}
-                        </>
-                      );
-                    })()}
-                  </div>
-                </div>
-              )}
-
-              {/* TAB 2: GỢI Ý AI (Before/After Preview + Apply / Dismiss) */}
-              {inspectorTab === "ai" && (
-                <div role="tabpanel" id="df-panel-ai" aria-labelledby="df-tab-ai" className="p-3.5 space-y-4 flex-1 overflow-y-auto">
-                  {/* AI Actions Card */}
-                  <div className="p-3.5 rounded-2xl bg-gradient-to-br from-indigo-50/90 via-white to-teal-50/60 border border-indigo-200/80 space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-extrabold text-[#17233D] flex items-center gap-1.5">
-                        <Sparkles className="w-4 h-4 text-[#6255E8]" />
-                        Trợ Lý Rà Soát Văn Phong & Chính Tả
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-[#5B6780] leading-relaxed">
-                      Mọi đề xuất đều hiển thị đối chiếu <strong>Trước / Sau</strong> và chỉ thay đổi văn bản khi bạn bấm <strong>Áp dụng</strong>.
-                    </p>
-                    <div className="grid grid-cols-2 gap-2 pt-1">
-                      <button
-                        type="button"
-                        onClick={() => handleAiRefine("proofread")}
-                        disabled={isRefining}
-                        className="p-2.5 bg-white hover:bg-indigo-50 text-[#17233D] border border-indigo-200 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer disabled:opacity-50 shadow-2xs"
-                      >
-                        <Wand2 className="w-3.5 h-3.5 text-[#6255E8] shrink-0" />
-                        <span>Sửa chính tả</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleAiRefine("formalize")}
-                        disabled={isRefining}
-                        className="p-2.5 bg-white hover:bg-teal-50 text-[#17233D] border border-teal-200 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer disabled:opacity-50 shadow-2xs"
-                      >
-                        <Sparkles className="w-3.5 h-3.5 text-[#16A6A6] shrink-0" />
-                        <span>Nâng văn phong</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Pending Proposals with Before / After Preview */}
-                  {(() => {
-                    const pendingProposals = reviewProposals.filter(p => !acceptedProposalIds.has(p.id));
-                    if (pendingProposals.length === 0) {
-                      return (
-                        <div className="p-5 rounded-2xl bg-white/80 border border-slate-200 text-center space-y-1.5">
-                          <Sparkles className="w-7 h-7 text-[#6255E8] mx-auto opacity-75" />
-                          <p className="text-xs font-bold text-[#17233D]">Chưa có đề xuất sửa đổi đang chờ</p>
-                          <p className="text-[11px] text-[#5B6780]">
-                            Chọn <strong>Sửa chính tả</strong> hoặc <strong>Nâng văn phong</strong> ở trên để tạo đề xuất đối chiếu Trước / Sau.
-                          </p>
-                        </div>
-                      );
-                    }
-
-                    return (
-                      <div className="space-y-2.5">
-                        <span className="text-[11px] font-bold text-[#5B6780] uppercase tracking-wider block">
-                          Đề xuất chờ duyệt ({pendingProposals.length})
-                        </span>
-                        {pendingProposals.map((p) => (
-                          <div key={p.id} className="p-3 rounded-2xl border border-indigo-200/90 bg-white shadow-2xs text-xs space-y-2.5">
-                            <div className="flex items-center justify-between">
-                              <span className="text-[10px] bg-indigo-50 text-[#6255E8] border border-indigo-200 font-bold px-2 py-0.5 rounded-md">
-                                {p.type === "spelling" ? "Chính tả" : (p.type === "format" ? "Định dạng" : "Văn phong")}
-                              </span>
-                              <span className="text-[10px] text-[#5B6780] font-medium">Xem trước Trước / Sau</span>
-                            </div>
-
-                            <p className="text-[11px] text-[#17233D] font-semibold">{p.reason}</p>
-
-                            {/* Before / After Diff Preview */}
-                            <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/90 space-y-1.5 text-[11px]">
-                              <div className="flex items-start gap-1.5">
-                                <span className="text-[10px] font-bold text-rose-700 uppercase shrink-0 mt-0.5">Trước:</span>
-                                <del className="df-diff-del break-words">{p.original}</del>
-                              </div>
-                              <div className="flex items-start gap-1.5">
-                                <span className="text-[10px] font-bold text-emerald-700 uppercase shrink-0 mt-0.5">Sau:</span>
-                                <ins className="df-diff-ins break-words">{p.suggested}</ins>
-                              </div>
-                            </div>
-
-                            <div className="flex items-center justify-end gap-2 pt-1">
-                              <button
-                                type="button"
-                                onClick={() => handleDismissProposal(p.id)}
-                                className="px-2.5 py-1 rounded-lg border border-slate-200 hover:bg-slate-100 text-[#5B6780] font-semibold text-[11px] cursor-pointer"
-                              >
-                                Bỏ qua
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleAcceptProposal(p)}
-                                className="df-btn-primary px-3 py-1 rounded-lg font-bold text-[11px] flex items-center gap-1 cursor-pointer"
-                              >
-                                <Check className="w-3 h-3" /> Áp dụng
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    );
-                  })()}
-                </div>
-              )}
-
-              {/* TAB 3: MỤC LỤC (9 Component Groups + Header Profile Switcher) */}
-              {inspectorTab === "outline" && (
-                <div role="tabpanel" id="df-panel-outline" aria-labelledby="df-tab-outline" className="p-3.5 space-y-4 flex-1 overflow-y-auto">
-                  {/* Header Profile Switcher */}
-                  <div className="p-3 rounded-2xl bg-white border border-slate-200/90 space-y-2">
-                    <span className="text-[11px] font-bold text-[#5B6780] uppercase tracking-wider block">
-                      Profile Cơ Quan Ban Hành
-                    </span>
-                    {(() => {
-                      const isPartyMode = standardType === "party";
-                      const activeProfileId = isPartyMode ? COMPANY_HEADER_HD05_PROFILE_ID : COMPANY_HEADER_PROFILE_ID;
-                      const isProfileActive = doc.headerProfile === activeProfileId;
-                      return (
-                        <button
-                          type="button"
-                          onClick={() => handleHeaderProfileChange(isProfileActive ? "generic" : activeProfileId)}
-                          className={`w-full p-2.5 rounded-xl border text-xs text-left transition flex items-center justify-between cursor-pointer ${
-                            isProfileActive
-                              ? "bg-indigo-50/90 border-[#6255E8] text-[#17233D] font-semibold"
-                              : "bg-slate-50 border-slate-200 text-[#17233D] hover:bg-slate-100"
-                          }`}
-                        >
-                          <div>
-                            <span className="block font-bold text-xs">
-                              {isPartyMode ? "Đảng bộ Hoa tiêu MB" : "Hoa tiêu hàng hải miền Bắc"}
-                            </span>
-                            <span className="text-[10px] text-[#5B6780]">
-                              {isPartyMode ? "Chuẩn HD 05 duyệt" : "Chuẩn NĐ 30 duyệt"}
-                            </span>
-                          </div>
-                          <span className={`w-4 h-4 rounded-full border flex items-center justify-center ${
-                            isProfileActive ? "bg-[#6255E8] border-[#6255E8] text-white" : "border-slate-300"
-                          }`}>
-                            {isProfileActive && <Check className="w-2.5 h-2.5" />}
-                          </span>
-                        </button>
-                      );
-                    })()}
-                  </div>
-
-                  {/* 9 Component Groups Navigator */}
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-bold text-[#17233D] uppercase tracking-wider">
-                        9 Thành Phần Thể Thức
-                      </span>
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-teal-50 text-[#16A6A6] border border-teal-200">
-                        {evaluationSummary.recognizedComponents.recognized}/{evaluationSummary.recognizedComponents.total} đã nhận diện
-                      </span>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      {(() => {
-                        const allGroups = evaluationSummary.recognizedComponents.groups;
-                        const coreGroups = allGroups.filter(g => typeof g.id === "number" || /^\d+$/.test(String(g.id)));
-                        const suppGroups = allGroups.filter(g => !(typeof g.id === "number" || /^\d+$/.test(String(g.id))));
-
-                        const renderGroupItem = (group: typeof allGroups[0]) => {
-                          const isSelected = activeGroupFilter === group.id;
-                          return (
-                            <div
-                              key={String(group.id)}
-                              onClick={() => {
-                                setActiveGroupFilter(isSelected ? "all" : group.id);
-                                if ([1, 2, 3, 4].includes(Number(group.id))) {
-                                  scrollToSection("section-header");
-                                } else if (group.id === 5) {
-                                  scrollToSection("section-title");
-                                } else if (group.id === 6) {
-                                  scrollToSection("section-body");
-                                } else if ([7, 8, 9].includes(Number(group.id))) {
-                                  scrollToSection("section-footer");
-                                } else if (group.id === "supp_appendix") {
-                                  scrollToSection("section-appendices");
-                                } else {
-                                  scrollToSection("section-header");
-                                }
-                              }}
-                              className={`p-2.5 rounded-xl border text-xs cursor-pointer transition flex flex-col gap-1 ${
-                                isSelected
-                                  ? "border-[#6255E8] bg-indigo-50/80 text-[#17233D] font-semibold shadow-2xs"
-                                  : "bg-white border-slate-200 hover:border-slate-300 text-[#17233D]"
-                              }`}
-                            >
-                              <div className="flex items-center justify-between gap-1">
-                                <span className="font-bold truncate text-[11.5px]">{group.name}</span>
-                                <span className={`text-[9.5px] px-1.5 py-0.5 rounded-md font-bold shrink-0 ${
-                                  group.status === "needs_action"
-                                    ? "bg-amber-100 text-[#D9822B] border border-amber-300"
-                                    : group.status === "missing"
-                                    ? "bg-rose-100 text-[#DC2626] border border-rose-300"
-                                    : group.status === "recognized"
-                                    ? "bg-emerald-100 text-[#15803D] border border-emerald-300"
-                                    : "bg-slate-100 text-[#5B6780]"
-                                }`}>
-                                  {group.status === "needs_action" ? `Cần sửa (${group.issuesCount})`
-                                    : group.status === "missing" ? "Cần bổ sung"
-                                    : group.status === "recognized" ? "Đã nhận diện"
-                                    : "Không áp dụng"}
-                                </span>
-                              </div>
-                              <p className="text-[10.5px] text-[#5B6780] line-clamp-1 truncate font-normal">
-                                {group.valuePreview || "Chưa có dữ liệu"}
-                              </p>
-                            </div>
-                          );
-                        };
-
-                        return (
-                          <>
-                            {coreGroups.map(renderGroupItem)}
-                            {suppGroups.length > 0 && (
-                              <details className="group pt-2">
-                                <summary className="text-[11px] font-bold text-[#5B6780] uppercase tracking-wider cursor-pointer hover:text-[#17233D] list-none flex items-center justify-between px-0.5 py-1">
-                                  <span>Thành phần bổ sung ({suppGroups.length})</span>
-                                  <span className="text-[10px] text-slate-400 group-open:rotate-180 transition-transform">▾</span>
-                                </summary>
-                                <div className="space-y-1.5 pt-1.5">
-                                  {suppGroups.map(renderGroupItem)}
-                                </div>
-                              </details>
-                            )}
-                          </>
-                        );
-                      })()}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-            </aside>
-          </div>
-        )}
-
-          </div>
-        </div>
-      )}
-
-      {/* Floating Toast Notification */}
+      {currentStep===3&&<WorkspaceExport candidate={visibleCandidate} pending={candidatePending} error={candidateError} onPrepare={()=>void prepareCandidate()} onDownload={()=>void exportToDocx()} onDownloadOriginal={()=>void handleDownloadOriginalFile()} onPrintCandidate={()=>void handlePrintCandidate()} originalAvailable={sourceBlobAvailability==='available'} onPrev={()=>goToStep(2)} onReviewSource={()=>{setCurrentStep(1);setShowSideBySideModal(true);}} onEditTarget={(targetId)=>{setCurrentStep(2);requestAnimationFrame(()=>{const node=[...document.querySelectorAll<HTMLElement>('[data-workspace-node]')].find(el=>el.dataset.workspaceNode===targetId);(node?.querySelector<HTMLElement>('[contenteditable="true"]')??document.querySelector<HTMLElement>('[data-canvas-id="body"] [contenteditable="true"]'))?.focus({preventScroll:true});});}} originalHtml={originalSnapshot?.bodyHtml??''}/>}
+      <div hidden={currentStep!==2}>
+        {sourceChosen&&canEnterWorkspaceStep(workspaceSnapshot,2)&&<WorkspaceEditor key={workspaceSnapshot.workspace.source?.identity??originalSnapshot?.sourceId??'template'} snapshot={workspaceSnapshot} initialCanvasId={editorState.activeCanvasId} onCanvasSelected={id=>setEditorState({activeCanvasId:id})} active={currentStep===2} onAction={workspaceAction} onPartition={()=>{setCurrentStep(1);setShowSideBySideModal(true);}} onRefine={handleAiRefine} refining={isRefining} canContinue={canEnterStep(3)} onContinue={()=>goToStep(3)}/>}
+      </div>
+      </div></div>
       {toast && (
         <div className="df-toast fixed bottom-16 lg:bottom-6 right-6 z-50 flex items-center gap-2.5 px-4 py-2.5 rounded-xl shadow-2xl border text-xs font-semibold bg-white border-slate-200 text-slate-800">
           {toast.type === "success" && <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />}
@@ -3690,8 +2982,16 @@ export default function App() {
       {/* ========================================================
           MODAL 1: SIDE-BY-SIDE IMPORT REVIEW STUDIO
          ======================================================== */}
-      {showSideBySideModal && (structuredImport || reviewBlocks.length > 0) && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+      {showSideBySideModal && (structuredImport || partitionReviewBlocks.length > 0) && (
+        <div 
+          ref={sideBySideDialogRef}
+          data-testid="side-by-side-modal"
+          data-partition-revision={partitionRevision}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="side-by-side-modal-title"
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4"
+        >
           <div className="bg-white rounded-2xl w-full max-w-5xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
             
             {/* Header */}
@@ -3702,9 +3002,9 @@ export default function App() {
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h2 className="text-sm font-bold text-[#17233D]">Đối Chiếu & Phân Vùng Tài Liệu Tải Lên</h2>
+                    <h2 id="side-by-side-modal-title" className="text-sm font-bold text-[#17233D]">Đối Chiếu &amp; Phân Vùng Tài Liệu Tải Lên</h2>
                     <span className="text-[10px] bg-emerald-400/20 text-emerald-700 border border-emerald-400/30 px-2 py-0.5 rounded-full font-semibold">
-                      Tổng {reviewBlocks.length || structuredImport?.source.blockCount || 0} khối
+                      Tổng {partitionReviewBlocks.length || structuredImport?.source.blockCount || 0} khối
                     </span>
                   </div>
                   <div className="flex items-center gap-2 mt-0.5 flex-wrap">
@@ -3726,11 +3026,12 @@ export default function App() {
 
               <div className="flex items-center gap-2">
                 <button
+                  data-partition-approve
                   type="button"
                   onClick={handleAiCheckPartitions}
-                  disabled={isCheckingPartitions}
+                  disabled={!aiPartitionConsent || isCheckingPartitions}
                   className="px-3 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs rounded-xl shadow transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                  title="Gửi đặc trưng cấu trúc lên máy chủ để AI Gemini kiểm tra phân vùng theo NĐ 30 / HD 05"
+                  title={aiPartitionConsent ? "Gửi nguồn đã chuẩn hóa, không kèm role parser, cho Gemini kiểm tra" : "Bật cho phép AI ở Bước 1 trước khi gửi nguồn"}
                 >
                   <Sparkles className={`w-3.5 h-3.5 ${isCheckingPartitions ? "animate-spin" : ""}`} />
                   <span>{isCheckingPartitions ? "AI Đang Rà Soát..." : "AI Kiểm Tra Phân Vùng"}</span>
@@ -3747,7 +3048,9 @@ export default function App() {
                   </button>
                 )}
                 <button 
-                  onClick={() => setShowSideBySideModal(false)}
+                  type="button"
+                  aria-label="Đóng hộp thoại đối chiếu nguồn"
+                  onClick={() => closePartitionReview()}
                   className="text-slate-500 hover:text-slate-900 p-1 rounded-lg cursor-pointer"
                 >
                   <X className="w-5 h-5" />
@@ -3760,21 +3063,26 @@ export default function App() {
               <div className="flex items-center gap-2">
                 <ShieldCheck className="w-4 h-4 text-emerald-700 shrink-0" />
                 <span>
-                  <strong>Bảo vệ dữ liệu:</strong> Chỉ gửi ID khối, phân vùng hiện tại và trích dẫn chuỗi ngắn lên máy chủ; không viết lại văn bản.
+                  <strong>Phạm vi gửi:</strong> {aiPartitionConsent ? "toàn bộ chữ nguồn và tọa độ ô bảng đã bật cho phép; không có role parser, tên tệp, HTML hoặc XML." : "AI đang tắt; nguồn không được gửi. Quy tắc nội bộ vẫn hoạt động."} Gợi ý không tự áp dụng.
                 </span>
               </div>
               <div className="flex items-center gap-2">
                 <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                  partitionCheckSource === "gemini_ai"
+                  partitionCheckSource === "gemini_ai" || partitionCheckSource === "mixed"
                     ? "bg-emerald-500/20 text-emerald-700 border border-emerald-500/30"
                     : (partitionCheckSource === "rule_fallback" ? "bg-amber-500/20 text-amber-700 border border-amber-500/30" : "bg-slate-100 text-slate-600")
                 }`}>
-                  {partitionCheckSource === "gemini_ai" ? "✓ Đã kiểm tra bằng Gemini AI" : (partitionCheckSource === "rule_fallback" ? "Đã kiểm tra bằng quy tắc nội bộ" : "Chưa kiểm tra bằng AI")}
+                  {partitionCheckSource === "gemini_ai" ? "✓ Gemini AI đã kiểm tra" : (partitionCheckSource === "mixed" ? "Gemini AI + quy tắc nội bộ" : (partitionCheckSource === "rule_fallback" ? "Quy tắc nội bộ" : "Chưa kiểm tra bằng AI"))}
                 </span>
                 {partitionCheckNotice && (
                   <span className="text-[10px] text-slate-500 italic">{partitionCheckNotice}</span>
                 )}
               </div>
+              {partitionCoverage && (
+                <p className="basis-full pl-6 text-[10px] text-slate-500" data-testid="ai-partition-coverage">
+                  AI {partitionCoverage.aiReviewedBlockIds.length}/{partitionCoverage.aiReviewedBlockIds.length + partitionCoverage.unreviewedBlockIds.length} khối; quy tắc {partitionCoverage.ruleFallbackBlockIds.length}/{partitionReviewBlocks.length || uploadedBlocks.length}; chưa AI {partitionCoverage.unreviewedBlockIds.length}. Lỗi lô: {partitionCoverage.chunks.filter(chunk => chunk.status !== "completed").length}.
+                </p>
+              )}
             </div>
 
             {/* Mobile Tab Switcher for Split View */}
@@ -3785,7 +3093,7 @@ export default function App() {
                   importReviewTab === "source" ? "bg-white text-slate-900 shadow-2xs" : "text-slate-600"
                 }`}
               >
-                1. Tệp Word gốc ({reviewBlocks.length || structuredImport?.source?.blockCount || 0} khối)
+                1. Tệp Word gốc ({partitionReviewBlocks.length || structuredImport?.source?.blockCount || 0} khối)
               </button>
               <button
                 onClick={() => setImportReviewTab("mapped")}
@@ -3804,26 +3112,39 @@ export default function App() {
               <div className={`p-4 bg-slate-50/70 space-y-3 overflow-y-auto max-h-[65vh] ${importReviewTab === "source" ? "block" : "hidden md:block"}`}>
                 
                 {/* Disagreements list between Current Rule and AI proposals */}
-                {partitionProposals.length > 0 && (
+                {visiblePartitionProposals.length > 0 && (
                   <div className="bg-purple-50/90 border border-purple-200 rounded-xl p-3 space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="font-bold text-purple-950 text-xs flex items-center gap-1.5">
                         <Sparkles className="w-3.5 h-3.5 text-purple-600" />
-                        Bất đồng phân vùng phát hiện ({partitionProposals.filter(p => p.status === "pending").length} đề xuất đang chờ)
+                        Bất đồng phân vùng phát hiện ({visiblePartitionProposals.filter(p => p.status === "pending").length} đề xuất đang chờ)
                       </span>
-                      {partitionHistory.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={handleUndoPartitionProposal}
-                          className="text-[11px] text-purple-700 hover:text-purple-900 font-semibold underline flex items-center gap-1 cursor-pointer"
-                        >
-                          <RotateCcw className="w-3 h-3" />
-                          <span>Quay lại (Undo)</span>
-                        </button>
-                      )}
+                      <div className="flex items-center gap-2">
+                        {visiblePartitionProposals.some(proposal => proposal.status === "pending") && (
+                          <button
+                            type="button"
+                            data-testid="apply-verified-partition-proposals"
+                            onClick={handleApplyVerifiedPartitionProposals}
+                            className="text-[10px] text-emerald-700 hover:text-emerald-900 font-semibold underline cursor-pointer"
+                            title="Áp dụng tuần tự các đề xuất đang chờ mà bạn đã xác minh; bảng chưa xác minh và đề xuất hết hiệu lực sẽ bị bỏ qua"
+                          >
+                            Áp dụng đề xuất đã xác minh
+                          </button>
+                        )}
+                        {partitionHistory.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={handleUndoPartitionProposal}
+                            className="text-[11px] text-purple-700 hover:text-purple-900 font-semibold underline flex items-center gap-1 cursor-pointer"
+                          >
+                            <RotateCcw className="w-3 h-3" />
+                            <span>Quay lại (Undo)</span>
+                          </button>
+                        )}
+                      </div>
                     </div>
                     <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                      {partitionProposals.map((prop) => {
+                      {visiblePartitionProposals.map((prop) => {
                         const isPending = prop.status === "pending";
                         const isAccepted = prop.status === "accepted";
                         const isRejected = prop.status === "rejected";
@@ -3832,6 +3153,8 @@ export default function App() {
                         return (
                           <div
                             key={prop.id}
+                            data-testid={`partition-proposal-${prop.sourceBlockId}`}
+                            data-proposal-source={prop.source || "rule_fallback"}
                             className={`p-2 rounded-lg border text-xs flex flex-col gap-2 ${
                               isAccepted ? "bg-emerald-50 border-emerald-300 opacity-80" :
                               isRejected ? "bg-slate-50 border-slate-200 opacity-60" :
@@ -3848,6 +3171,9 @@ export default function App() {
                                     {prop.currentRole} ➔ <span className="text-purple-700 font-bold">{prop.suggestedRole}</span>
                                     {prop.fieldKey ? ` (${prop.fieldKey})` : ""}
                                   </span>
+                                  <span className={`text-[9px] px-1.5 py-0.2 rounded font-semibold ${prop.source === "gemini_ai" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>
+                                    {prop.source === "gemini_ai" ? "Gemini AI" : "Quy tắc nội bộ"}
+                                  </span>
                                   <span className={`text-[9.5px] px-1.5 py-0.2 rounded font-semibold ${
                                     prop.confidence === "high" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
                                   }`}>
@@ -3857,6 +3183,7 @@ export default function App() {
                                 {prop.cellLocation && (
                                   <p className="text-[10px] text-slate-600 font-mono">
                                     Vị trí ô: [Hàng {prop.cellLocation.rowIndex + 1}, Cột {prop.cellLocation.colIndex + 1}]
+                                    {prop.cellLocation.cellId ? ` · ${prop.cellLocation.cellId}` : ""}
                                   </p>
                                 )}
                                 <p className="text-[11px] text-slate-600 italic truncate">
@@ -3895,7 +3222,7 @@ export default function App() {
                                 )}
                                 {isRejected && (
                                   <span className="text-[10.5px] font-semibold text-slate-500">
-                                    Đã bỏ qua
+                                    {userModifiedBlockIds.includes(prop.sourceBlockId) ? "Hết hiệu lực sau chỉnh sửa" : "Đã bỏ qua"}
                                   </span>
                                 )}
                               </div>
@@ -3939,7 +3266,7 @@ export default function App() {
                 <div className="flex items-center justify-between pb-2 border-b border-slate-200 gap-2 flex-wrap">
                   <div>
                     <span className="font-bold text-slate-900 uppercase tracking-wide text-xs">
-                      Cột 1: Danh sách khối nguồn & Phân vùng ({reviewBlocks.length || structuredImport?.source?.blockCount || 0} khối)
+                      Cột 1: Danh sách khối nguồn & Phân vùng ({partitionReviewBlocks.length || structuredImport?.source?.blockCount || 0} khối)
                     </span>
                     <p className="text-[10.5px] text-slate-500 mt-0.5">
                       Kiểm tra và tùy chỉnh phân vùng đích cho từng khối trước khi xác nhận nhập
@@ -3953,7 +3280,7 @@ export default function App() {
                         reviewBlockFilter === "all" ? "bg-slate-800 text-white shadow-2xs" : "text-slate-600 hover:bg-slate-100"
                       }`}
                     >
-                      Tất cả ({reviewBlocks.length})
+                      Tất cả ({partitionReviewBlocks.length})
                     </button>
                     <button
                       type="button"
@@ -3962,7 +3289,7 @@ export default function App() {
                         reviewBlockFilter === "body" ? "bg-emerald-700 text-white shadow-2xs" : "text-slate-600 hover:bg-slate-100"
                       }`}
                     >
-                      Thân bài ({reviewBlocks.filter(b => b.role === "body").length})
+                      Thân bài ({partitionReviewBlocks.filter(b => b.role === "body").length})
                     </button>
                     <button
                       type="button"
@@ -3971,7 +3298,7 @@ export default function App() {
                         reviewBlockFilter === "signature" ? "bg-amber-700 text-white shadow-2xs" : "text-slate-600 hover:bg-slate-100"
                       }`}
                     >
-                      Khối ký ({reviewBlocks.filter(b => b.role === "signature").length})
+                      Khối ký ({partitionReviewBlocks.filter(b => b.role === "signature").length})
                     </button>
                     <button
                       type="button"
@@ -3980,14 +3307,14 @@ export default function App() {
                         reviewBlockFilter === "unclassified" ? "bg-rose-700 text-white shadow-2xs" : "text-slate-600 hover:bg-slate-100"
                       }`}
                     >
-                      Chưa phân loại ({reviewBlocks.filter(b => b.role === "unclassified").length})
+                      Chưa phân loại ({partitionReviewBlocks.filter(b => b.role === "unclassified").length})
                     </button>
                   </div>
                 </div>
 
                 {/* Blocks List */}
                 <div className="space-y-2.5">
-                  {(reviewBlocks.length > 0 ? reviewBlocks : (structuredImport?.blocks || uploadedBlocks)).filter(b => reviewBlockFilter === "all" || b.role === reviewBlockFilter).map((b) => {
+                  {(partitionReviewBlocks.length > 0 ? partitionReviewBlocks : (structuredImport?.blocks || uploadedBlocks)).filter(b => reviewBlockFilter === "all" || b.role === reviewBlockFilter).map((b) => {
                     const isTable = b.kind === "table";
                     const roleColor = 
                       b.role === "header" ? "bg-blue-50 border-blue-200 text-blue-900" :
@@ -4021,7 +3348,9 @@ export default function App() {
                           <div className="flex items-center gap-1.5">
                             <label className="text-[10px] font-semibold text-slate-500">Phân vùng đích:</label>
                             <select
+                              data-block-id={b.id}
                               value={b.role || "unclassified"}
+                              data-source-block-id={b.id}
                               onChange={(e) => handleUpdateBlockRole(b.id, e.target.value as SourceRegion)}
                               className={`text-[11px] font-bold px-2 py-0.5 rounded border shadow-2xs cursor-pointer ${roleColor}`}
                             >
@@ -4037,6 +3366,7 @@ export default function App() {
                           </div>
                         </div>
 
+                        {b.tableModel&&<details><summary>Ánh xạ ô nguồn (một bảng vật lý)</summary>{b.tableModel.rows.flatMap(row=>row.cells).map(cell=><label key={cell.cellId} className="block text-xs p-1">Ô {cell.cellId} · {cell.text.slice(0,40)} <select aria-label={'Vai trò ô '+cell.cellId} value={(workspace?.staged?.partition.cells??workspace?.partition.cells)?.find(c=>c.sourceBlockId===b.id&&c.cellId===cell.cellId)?.role??b.role??'unclassified'} onChange={e=>handleUpdateCellRole(b.id,cell.cellId,e.target.value as SourceRegion)}>{(['header','metadata','body','signature','recipients','appendix','unclassified'] as const).map(role=><option key={role} value={role}>{role}</option>)}</select></label>)}</details>}
                         {/* Content Preview */}
                         {isTable && b.tableData && b.tableData.length > 0 ? (
                           <div className="mt-1 border border-slate-200 rounded overflow-x-auto bg-slate-50/50 max-h-36">
@@ -4122,7 +3452,7 @@ export default function App() {
                     <div className="flex items-center justify-between">
                       <span className="font-bold text-slate-900">3. Thân bài & Dữ liệu</span>
                       <span className="text-[10.5px] font-semibold text-emerald-800 bg-emerald-100 px-2 py-0.2 rounded">
-                        {(reviewBlocks.length > 0 ? reviewBlocks : (structuredImport?.blocks || [])).filter(b => b.role === "body").length} khối
+                        {(partitionReviewBlocks.length > 0 ? partitionReviewBlocks : (structuredImport?.blocks || [])).filter(b => b.role === "body").length} khối
                       </span>
                     </div>
                     <p className="text-slate-600 text-[11px] line-clamp-2">
@@ -4174,7 +3504,7 @@ export default function App() {
                       <div className="flex items-center gap-1.5">
                         <Wand2 className="w-4 h-4 text-purple-700" />
                         <span className="font-bold text-purple-950 text-[11.5px]">
-                          Đề xuất rà soát & chuẩn hóa ({reviewProposals.length})
+                          Đề xuất rà soát & chuẩn hóa ({visibleReviewProposals.length})
                         </span>
                       </div>
                       <div className="flex items-center gap-1.5">
@@ -4210,7 +3540,7 @@ export default function App() {
                             </>
                           )}
                         </button>
-                        {reviewProposals.length > 0 && (
+                        {visibleReviewProposals.length > 0 && (
                           <button
                             type="button"
                             onClick={handleAcceptAllProposals}
@@ -4259,17 +3589,19 @@ export default function App() {
                         <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                         <span>Đang đối chiếu quy tắc NĐ 30 & phân tích văn bản chuyên sâu...</span>
                       </div>
-                    ) : reviewProposals.length === 0 ? (
+                    ) : visibleReviewProposals.length === 0 ? (
                       <p className="text-[11px] text-slate-500 italic py-1">
                         ✓ Không phát hiện vi phạm thể thức hoặc lỗi chính tả cần sửa.
                       </p>
                     ) : (
                       <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                        {reviewProposals.map((prop) => {
+                        {visibleReviewProposals.map((prop) => {
                           const isAccepted = acceptedProposalIds.has(prop.id);
                           return (
                             <div 
                               key={prop.id}
+                              data-proposal-id={prop.id}
+                              data-proposal-accepted={isAccepted ? "true" : "false"}
                               className={`p-2 rounded-lg border transition text-[11px] ${
                                 isAccepted 
                                   ? "bg-emerald-50 border-emerald-300" 
@@ -4366,7 +3698,7 @@ export default function App() {
                   {/* Two distinct metrics: Unclassified blocks vs Structural segmentation review */}
                   <div className="space-y-2 pt-1 border-t border-slate-200">
                     <div className={`p-2.5 rounded-lg border flex items-center justify-between gap-2 ${
-                      ((reviewBlocks.length > 0 ? reviewBlocks : (structuredImport?.blocks || [])).filter(b => b.role === "unclassified").length === 0)
+                      ((partitionReviewBlocks.length > 0 ? partitionReviewBlocks : (structuredImport?.blocks || [])).filter(b => b.role === "unclassified").length === 0)
                         ? "border-emerald-300 bg-emerald-50/80 text-emerald-900"
                         : "border-amber-300 bg-amber-50 text-amber-900"
                     }`}>
@@ -4374,10 +3706,10 @@ export default function App() {
                         <CheckSquare className="w-4 h-4 text-emerald-600 shrink-0" />
                         <div>
                           <span className="font-bold text-xs block">
-                            Chỉ số phân loại: {(reviewBlocks.length > 0 ? reviewBlocks : (structuredImport?.blocks || [])).filter(b => b.role === "unclassified").length} khối chưa phân loại
+                            Chỉ số phân loại: {(partitionReviewBlocks.length > 0 ? partitionReviewBlocks : (structuredImport?.blocks || [])).filter(b => b.role === "unclassified").length} khối chưa phân loại
                           </span>
                           <span className="text-[10px] text-slate-600">
-                            {(reviewBlocks.length > 0 ? reviewBlocks : (structuredImport?.blocks || [])).filter(b => b.role === "unclassified").length === 0
+                            {(partitionReviewBlocks.length > 0 ? partitionReviewBlocks : (structuredImport?.blocks || [])).filter(b => b.role === "unclassified").length === 0
                               ? "100% nội dung đã được phân bổ vào các vùng dữ liệu (Header, Body, Ký, Phụ lục)."
                               : "Các khối chưa phân loại sẽ được bảo toàn nguyên vẹn trong mục Khối chưa phân loại."}
                           </span>
@@ -4394,25 +3726,25 @@ export default function App() {
                           Thống kê phân bổ vùng văn bản
                         </span>
                         <span className="text-[10px] text-blue-700 font-semibold">
-                          Tổng {reviewBlocks.length || structuredImport?.source?.blockCount || uploadedBlocks.length} khối
+                          Tổng {partitionReviewBlocks.length || structuredImport?.source?.blockCount || uploadedBlocks.length} khối
                         </span>
                       </div>
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-[10px] pt-1">
                         <div className="bg-white p-1 rounded border border-slate-200 text-center">
                           <span className="text-slate-500 block">Đầu trang</span>
-                          <strong className="text-blue-900">{(reviewBlocks.length > 0 ? reviewBlocks : (structuredImport?.blocks || [])).filter(b => b.role === "header" || b.role === "metadata").length} khối</strong>
+                          <strong className="text-blue-900">{(partitionReviewBlocks.length > 0 ? partitionReviewBlocks : (structuredImport?.blocks || [])).filter(b => b.role === "header" || b.role === "metadata").length} khối</strong>
                         </div>
                         <div className="bg-white p-1 rounded border border-slate-200 text-center">
                           <span className="text-slate-500 block">Thân bài</span>
-                          <strong className="text-emerald-900">{(reviewBlocks.length > 0 ? reviewBlocks : (structuredImport?.blocks || [])).filter(b => b.role === "body").length} khối</strong>
+                          <strong className="text-emerald-900">{(partitionReviewBlocks.length > 0 ? partitionReviewBlocks : (structuredImport?.blocks || [])).filter(b => b.role === "body").length} khối</strong>
                         </div>
                         <div className="bg-white p-1 rounded border border-slate-200 text-center">
                           <span className="text-slate-500 block">Khối ký</span>
-                          <strong className="text-amber-900">{(reviewBlocks.length > 0 ? reviewBlocks : (structuredImport?.blocks || [])).filter(b => b.role === "signature").length} khối</strong>
+                          <strong className="text-amber-900">{(partitionReviewBlocks.length > 0 ? partitionReviewBlocks : (structuredImport?.blocks || [])).filter(b => b.role === "signature").length} khối</strong>
                         </div>
                         <div className="bg-white p-1 rounded border border-slate-200 text-center">
                           <span className="text-slate-500 block">Phụ lục</span>
-                          <strong className="text-purple-900">{(reviewBlocks.length > 0 ? reviewBlocks : (structuredImport?.blocks || [])).filter(b => b.role === "appendix").length} khối</strong>
+                          <strong className="text-purple-900">{(partitionReviewBlocks.length > 0 ? partitionReviewBlocks : (structuredImport?.blocks || [])).filter(b => b.role === "appendix").length} khối</strong>
                         </div>
                       </div>
                       <p className="text-[10px] text-slate-500 italic pt-1">
@@ -4425,14 +3757,15 @@ export default function App() {
 
             </div>
 
+            {errorMsg&&<p role="alert" className="p-3 bg-orange-50 text-orange-800">{errorMsg}</p>}
             {/* Footer */}
-            <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
+            <div className="df-partition-footer p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
               <span className="text-[11px] text-slate-500">
                 Bạn có thể sửa lại mọi trường trực tiếp trên mặt giấy sau khi xác nhận.
               </span>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => setShowSideBySideModal(false)}
+                  onClick={() => closePartitionReview()}
                   className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-xl font-semibold text-xs"
                 >
                   Hủy bỏ
@@ -4447,7 +3780,7 @@ export default function App() {
                   }`}
                   title={liveValidationErrors.length > 0 ? "Vui lòng khắc phục các lỗi phân vùng ở trên để tiếp tục" : "Đưa văn bản vào Studio"}
                 >
-                  <span>Đồng Ý Đưa Vào Studio Soạn Thảo</span>
+                  <span>Duyệt &amp; sang Bước 2 — Đồng Ý Đưa Vào Studio Soạn Thảo</span>
                   <ArrowRight className="w-4 h-4" />
                 </button>
               </div>
@@ -4462,7 +3795,7 @@ export default function App() {
          ======================================================== */}
       {showComplianceModal && complianceReport && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-xl w-full max-h-[90vh] flex flex-col shadow-2xl border border-slate-200">
+          <div ref={complianceDialogRef} role="dialog" aria-modal="true" aria-label="Báo cáo kiểm tra thể thức" className="bg-white rounded-2xl max-w-xl w-full max-h-[90vh] flex flex-col shadow-2xl border border-slate-200">
             <div className="p-4 border-b border-slate-200 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <ShieldCheck className="w-5 h-5 text-blue-600" />
@@ -4538,7 +3871,7 @@ export default function App() {
          ======================================================== */}
       {refineProposal && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-4">
-          <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden">
+          <div ref={refineDialogRef} role="dialog" aria-modal="true" aria-label={refineProposal.target?.kind==='node'?'Đề xuất tinh chỉnh đoạn đang chọn':'Đề xuất tinh chỉnh Body'} data-ai-target-kind={refineProposal.target?.kind??''} className="bg-white rounded-2xl max-w-4xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden">
             {/* Header */}
             <div className="p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 bg-gradient-to-r from-indigo-50/80 via-blue-50/40 to-white">
               <div className="flex items-center gap-2.5">
@@ -4553,7 +3886,7 @@ export default function App() {
                     </span>
                   </h3>
                   <p className="text-[11px] text-slate-500 mt-0.5">
-                    Rà soát lỗi chính tả, chuẩn hóa câu từ và phong cách hành chính theo Nghị định 30.
+                    {refineProposal.target?.kind==='node'?'Chỉ gửi và áp dụng nội dung của một đoạn đang chọn; bảng, ảnh, phụ lục khác và nguồn gốc không được gửi.':'Rà soát nội dung Body đủ điều kiện theo Nghị định 30.'}
                   </p>
                 </div>
               </div>
@@ -4693,6 +4026,7 @@ export default function App() {
             <div className="p-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between">
               <button
                 type="button"
+                data-ai-cancel
                 onClick={rejectRefineProposal}
                 className="bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-semibold px-4 py-2 rounded-xl text-xs transition"
               >
@@ -4700,6 +4034,7 @@ export default function App() {
               </button>
               <button
                 type="button"
+                data-ai-accept
                 onClick={acceptRefineProposal}
                 className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-5 py-2.5 rounded-xl text-xs flex items-center gap-2 shadow-sm transition"
               >
@@ -4713,12 +4048,18 @@ export default function App() {
       {/* CONFIRM TEMPLATE CHANGE MODAL */}
       {pendingTemplate && (
         <div className="fixed inset-0 bg-slate-900/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl p-5 max-w-md w-full shadow-2xl space-y-4">
-            <h3 className="font-bold text-slate-900">Đổi sang mẫu {pendingTemplate.name}?</h3>
+          <div
+            ref={pendingTemplateDialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="pending-template-title"
+            className="bg-white rounded-2xl p-5 max-w-md w-full shadow-2xl space-y-4"
+          >
+            <h3 id="pending-template-title" className="font-bold text-slate-900">Đổi sang mẫu {pendingTemplate.name}?</h3>
             <p className="text-xs text-slate-700">Bản đang soạn có thay đổi chưa ghi vào lịch sử. Hệ thống sẽ lưu một bản sao trước khi thay đổi để bạn có thể khôi phục bất cứ lúc nào.</p>
             <div className="flex justify-end gap-2">
-              <button onClick={() => setPendingTemplate(null)} className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs">Hủy</button>
-              <button onClick={() => applyTemplate(pendingTemplate)} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-semibold">Đổi mẫu</button>
+              <button type="button" onClick={() => setPendingTemplate(null)} className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs">Hủy</button>
+              <button type="button" onClick={() => applyTemplate(pendingTemplate)} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-semibold">Đổi mẫu</button>
             </div>
           </div>
         </div>
@@ -5046,6 +4387,16 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* PRE-PARTITION REGIME CONFIRMATION MODAL (Chặng 2) */}
+      <RegimeConfirmModal
+        isOpen={Boolean(pendingImport)}
+        filename={pendingImport?.filename || ""}
+        chosenRegime={pendingImport?.chosenRegime || standardType}
+        detection={pendingImport?.detection || null}
+        onConfirm={(regime) => { void confirmPendingImport(regime); }}
+        onCancel={cancelPendingImport}
+      />
 
       {/* SAFE REGIME SWITCH CONFIRMATION MODAL */}
       <SafeRegimeModal

@@ -20,10 +20,11 @@ import {
   Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, Tab,
   WidthType, BorderStyle, AlignmentType, convertMillimetersToTwip, PageOrientation,
   Header, PageNumber, LevelFormat, PageBreak, TableLayoutType, VerticalMergeType, HeightRule,
-  XmlComponent, Attributes, LineRuleType
+  XmlComponent, Attributes, LineRuleType, Bookmark
 } from "docx";
 import JSZip from "jszip";
 import { type DocumentFormatType, type SourceBlock, isPlaceholderValue } from "../shared/schemas/document.schema.ts";
+import { containsSeparatorParagraph } from "../shared/separator.ts";
 import type { TableModel } from "../shared/tableModel.ts";
 import { COMPANY_HEADER_PROFILE_ID, createCompanyHeaderTable, COMPANY_HEADER_GEOMETRY_MM } from "../canonical/nd30/companyHeader.ts";
 import { COMPANY_HEADER_HD05_PROFILE_ID, createCompanyHeaderHD05Table, COMPANY_HEADER_HD05_GEOMETRY_MM } from "../canonical/hd05/companyHeaderHD05.ts";
@@ -33,7 +34,8 @@ import {
   getColumnDocxAlignment,
   syncTableModelFromHtml,
   syncImportedTablesFromHtml,
-  decodeHtmlEntities
+  decodeHtmlEntities,
+  extractHtmlTextWithBreaks
 } from "./tableFormatUtils.ts";
 
 /**
@@ -258,6 +260,35 @@ class TableCaptionXml extends XmlComponent {
   }
 }
 
+/**
+ * Tách một chuỗi có ngắt dòng "\n" thành các đoạn run, đoạn sau ngắt dòng
+ * được gắn `break: 1` để bộ xuất ghi `<w:br/>` (giữ nguyên cấu trúc dòng khi
+ * tái nhập). Không tách nếu chuỗi không có ngắt dòng.
+ */
+function splitTextWithBreaks(
+  text: string,
+  startWithBreak = false
+): Array<{ text: string; break?: number }> {
+  if (!text) return [{ text: "" }];
+  if (!text.includes("\n")) return [{ text, ...(startWithBreak ? { break: 1 } : {}) }];
+  const parts = text.split("\n");
+  return parts.map((part, index) => ({
+    text: part,
+    ...(index > 0 || startWithBreak ? { break: 1 } : {}),
+  }));
+}
+
+/**
+ * Tách nội dung ô (nhiều đoạn được nối bằng "\n" khi trích xuất) thành từng
+ * đoạn để bộ xuất tạo đúng số Paragraph — nhờ vậy nội dung ô tái nhập khớp
+ * với nguồn và cổng fidelity không báo content_mismatch.
+ */
+function splitCellTextIntoParagraphs(text: string): string[] {
+  if (!text) return [""];
+  const lines = text.split("\n");
+  return lines.length > 0 ? lines : [text];
+}
+
 export function buildDocxTableFromModel(model: TableModel): Table {
   const mapBorder = (b?: { style?: string; size?: number; color?: string }) => {
     if (!b || b.style === "none") return { style: BorderStyle.NONE, size: 0, color: "auto" };
@@ -293,26 +324,33 @@ export function buildDocxTableFromModel(model: TableModel): Table {
           verticalMerge = VerticalMergeType.CONTINUE;
         }
 
+        // S2/S5 (Chặng 5): nội dung ô có thể chứa nhiều đoạn (được nối bằng
+        // "\n" khi trích xuất) hoặc có ngắt dòng `<w:br/>` bên trong một đoạn.
+        // Nếu ghi thẳng chuỗi có "\n" vào một TextRun thì Word **bỏ mất** các
+        // khoảng trắng/nội dung tại ngắt dòng (ví dụ "BẢO ĐẢM AN TOÀN" →
+        // "BẢO ĐẢMAN TOÀN"), và cổng fidelity fail-closed từ chối xuất.
+        // Vì vậy: ngắt dòng trong một đoạn → `<w:br/>`; ranh giới đoạn trong
+        // ô → mỗi đoạn một Paragraph.
         const paragraphs: Paragraph[] = (cell.paragraphs && cell.paragraphs.length > 0)
           ? cell.paragraphs.map(p => {
               const runs = (p.runs && p.runs.length > 0)
-                ? p.runs.map(r => new TextRun({
-                    text: r.text,
+                ? p.runs.flatMap((r, runIndex) => splitTextWithBreaks(r.text, runIndex > 0).map(part => new TextRun({
+                    text: part.text,
+                    break: part.break,
                     font: r.font || "Times New Roman",
                     size: r.sizeHalfPt ?? 24,
                     bold: r.bold ?? row.isHeader,
                     italics: r.italic,
                     underline: r.underline ? {} : undefined,
                     color: r.color,
-                  }))
-                : [
-                    new TextRun({
-                      text: p.text || "",
-                      font: "Times New Roman",
-                      size: 24,
-                      bold: row.isHeader,
-                    })
-                  ];
+                  })))
+                : splitTextWithBreaks(p.text || "").map(part => new TextRun({
+                    text: part.text,
+                    break: part.break,
+                    font: "Times New Roman",
+                    size: 24,
+                    bold: row.isHeader,
+                  }));
 
               return new Paragraph({
                 alignment: p.alignment === "center" 
@@ -324,20 +362,20 @@ export function buildDocxTableFromModel(model: TableModel): Table {
                 children: runs,
               });
             })
-          : [
+          : splitCellTextIntoParagraphs(cell.text || "").map((line, lineIndex) =>
               new Paragraph({
                 alignment: row.isHeader ? AlignmentType.CENTER : AlignmentType.LEFT,
                 spacing: { line: 240, before: 20, after: 20 },
                 children: [
                   new TextRun({
-                    text: cell.text || "",
+                    text: line,
                     font: "Times New Roman",
                     size: 24,
                     bold: row.isHeader,
                   })
-                ]
+                ],
               })
-            ];
+            );
 
         // Margins / padding
         const cellMargins = cell.margins ? {
@@ -442,6 +480,9 @@ export function createRunsAndTabsFromText(
     .replace(/\u00a0/g, " ");
 
   // Bước 3: Tách chuỗi theo \t để tạo các TextRun xen kẽ đối tượng Tab (<w:tab/>)
+  // Chặng 5 / P1: ngắt dòng "\n" phải được xuất thành <w:br/> — nếu đưa thẳng
+  // vào <w:t> thì Word sẽ bỏ mất khoảng trắng ở ngắt dòng ("BẢO ĐẢM" +
+  // "AN TOÀN" → "BẢO ĐẢMAN TOÀN") và cổng fidelity sẽ từ chối xuất.
   const result: (TextRun | Tab)[] = [];
   const parts = cleaned.split("\t");
 
@@ -449,17 +490,33 @@ export function createRunsAndTabsFromText(
     if (i > 0) {
       result.push(new TextRun({ children: [new Tab()] }));
     }
-    if (parts[i]) {
-      result.push(
-        new TextRun({
-          text: parts[i],
-          font: "Times New Roman",
-          size: fontSizeHalfPoints,
-          bold: format.bold,
-          italics: format.italics,
-          underline: format.underline ? {} : undefined,
-        })
-      );
+    const lines = parts[i].split("\n");
+    for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+      if (lineIndex > 0) {
+        result.push(
+          new TextRun({
+            text: "",
+            break: 1,
+            font: "Times New Roman",
+            size: fontSizeHalfPoints,
+            bold: format.bold,
+            italics: format.italics,
+            underline: format.underline ? {} : undefined,
+          })
+        );
+      }
+      if (lines[lineIndex]) {
+        result.push(
+          new TextRun({
+            text: lines[lineIndex],
+            font: "Times New Roman",
+            size: fontSizeHalfPoints,
+            bold: format.bold,
+            italics: format.italics,
+            underline: format.underline ? {} : undefined,
+          })
+        );
+      }
     }
   }
 
@@ -854,7 +911,7 @@ export function convertHtmlToDocxElements(
 
         // Đọc header hàng 0
         const firstRowCells = rowMatches[0]?.match(/<t[dh][\s\S]*?<\/t[dh]>/gi) || [];
-        const headerTexts = firstRowCells.map(c => c.replace(/<[^>]*>/g, "").trim());
+        const headerTexts = firstRowCells.map(c => extractHtmlTextWithBreaks(c));
         const colWidths = calculateTableColumnWidthsTwip(headerTexts, totalTableWidthTwips);
         const colTypes = headerTexts.map(h => detectColumnSemanticType(h));
 
@@ -883,7 +940,7 @@ export function convertHtmlToDocxElements(
 
               if (pMatches.length > 0) {
                 cellParagraphs = pMatches.map((pHtml, pIdx) => {
-                  const pText = pHtml.replace(/<[^>]*>/g, "").trim();
+                  const pText = extractHtmlTextWithBreaks(pHtml);
                   return new Paragraph({
                     alignment,
                     spacing: {
@@ -897,7 +954,7 @@ export function convertHtmlToDocxElements(
                   });
                 });
               } else {
-                const cellText = cellHtml.replace(/<[^>]*>/g, "").trim();
+                const cellText = extractHtmlTextWithBreaks(cellHtml);
                 cellParagraphs = [
                   new Paragraph({
                     alignment,
@@ -942,7 +999,7 @@ export function convertHtmlToDocxElements(
       const isOl = trimmed.toLowerCase().startsWith("<ol");
       const liMatches = trimmed.match(/<li[\s\S]*?<\/li>/gi) || [];
       liMatches.forEach((liHtml) => {
-        const text = liHtml.replace(/<[^>]*>/g, "").trim();
+        const text = extractHtmlTextWithBreaks(liHtml);
         elements.push(
           new Paragraph({
             bullet: !isOl ? { level: 0 } : undefined,
@@ -959,7 +1016,7 @@ export function convertHtmlToDocxElements(
     }
 
     // 3. Xử lý Đoạn văn
-    const text = trimmed.replace(/<[^>]*>/g, "").trim();
+    const text = extractHtmlTextWithBreaks(trimmed);
     if (text) {
       const isDividerOnly = text.length >= 3 && /^[-—–_.\s]+$/.test(text);
       const isCenteredBlock = /text-align\s*:\s*center/i.test(trimmed) || isDividerOnly;
@@ -1042,6 +1099,12 @@ function parseInlineNodes(element: Element, fontSizeHalfPoints: number = 26): (T
       const el = node as HTMLElement;
       const tag = el.tagName.toLowerCase();
       if (DANGEROUS_HTML_TAGS.has(tag)) return;
+      // Chặng 5 / P1: ngắt dòng `<br>` phải được giữ thành `<w:br/>` trong
+      // Word, nếu không hai từ ở hai đầu ngắt dòng sẽ bị dính liền.
+      if (tag === "br") {
+        runs.push(new TextRun({ text: "", break: 1, font: "Times New Roman", size: fontSizeHalfPoints }));
+        return;
+      }
       const newFormat = {
         bold: currentFormat.bold || tag === "strong" || tag === "b",
         italic: currentFormat.italic || tag === "em" || tag === "i",
@@ -1089,6 +1152,26 @@ export function detectEmbeddedHeader(bodyHtml: string): boolean {
     }
   }
   return false;
+}
+
+function normalizeHeaderText(value:string):string{return decodeHtmlEntities(value).normalize("NFC").replace(/[\t \r\n]+/g," ").trim().toLocaleUpperCase("vi");}
+export function detectEmbeddedHeaderField(bodyHtml:string,value?:string):boolean{
+  if(!bodyHtml||!value?.trim())return false;
+  const expected=normalizeHeaderText(value),paragraphs=bodyHtml.slice(0,5000).split(/<\/p>|<\/div>|<br\s*\/?>|<\/tr>/i).slice(0,24);
+  return paragraphs.some(p=>normalizeHeaderText(p.replace(/<[^>]+>/g,""))===expected);
+}
+export interface HeaderRenderPlan{renderSystemHeader:boolean;renderType:boolean;renderSubject:boolean;renderPartySeparator:boolean;isCongVanParty:boolean}
+/** Independent header decisions keep content fields even when the organization/reference block is absent. */
+export function getHeaderRenderPlan(data:DocumentFormatType):HeaderRenderPlan{
+  const isParty=data.regime==="party",company=data.headerProfile===COMPANY_HEADER_PROFILE_ID||data.headerProfile===COMPANY_HEADER_HD05_PROFILE_ID;
+  const isCongVanParty=isParty&&(data.documentType??"").trim().toUpperCase()==="CÔNG VĂN";
+  const hasEmbeddedHeader=detectEmbeddedHeader(data.bodyHtml??"");
+  const hasOfficeReference=Boolean(data.orgHeader2&&!isPlaceholderValue(data.orgHeader2)||data.referenceNumber&&!isPlaceholderValue(data.referenceNumber));
+  const renderSystemHeader=!hasEmbeddedHeader&&(company||hasOfficeReference);
+  const renderType=Boolean(data.documentType&&!isCongVanParty&&!detectEmbeddedHeaderField(data.bodyHtml??"",data.documentType));
+  const renderSubject=Boolean(data.subject&&!detectEmbeddedHeaderField(data.bodyHtml??"",data.subject));
+  const renderPartySeparator=Boolean(isParty&&!isCongVanParty&&renderSubject&&data.subject&&!containsSeparatorParagraph(data.bodyHtml??""));
+  return{renderSystemHeader,renderType,renderSubject,renderPartySeparator,isCongVanParty};
 }
 
 /**
@@ -1214,12 +1297,28 @@ export function parseRecipientLines(rawRecipients?: string): string[] {
   return cleanedItems.length > 0 ? cleanedItems : ["Như trên;", "Lưu: VT."];
 }
 
+/** Invisible anchors bind candidate sections to working IDs. */
+export function candidateSectionName(id: string): string {
+  // Two independent 64-bit lanes fit Word's 40-character bookmark name limit.
+  // The semantic gate also rejects any name collision in the complete expected ID set.
+  const mask = (1n << 64n) - 1n;
+  let a = 0xcbf29ce484222325n, b = 0x84222325cbf29ce4n;
+  for (const byte of new TextEncoder().encode(id)) {
+    a = ((a ^ BigInt(byte)) * 0x100000001b3n) & mask;
+    b = ((b ^ BigInt(byte)) * 0x100000001b3n) & mask;
+  }
+  return "df_" + a.toString(16).padStart(16, "0") + b.toString(16).padStart(16, "0");
+}
+function candidateSectionMarker(id: string): Paragraph {
+  return new Paragraph({ spacing: { before: 0, after: 0, line: 1, lineRule: "exact" },
+    children: [new Bookmark({ id: candidateSectionName(id), children: [] })] });
+}
+
 export function generateND30DocxDocument(data: DocumentFormatType): Document {
   const isParty = data.regime === "party";
   const useCompanyND30Header = !isParty && data.headerProfile === COMPANY_HEADER_PROFILE_ID;
   const useCompanyHD05Header = isParty && data.headerProfile === COMPANY_HEADER_HD05_PROFILE_ID;
   const useCompanyHeader = useCompanyND30Header || useCompanyHD05Header;
-  const isCongVanParty = isParty && (data.documentType || "").trim().toUpperCase() === "CÔNG VĂN";
   const profile = getStyleProfile(data.regime);
   const bodyParagraphs = convertHtmlToDocxElements(
     data.bodyHtml || "",
@@ -1232,16 +1331,14 @@ export function generateND30DocxDocument(data: DocumentFormatType): Document {
     ? "ĐẢNG CỘNG SẢN VIỆT NAM"
     : "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM";
 
-  const topHtmlUpper = data.bodyHtml ? data.bodyHtml.slice(0, 1500).toUpperCase() : "";
-
-  const hasEmbeddedHeader = detectEmbeddedHeader(data.bodyHtml);
+  const renderPlan=getHeaderRenderPlan(data);
+  const renderSystemHeader=renderPlan.renderSystemHeader;
   const hasEmbeddedSignature = detectEmbeddedSignature(data.bodyHtml);
 
-  const isHeaderPlaceholder = (!data.orgHeader2 || isPlaceholderValue(data.orgHeader2)) && (!data.referenceNumber || isPlaceholderValue(data.referenceNumber));
   const isSignaturePlaceholder = (!data.signTitle || isPlaceholderValue(data.signTitle)) && (!data.signName || isPlaceholderValue(data.signName));
-
-  const shouldRenderHeader = useCompanyHeader ? !hasEmbeddedHeader : (!hasEmbeddedHeader && !isHeaderPlaceholder && (Boolean(data.orgHeader2) || Boolean(data.referenceNumber)));
-  const shouldRenderSignature = !hasEmbeddedSignature && !isSignaturePlaceholder && (Boolean(data.signTitle) || Boolean(data.signName) || Boolean(data.recipients && data.recipients.trim()));
+  const isCongVanParty=renderPlan.isCongVanParty;
+  // Recipients remain document content even when the signer fields are cleared.
+  const shouldRenderSignature = !hasEmbeddedSignature && (Boolean(data.recipients?.trim()) || (!isSignaturePlaceholder && (Boolean(data.signTitle) || Boolean(data.signName))));
 
   return new Document({
     styles: {
@@ -1311,15 +1408,15 @@ export function generateND30DocxDocument(data: DocumentFormatType): Document {
           // ==========================================
           // 1. HEADER KHỐI ĐẦU TRANG (BẢNG ẨN 2 CỘT)
           // ==========================================
-          ...(shouldRenderHeader && useCompanyND30Header ? [
+          ...(renderSystemHeader && useCompanyND30Header ? [
             createCompanyHeaderTable(data.referenceNumber, data.locationAndDate),
             new Paragraph({ text: "", spacing: { after: 120 } }),
           ] : []),
-          ...(shouldRenderHeader && useCompanyHD05Header ? [
+          ...(renderSystemHeader && useCompanyHD05Header ? [
             createCompanyHeaderHD05Table(data.referenceNumber, data.locationAndDate, data.orgHeader1, data.orgHeader2),
             new Paragraph({ text: "", spacing: { after: 120 } }),
           ] : []),
-          ...(shouldRenderHeader && !useCompanyHeader ? [
+          ...(renderSystemHeader && !useCompanyHeader ? [
             (() => {
               // Tính toán nhu cầu chiều rộng thực tế của hai cột (Dynamic Content-Aware Distribution)
               const dateText = data.locationAndDate || "";
@@ -1507,7 +1604,7 @@ export function generateND30DocxDocument(data: DocumentFormatType): Document {
                               ],
                             }),
                           ] : []),
-                          ...(isCongVanParty && data.subject ? [
+                          ...(isCongVanParty && renderPlan.renderSubject ? [
                             // Đối với công văn Đảng: Trích yếu đặt cân đối dưới số và ký hiệu ở cột trái (cỡ 12, thường, nghiêng theo HD05 Phụ lục 2 mục 5)
                             new Paragraph({
                               alignment: AlignmentType.CENTER,
@@ -1620,12 +1717,21 @@ export function generateND30DocxDocument(data: DocumentFormatType): Document {
             new Paragraph({ text: "", spacing: { after: 120 } }),
           ] : []),
 
+          ...(isCongVanParty && renderPlan.renderSubject && !renderSystemHeader ? [
+            // Công văn Đảng thiếu khối cơ quan/số vẫn giữ trích yếu ở vùng riêng trước nội dung.
+            new Paragraph({
+              alignment: AlignmentType.LEFT,
+              spacing: { before: 120, after: 120, line: 240 },
+              children: [new TextRun({ text: data.subject, font: "Times New Roman", size: 24, italics: true })],
+            }),
+          ] : []),
+
           // ==========================================
           // 2. TÊN LOẠI VĂN BẢN & TRÍCH YẾU
           // ==========================================
           ...(!isParty ? [
             // Văn bản hành chính theo NĐ 30
-            ...(shouldRenderHeader && data.documentType ? [
+            ...(renderPlan.renderType ? [
               new Paragraph({
                 alignment: AlignmentType.CENTER,
                 keepNext: true,
@@ -1640,7 +1746,7 @@ export function generateND30DocxDocument(data: DocumentFormatType): Document {
                 ],
               }),
             ] : []),
-            ...(shouldRenderHeader && data.subject ? [
+            ...(renderPlan.renderSubject && !isCongVanParty ? [
               new Paragraph({
                 alignment: AlignmentType.CENTER,
                 keepNext: true,
@@ -1659,7 +1765,7 @@ export function generateND30DocxDocument(data: DocumentFormatType): Document {
           ] : [
             // Văn bản Đảng theo HD 05
             // Nếu là công văn Đảng: Trích yếu đã nằm ở cột trái dưới số/ký hiệu; KHÔNG tạo cụm tên loại/trích yếu/"-----" giữa trang
-            ...((!isCongVanParty && shouldRenderHeader && data.documentType) ? [
+            ...((!isCongVanParty && renderPlan.renderType) ? [
               new Paragraph({
                 alignment: AlignmentType.CENTER,
                 keepNext: true,
@@ -1674,7 +1780,7 @@ export function generateND30DocxDocument(data: DocumentFormatType): Document {
                 ],
               }),
             ] : []),
-            ...((!isCongVanParty && shouldRenderHeader && data.subject) ? [
+            ...((!isCongVanParty && renderPlan.renderSubject) ? [
               new Paragraph({
                 alignment: AlignmentType.CENTER,
                 keepNext: true,
@@ -1691,8 +1797,11 @@ export function generateND30DocxDocument(data: DocumentFormatType): Document {
                 ),
               }),
               // Đúng 5 dấu gạch nối "-----" ở dưới trích yếu, trước nội dung (HD05 Phần II.I.5.2.1)
-              // Chỉ tạo nếu phần đầu bodyHtml chưa có dòng kẻ "-----"
-              ...((!data.bodyHtml || !/^\s*<p[^>]*>\s*[-—–_.\s]{3,}\s*<\/p>/i.test(data.bodyHtml.trim())) ? [
+              // S2-F02 (tái audit 20/10/2026): bộ xuất chỉ tự sinh dấu khi thân bài
+              // **không còn** dòng kẻ dạng dấu gạch nào. Trước đây điều kiện chỉ
+              // kiểm tra phần đầu bodyHtml, nên một dấu "-----" còn sót lại ở giữa
+              // thân bài vẫn bị bộ xuất sinh thêm một dấu nữa → Word có hai dấu.
+              ...(renderPlan.renderPartySeparator ? [
                 new Paragraph({
                   alignment: AlignmentType.CENTER,
                   keepNext: true,
@@ -1712,7 +1821,9 @@ export function generateND30DocxDocument(data: DocumentFormatType): Document {
           // ==========================================
           // 4. TOÀN BỘ NỘI DUNG VĂN BẢN (TỪ TIPTAP HTML)
           // ==========================================
+          candidateSectionMarker("body:start"),
           ...bodyParagraphs,
+          candidateSectionMarker("body:end"),
 
           // Khoảng cách trống trước khối chữ ký
           new Paragraph({ text: "", spacing: { after: 180 } }),
@@ -1784,6 +1895,21 @@ export function generateND30DocxDocument(data: DocumentFormatType): Document {
                         });
                       }),
                     }),
+                    ...(data.recipients?.trim() ? [
+                      new TableRow({
+                        cantSplit: true,
+                        children: [
+                          new TableCell({
+                            width: { size: 100, type: WidthType.PERCENTAGE },
+                            borders: INVISIBLE_CELL_BORDER,
+                            children: [
+                              new Paragraph({ children: [new TextRun({ text: "Nơi nhận:", font: "Times New Roman", size: 24, bold: true, italics: true })] }),
+                              ...parseRecipientLines(data.recipients).map(item => new Paragraph({ children: [new TextRun({ text: "- " + item, font: "Times New Roman", size: 22 })] })),
+                            ],
+                          }),
+                        ],
+                      }),
+                    ] : []),
                   ]
                 : [
                     new TableRow({
@@ -1897,8 +2023,10 @@ export function generateND30DocxDocument(data: DocumentFormatType): Document {
           // ==========================================
           // 6. PHỤ LỤC ĐỘC LẬP (NẾU CÓ TRONG data.appendices)
           // ==========================================
+          candidateSectionMarker("signature:end"),
           ...((data.appendices && Array.isArray(data.appendices) && data.appendices.length > 0)
             ? data.appendices.flatMap((app: any) => [
+                candidateSectionMarker(`appendix:${app.id}:start`),
                 new Paragraph({
                   children: [new PageBreak()],
                 }),
@@ -1929,9 +2057,11 @@ export function generateND30DocxDocument(data: DocumentFormatType): Document {
                   }),
                 ] : []),
                 ...convertHtmlToDocxElements(app.html || "", data.regime, 0, data.importedTables),
+                candidateSectionMarker(`appendix:${app.id}:end`),
               ])
             : []),
 
+          candidateSectionMarker("unclassified:start"),
           // Preserve uncertain source content in the draft so it cannot disappear silently.
           ...((data.unclassified && Array.isArray(data.unclassified) && data.unclassified.length > 0)
             ? [
@@ -1948,6 +2078,7 @@ export function generateND30DocxDocument(data: DocumentFormatType): Document {
                 }),
               ]
             : []),
+          candidateSectionMarker("unclassified:end"),
         ],
       },
     ],
