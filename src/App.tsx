@@ -1860,26 +1860,15 @@ export default function App() {
   const canEnterStep=(step:1|2|3)=>step===1||sourceChosen&&canEnterWorkspaceStep(workspaceSnapshot,step)&&(step!==3||canExportSource);
   const stepIsComplete=(step:1|2|3)=>step===1?sourceChosen&&canEnterWorkspaceStep(workspaceSnapshot,2):step===2?canExportSource:Boolean(visibleCandidate?.downloadable);
 
-  const numericComponentGroups = evaluationSummary.recognizedComponents.groups
-    .filter(group => typeof group.id === "number")
-    .sort((left, right) => Number(left.id) - Number(right.id));
   const sidebarItems: Array<{ id: string; label: string; selector?: string }> = currentStep === 1
     ? [
         { id: "df-step1-flow", label: "Chọn nguồn và thiết lập" },
       ]
     : currentStep === 2
       ? [
-          ...numericComponentGroups.filter(group => Number(group.id) >= 1 && Number(group.id) <= 5).map(group => ({
-            id: `df-step2-group-${group.id}`,
-            label: `${String(group.id).padStart(2, "0")}. ${group.name}`,
-            selector: `[data-workspace-group="${group.id}"]`,
-          })),
-          { id: "df-step2-body", label: "06. Nội dung văn bản (Body)" },
-          ...numericComponentGroups.filter(group => Number(group.id) >= 7 && Number(group.id) <= 9).map(group => ({
-            id: `df-step2-group-${group.id}`,
-            label: `${String(group.id).padStart(2, "0")}. ${group.name}`,
-            selector: `[data-workspace-group="${group.id}"]`,
-          })),
+          { id: "df-step2-groups-before", label: "Phần đầu · Nhóm 01–05" },
+          { id: "df-step2-body", label: "Nội dung văn bản · Body" },
+          { id: "df-step2-groups-after", label: "Phần cuối · Nhóm 07–09" },
           { id: "df-step2-appendices", label: `Phụ lục (${doc.appendices?.length ?? 0})` },
         ]
       : [
@@ -1889,8 +1878,7 @@ export default function App() {
         ];
   const [activeTocTarget, setActiveTocTarget] = useState("");
   useEffect(() => {
-    const firstGroup = numericComponentGroups.find(group => Number(group.id) >= 1 && Number(group.id) <= 5)?.id ?? 1;
-    setActiveTocTarget(currentStep === 1 ? "df-step1-flow" : currentStep === 2 ? `df-step2-group-${firstGroup}` : "df-step3-preview");
+    setActiveTocTarget(currentStep === 1 ? "df-step1-flow" : currentStep === 2 ? "df-step2-groups-before" : "df-step3-preview");
   }, [currentStep]);
 
   const scrollToTocItem = (item: { id: string; selector?: string }) => {
@@ -3018,7 +3006,7 @@ export default function App() {
         </div>
       )}
 
-      <div className="df-workspace-layout">
+      <div className="df-workspace-layout" data-current-step={currentStep}>
         <nav aria-label={`Mục lục Bước ${currentStep}`} className="df-workspace-sidebar">
           <p className="df-sidebar-eyebrow">QUY TRÌNH XỬ LÝ</p>
           <div className="df-sidebar-step-title">

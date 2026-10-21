@@ -562,6 +562,12 @@
   }
 }
 
+@media (min-width: 1001px) {
+  .df-workspace-layout[data-current-step="2"] { grid-template-columns: 208px minmax(0, 1fr); gap: 12px; padding: 12px 14px; }
+  .df-workspace-layout[data-current-step="2"] .df-workspace-sidebar { gap: 8px; padding: 12px 9px; }
+  .df-workspace-layout[data-current-step="2"] .df-step-toc button { min-height: 35px; padding: 7px 8px; font-size: 11px; }
+}
+
 .df-app-shell[data-current-step="3"] {
   height: calc(100vh - 16px);
   height: calc(100dvh - 16px);

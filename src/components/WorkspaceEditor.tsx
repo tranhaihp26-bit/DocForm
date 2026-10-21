@@ -55,24 +55,20 @@ function ComponentCard({
 
   return <article id={`df-step2-group-${group.id}`} className={`df-ws-component-card${editing ? ' is-editing' : ''}`} data-workspace-group={group.id}>
     <header className="df-ws-component-heading">
-      <h3><span>{String(group.id).padStart(2, '0')}.</span> {group.name.replace(/^\d+\.\s*/, '')}</h3>
-      <span className={`df-ws-status df-ws-status-${status.tone}`}>{status.label}</span>
+      <div className="df-ws-component-label"><h3><span>{String(group.id).padStart(2, '0')}.</span> {group.name.replace(/^\d+\.\s*/, '')}</h3><span className={`df-ws-status df-ws-status-${status.tone}`}>{status.label}</span></div>
+      {hasEditableFields && <button type="button" className="df-ws-edit-toggle" aria-expanded={editing} aria-label={`${editing ? 'Đóng chỉnh sửa' : 'Chỉnh sửa'} ${group.name}`} onClick={() => setEditing(value => !value)}>{editing ? 'Đóng' : 'Sửa'}</button>}
     </header>
     {group.id === 8
       ? <p className="df-ws-component-value">{seal?.status === 'present' ? 'Có dấu hoặc chữ ký số trong nguồn.' : seal?.status === 'missing' ? 'Nguồn ghi nhận chưa có dấu hoặc chữ ký số.' : seal?.status === 'unverified' ? 'Dấu hoặc chữ ký số cần được đối chiếu.' : 'Chưa có dữ liệu bằng chứng cho dấu hoặc chữ ký số.'}</p>
       : <div className="df-ws-component-values">
-        {group.fields.map(field => <p className="df-ws-component-value" key={field.key}>
+        {group.fields.map(field => <p className="df-ws-component-value" key={field.key} title={field.value.trim() || undefined}>
           {group.id === 5 && <span className="df-ws-field-caption">{labels[field.key] ?? field.key}</span>}
           <span>{field.value.trim() || 'Chưa có dữ liệu trong bản soạn.'}</span>
         </p>)}
         {group.fields.length === 0 && <p className="df-ws-component-value">Chưa có dữ liệu trong bản soạn.</p>}
       </div>}
     {group.cellReferences.length > 0 && <p className="df-ws-component-note">{group.cellReferences.length} ô bảng nguồn được tham chiếu.</p>}
-    {hasEditableFields && <>
-      <button type="button" className="df-ws-edit-toggle" aria-expanded={editing} onClick={() => setEditing(value => !value)}>
-        {editing ? 'Đóng chỉnh sửa' : 'Chỉnh sửa'}
-      </button>
-      {editing && <div className="df-ws-field-editor">
+    {hasEditableFields && editing && <div className="df-ws-field-editor">
         {group.fields.map(field => <label key={field.key}>
           <span>{labels[field.key] ?? field.key}</span>
           <textarea
@@ -85,7 +81,6 @@ function ComponentCard({
           />
         </label>)}
       </div>}
-    </>}
   </article>;
 }
 
@@ -183,24 +178,26 @@ export function WorkspaceEditor({
         <div>
           <p className="df-ws-eyebrow">Bước 2</p>
           <h1>Soạn &amp; kiểm tra</h1>
-          <p className="df-ws-muted">Chỉnh sửa riêng từng thành phần. Chỉ Body nằm trong Canvas biên tập chính.</p>
+          <p className="df-ws-muted">Chọn ô để sửa thông tin; soạn nội dung trong Canvas Body.</p>
+          <p className="df-ws-revision">{sourceName} <span>·</span> Bản soạn r{snapshot.workspace.workingRevision}</p>
         </div>
+        <div className="df-ws-heading-actions">
+        <button
+          type="button"
+          className="df-step-context-toggle"
+          aria-expanded={contextOpen}
+          aria-controls="df-step2-context"
+          onClick={() => setContextOpen(value => !value)}
+        >{contextOpen ? 'Đóng trợ lý AI' : 'Trợ lý AI'}</button>
         <button type="button" data-action="workspace-next" aria-disabled={!canContinue} disabled={!canContinue} onClick={onContinue} className="df-ws-next">
           Tiếp tục xem &amp; xuất <span aria-hidden="true">→</span>
         </button>
+        </div>
       </header>
-      <p className="df-ws-revision">{sourceName} <span>·</span> Bản soạn r{snapshot.workspace.workingRevision}</p>
-      <button
-        type="button"
-        className="df-step-context-toggle"
-        aria-expanded={contextOpen}
-        aria-controls="df-step2-context"
-        onClick={() => setContextOpen(value => !value)}
-      >{contextOpen ? 'Đóng trợ lý AI' : 'Mở trợ lý AI'}</button>
 
       <section id="df-step2-groups-before" className="df-ws-region" aria-labelledby="df-step2-groups-before-title">
         <header className="df-ws-region-heading">
-          <div><p className="df-ws-eyebrow">Phần đầu văn bản</p><h2 id="df-step2-groups-before-title">Các ô độc lập</h2></div>
+          <div><h2 id="df-step2-groups-before-title">Phần đầu văn bản</h2></div>
           <span>Nhóm 01–05</span>
         </header>
         <div className="df-ws-groups df-ws-group-cards">
@@ -253,7 +250,7 @@ export function WorkspaceEditor({
 
       <section id="df-step2-groups-after" className="df-ws-region" aria-labelledby="df-step2-groups-after-title">
         <header className="df-ws-region-heading">
-          <div><p className="df-ws-eyebrow">Phần cuối văn bản</p><h2 id="df-step2-groups-after-title">Các ô độc lập</h2></div>
+          <div><h2 id="df-step2-groups-after-title">Phần cuối văn bản</h2></div>
           <span>Nhóm 07–09</span>
         </header>
         <div className="df-ws-groups df-ws-group-cards df-ws-group-cards-after">
