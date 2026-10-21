@@ -7,6 +7,7 @@ const messages:Record<string,{messageVi:string;action?:ExportBlockerAction}>={
  pending_partition:{messageVi:'Thay đổi phân vùng đang chờ xác nhận; hãy hoàn tất duyệt nguồn.' ,action:'review_source'},
  unsupported_working_media:{messageVi:'Bản soạn còn ảnh hoặc phương tiện chưa được chứng minh là giữ nguyên trong DOCX. Hãy kiểm tra phần nguồn liên quan.',action:'review_source'},
  candidate_unpack_failed:{messageVi:'Không đọc được DOCX vừa tạo để kiểm tra nội dung. Hãy tạo lại ứng viên sau khi kiểm tra bản soạn.'},
+ candidate_document_missing:{messageVi:'DOCX vừa tạo thiếu nội dung tài liệu; cần tạo lại ứng viên.'},
  content_invalid_xml:{messageVi:'DOCX ứng viên có cấu trúc XML không hợp lệ. Không thể xác nhận nội dung.'},
  working_state_modified_outside_transaction:{messageVi:'Bản soạn có thay đổi ngoài giao dịch đã kiểm soát. Hãy duyệt lại nguồn và làm mới bản soạn.',action:'review_source'},
 };

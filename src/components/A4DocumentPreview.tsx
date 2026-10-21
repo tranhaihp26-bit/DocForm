@@ -987,8 +987,8 @@ export const CandidateDocumentPreview=React.memo(function CandidateDocumentPrevi
   },[]);
   const setRelativeZoom=(direction:-1|1)=>setZoomScale(Math.min(1.5,Math.max(.35,scale+direction*.1)));
   return <section className="df-candidate-preview" data-candidate-preview data-preview-bytes-sha={renderedSha||undefined} data-candidate-sha={sha256} data-candidate-instance={instanceId} data-preview-page-count={ready?geometry?.pageCount:undefined} aria-label="Bản xem DOCX ứng viên">
-    <p className="df-candidate-preview-note">Bản xem được dựng từ DOCX ứng viên đã kiểm. Cần đối chiếu phân trang bản in trước khi phát hành.</p>
-    {!ready&&!error&&<p role="status">Đang dựng bản xem từ DOCX đã kiểm…</p>}
+      <p className="df-candidate-preview-note">Bản xem được dựng từ DOCX ứng viên hiện hành. Cần đối chiếu phân trang bản in trước khi phát hành.</p>
+      {!ready&&!error&&<p role="status">Đang dựng bản xem từ DOCX ứng viên…</p>}
     {error&&<p role="alert">Không dựng được bản xem: {error}. Không thay bằng bản dựng khác.</p>}
     <div className="df-candidate-preview-toolbar" role="toolbar" aria-label="Điều hướng trang và thu phóng">
       <div className="df-candidate-page-nav">

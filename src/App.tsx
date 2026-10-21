@@ -1858,7 +1858,7 @@ export default function App() {
   const importReviewSatisfied=sourceOrigin!=='uploaded_file'||hasWorkspaceApproval(workspaceSnapshot);
   const canExportSource=structureReady&&importReviewSatisfied&&(!sourceMismatch.docTypeMismatch||docTypeDecisionValid)&&canEnterWorkspaceStep(workspaceSnapshot,3);
   const canEnterStep=(step:1|2|3)=>step===1||sourceChosen&&canEnterWorkspaceStep(workspaceSnapshot,step)&&(step!==3||canExportSource);
-  const stepIsComplete=(step:1|2|3)=>step===1?sourceChosen&&canEnterWorkspaceStep(workspaceSnapshot,2):step===2?canExportSource:Boolean(visibleCandidate?.safe);
+  const stepIsComplete=(step:1|2|3)=>step===1?sourceChosen&&canEnterWorkspaceStep(workspaceSnapshot,2):step===2?canExportSource:Boolean(visibleCandidate?.downloadable);
 
   const numericComponentGroups = evaluationSummary.recognizedComponents.groups
     .filter(group => typeof group.id === "number")
@@ -2729,7 +2729,7 @@ export default function App() {
 
   const exportToDocx = async () => {
     const current=candidateManager.current!.current;
-    if(!current||!current.safe||!candidateManager.current!.isCurrent(current,{...workspaceSnapshotRef.current,uploadedBlocks,docTypeOverride})||!canEnterStep(3)){setErrorMsg('DOCX ứng viên đã cũ hoặc chưa đạt cổng kiểm. Hãy tạo và xem ứng viên hiện hành ở Bước 3.');return;}
+    if(!current?.downloadable||!candidateManager.current!.isCurrent(current,{...workspaceSnapshotRef.current,uploadedBlocks,docTypeOverride})||!canEnterStep(3)){setErrorMsg('DOCX ứng viên đã cũ hoặc không tạo được tệp. Hãy tạo lại ứng viên hiện hành ở Bước 3.');return;}
     downloadDocxUint8Array(current.bytes,'Van_Ban_'+(standardType==='party'?'HD05':'ND30')+'.docx');
   };
   const exportToPdf=async()=>{setErrorMsg('Lệnh In / Lưu PDF chỉ có ở Bước 3, từ DOCX ứng viên hiện hành.');};
@@ -2753,11 +2753,11 @@ export default function App() {
 
   const handlePrintCandidate=async()=>{
     const current=visibleCandidate;
-    if(!current?.safe||!candidateManager.current?.isCurrent(current,{...workspaceSnapshotRef.current,uploadedBlocks,docTypeOverride})||!canEnterStep(3)){
-      setErrorMsg('Ứng viên DOCX đã cũ hoặc chưa đạt cổng kiểm; chưa thể in.');return;
+    if(!current?.downloadable||!candidateManager.current?.isCurrent(current,{...workspaceSnapshotRef.current,uploadedBlocks,docTypeOverride})||!canEnterStep(3)){
+      setErrorMsg('Ứng viên DOCX đã cũ hoặc không tạo được tệp; chưa thể in.');return;
     }
     setErrorMsg('');
-    const isCurrent=()=>Boolean(candidateManager.current?.isCurrent(current,{...workspaceSnapshotRef.current,uploadedBlocks,docTypeOverride})&&current.safe&&canEnterStep(3));
+    const isCurrent=()=>Boolean(candidateManager.current?.isCurrent(current,{...workspaceSnapshotRef.current,uploadedBlocks,docTypeOverride})&&current.downloadable&&canEnterStep(3));
     const result=await printCandidate(current.bytes,current.sha256,current.instanceId,isCurrent);
     if(result==='stale')setErrorMsg('Ứng viên đã thay đổi trong lúc dựng vùng in; hãy tạo và kiểm ứng viên hiện hành trước khi in.');
     else if(result==='render_error')setErrorMsg('Không dựng được vùng in từ DOCX ứng viên; nội dung soạn và nguồn vẫn giữ nguyên.');
@@ -3027,11 +3027,11 @@ export default function App() {
                 : "Chọn tệp DOCX/TXT hoặc mẫu có sẵn để bắt đầu."
               : currentStep === 2
                 ? `Bản soạn r${workspaceSnapshot.workspace.workingRevision} · ${doc.appendices?.length ?? 0} phụ lục`
-                : visibleCandidate?.safe
-                  ? `Ứng viên hiện hành · SHA-256 ${visibleCandidate.sha256.slice(0, 12)}…`
+                : visibleCandidate?.downloadable
+                  ? `Ứng viên hiện hành${visibleCandidate.safe?'':' · có cảnh báo'} · SHA-256 ${visibleCandidate.sha256.slice(0, 12)}…`
                   : candidatePending
                     ? "Đang tạo DOCX ứng viên hiện hành."
-                    : "Chưa có DOCX ứng viên an toàn hiện hành."}</span>
+                    : "Chưa có DOCX ứng viên hợp lệ hiện hành."}</span>
           </div>
           {workspaceSnapshot.workspace.staged && (
             <button type="button" className="df-sidebar-cancel" onClick={closePartitionReview}>Hủy phân vùng</button>

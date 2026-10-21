@@ -28,6 +28,8 @@ export interface ExportCandidate {
   readonly contentFidelity: ContentFidelityResult;
   readonly exportSafety: ReturnType<typeof assessExportSafety>;
   readonly profileHeaderLines: number;
+  /** A generated, readable DOCX may be downloaded even when fidelity checks warn. */
+  readonly downloadable: boolean;
   readonly safe: boolean;
   readonly blockers: readonly string[];
 }
@@ -119,6 +121,7 @@ export async function prepareExportCandidate(input: ExportCandidateSnapshot, gen
     xml = await zip.file("word/document.xml")?.async("string") ?? "";
     settingsXml = await zip.file("word/settings.xml")?.async("string") ?? "";
   } catch { blockers.push("candidate_unpack_failed"); }
+  if (!xml) blockers.push("candidate_document_missing");
   const profileSelected = formatData.headerProfile === (formatData.regime === "administrative" ? COMPANY_HEADER_PROFILE_ID : COMPANY_HEADER_HD05_PROFILE_ID);
   const profileShapesPresent = hasProfileHeaderShapeLines(xml, formatData.regime) &&
     hasStampedHoaTieuHeader(xml, settingsXml, formatData);
@@ -136,6 +139,8 @@ export async function prepareExportCandidate(input: ExportCandidateSnapshot, gen
     documentXml: xml, evidence: freezeWorkspaceValue(evidence), tableFidelity: freezeWorkspaceValue(tableFidelity),
     contentFidelity: freezeWorkspaceValue(contentFidelity), exportSafety: freezeWorkspaceValue(exportSafety),
     profileHeaderLines,
+    downloadable: generatedBytes.length > 0 && Boolean(xml) && !blockers.includes("candidate_unpack_failed") &&
+      !contentFidelity.violations.some(violation => violation.code === "content_invalid_xml"),
     safe: blockers.length === 0 && tableFidelity.safe && contentFidelity.safe && exportSafety.decision === "allow",
     blockers: Object.freeze([...new Set(blockers)]),
   };
