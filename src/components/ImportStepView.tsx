@@ -891,11 +891,8 @@ export function ImportStepView({
         </div>
 
         {appendicesCount > 0 && (
-          <section className="df-import-appendices" aria-label="Phụ lục nguồn">
-            <div className="df-import-group-heading">
-              <h3>Phụ lục / thành phần bổ sung</h3>
-              <span>{appendicesCount} mục</span>
-            </div>
+          <details className="df-import-disclosure df-import-appendices">
+            <summary>Phụ lục / thành phần bổ sung <span>{appendicesCount} mục</span></summary>
             {(structuredImport?.appendices ?? doc.appendices ?? []).map((appendix, index) => (
               <div className="df-import-appendix" key={appendix.id || `${appendix.title}-${index}`}>
                 <span aria-hidden="true">▤</span>
@@ -905,7 +902,7 @@ export function ImportStepView({
                 </span>
               </div>
             ))}
-          </section>
+          </details>
         )}
 
         {!hasSelectedSource ? (
@@ -946,8 +943,8 @@ export function ImportStepView({
               </div>
             </dl>
 
-            <div className="mt-2.5">
-              <h3 className="text-[11px] uppercase tracking-wide text-[#52607A] font-semibold mb-1">Chứng cứ trích từ nguồn</h3>
+            <details className="df-import-disclosure mt-2.5">
+              <summary>Chứng cứ trích từ nguồn <span>{evidenceItems.length} mục</span></summary>
               {evidenceItems.length > 0 ? (
                 <ul id="regime-evidence-list" className="space-y-1">
                   {evidenceItems.map((item, index) => (
@@ -971,7 +968,7 @@ export function ImportStepView({
               ) : (
                 <p className="text-[11.5px] text-[#52607A]">Không có chứng cứ thể thức — quyết định dựa trên mẫu hoặc lựa chọn của bạn.</p>
               )}
-            </div>
+            </details>
 
             {detection?.documentType && (
               <p className="mt-2 text-[11.5px] text-[#52607A]">
