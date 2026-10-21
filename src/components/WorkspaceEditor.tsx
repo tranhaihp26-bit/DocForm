@@ -88,7 +88,7 @@ function ComponentCard({
 
 export function WorkspaceEditor({
   snapshot, active, initialCanvasId, onCanvasSelected, onAction, onPartition, onRefine,
-  refining, canContinue, onContinue, complianceReport, onOpenCompliance,
+  refining, canContinue, complianceReport, onOpenCompliance,
 }: {
   snapshot: WorkspaceSnapshot;
   active: boolean;
@@ -99,7 +99,6 @@ export function WorkspaceEditor({
   onRefine: (a: 'proofread' | 'formalize', nodeId?: string) => void;
   refining: boolean;
   canContinue: boolean;
-  onContinue: () => void;
   complianceReport: ND30ComplianceReport | null;
   onOpenCompliance: () => void;
 }) {
@@ -197,12 +196,8 @@ export function WorkspaceEditor({
 
   return <div className="df-step-layout df-step-layout-workspace" data-context-open={contextOpen}>
     <main data-wizard-step={active ? '2' : undefined} className="df-workspace-editor df-step-content">
-      <header className="df-ws-step-heading">
-        <div>
-          <p className="df-ws-eyebrow">Bước 2</p>
-          <h1>Soạn &amp; kiểm tra</h1>
-        </div>
-        <div className="df-ws-heading-actions">
+      <h1 className="sr-only">Soạn &amp; kiểm tra</h1>
+      <div className="df-ws-heading-actions">
         <button
           type="button"
           className="df-step-context-toggle"
@@ -210,11 +205,7 @@ export function WorkspaceEditor({
           aria-controls="df-step2-context"
           onClick={() => setContextOpen(value => !value)}
         >{contextOpen ? 'Đóng trợ lý AI' : 'Trợ lý AI'}</button>
-        <button type="button" data-action="workspace-next" aria-disabled={!canContinue} disabled={!canContinue} onClick={onContinue} className="df-ws-next">
-          Tiếp tục xem &amp; xuất <span aria-hidden="true">→</span>
-        </button>
-        </div>
-      </header>
+      </div>
 
       <section id="df-step2-groups-before" className="df-ws-region" aria-labelledby="df-step2-groups-before-title">
         <header className="df-ws-region-heading">

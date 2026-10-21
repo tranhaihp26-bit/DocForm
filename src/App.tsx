@@ -2970,6 +2970,14 @@ export default function App() {
             </div>
           </div>
 
+          {currentStep === 2 && (
+            <div className="df-header-next-wrap">
+              <button type="button" data-action="workspace-next" className="df-header-next" disabled={!canEnterStep(3)} onClick={() => goToStep(3)}>
+                Tiếp tục xem &amp; xuất <span aria-hidden="true">→</span>
+              </button>
+            </div>
+          )}
+
           {/* Group 3 (Right on wide desktop >= xl): Save Status + Tools */}
           <div className="df-header-actions hidden xl:flex items-center gap-2.5 shrink-0 justify-end">
 
@@ -3123,7 +3131,7 @@ export default function App() {
 
       {currentStep===3&&<WorkspaceExport candidate={visibleCandidate} pending={candidatePending} error={candidateError} onPrepare={()=>void prepareCandidate()} onDownload={()=>void exportToDocx()} onDownloadOriginal={()=>void handleDownloadOriginalFile()} onPrintCandidate={()=>void handlePrintCandidate()} originalAvailable={sourceBlobAvailability==='available'} onPrev={()=>goToStep(2)} onReviewSource={()=>{setCurrentStep(1);setShowSideBySideModal(true);}} onEditTarget={(targetId)=>{setCurrentStep(2);requestAnimationFrame(()=>{const node=[...document.querySelectorAll<HTMLElement>('[data-workspace-node]')].find(el=>el.dataset.workspaceNode===targetId);(node?.querySelector<HTMLElement>('[contenteditable="true"]')??document.querySelector<HTMLElement>('[data-canvas-id="body"] [contenteditable="true"]'))?.focus({preventScroll:true});});}} originalHtml={originalSnapshot?.bodyHtml??''}/>}
       <div hidden={currentStep!==2}>
-        {sourceChosen&&canEnterWorkspaceStep(workspaceSnapshot,2)&&<WorkspaceEditor key={workspaceSnapshot.workspace.source?.identity??originalSnapshot?.sourceId??'template'} snapshot={workspaceSnapshot} initialCanvasId={editorState.activeCanvasId} onCanvasSelected={id=>setEditorState({activeCanvasId:id})} active={currentStep===2} onAction={workspaceAction} onPartition={()=>{setCurrentStep(1);setShowSideBySideModal(true);}} onRefine={handleAiRefine} refining={isRefining} canContinue={canEnterStep(3)} onContinue={()=>goToStep(3)} complianceReport={complianceReport} onOpenCompliance={()=>setShowComplianceModal(true)}/>}
+        {sourceChosen&&canEnterWorkspaceStep(workspaceSnapshot,2)&&<WorkspaceEditor key={workspaceSnapshot.workspace.source?.identity??originalSnapshot?.sourceId??'template'} snapshot={workspaceSnapshot} initialCanvasId={editorState.activeCanvasId} onCanvasSelected={id=>setEditorState({activeCanvasId:id})} active={currentStep===2} onAction={workspaceAction} onPartition={()=>{setCurrentStep(1);setShowSideBySideModal(true);}} onRefine={handleAiRefine} refining={isRefining} canContinue={canEnterStep(3)} complianceReport={complianceReport} onOpenCompliance={()=>setShowComplianceModal(true)}/>}
       </div>
       </div></div>
       {toast && (

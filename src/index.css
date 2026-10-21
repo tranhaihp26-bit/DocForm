@@ -954,6 +954,36 @@
   justify-content: center;
   white-space: nowrap;
 }
+.df-header-next {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 7px 13px;
+  border: 1px solid #6255e8;
+  border-radius: 10px;
+  background: #6255e8;
+  box-shadow: 0 4px 12px #6255e824;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+}
+.df-header-next:hover:not(:disabled) { background: #5347d7; box-shadow: 0 6px 16px #6255e82f; transform: translateY(-1px); }
+.df-header-next:disabled { border-color: #d8deea; background: #e8ebf2; box-shadow: none; color: #7d899c; cursor: not-allowed; }
+.df-header-next:focus-visible { outline: 3px solid #8279ff; outline-offset: 2px; }
+.df-header-next-wrap { display: flex; justify-content: flex-end; margin-left: auto; }
+@media (max-width: 1279px) {
+  .df-header-row:has(.df-header-next-wrap) { flex-wrap: wrap; }
+  .df-header-row:has(.df-header-next-wrap) > :first-child { flex: 1 1 100%; }
+  .df-header-next-wrap { width: 100%; margin-left: 0; }
+}
+@media (max-width: 639px) {
+  .df-header-next-wrap .df-header-next { width: 100%; }
+}
 
 .df-workspace-layout {
   display: grid;
@@ -987,13 +1017,28 @@
 }
 .df-sidebar-steps { display: grid; gap: 8px; min-width: 0; }
 .df-sidebar-step {
+  position: relative;
   min-width: 0;
   border: 1px solid #e1e7f1;
   border-radius: 12px;
   background: #fff;
-  transition: border-color 220ms ease, box-shadow 220ms ease;
+  transition: border-color 220ms ease, box-shadow 220ms ease, background 220ms ease;
 }
-.df-sidebar-step[data-active="true"] { border-color: #d8d1ff; box-shadow: 0 3px 14px #6255e80d; }
+.df-sidebar-step[data-active="true"] {
+  border-color: #c9c1ff;
+  background: linear-gradient(145deg, #fbfaff, #f3f0ff);
+  box-shadow: 0 8px 24px #6255e818, inset 0 1px #fff;
+}
+.df-sidebar-step[data-active="true"]::before {
+  position: absolute;
+  top: 12px;
+  bottom: 12px;
+  left: 0;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: #6255e8;
+  content: "";
+}
 .df-sidebar-step-button {
   display: flex;
   align-items: center;
@@ -1006,10 +1051,10 @@
   background: transparent;
   text-align: left;
   cursor: pointer;
-  transition: background 180ms ease;
+  transition: background 180ms ease, color 180ms ease;
 }
 .df-sidebar-step-button:hover { background: #f7f6ff; }
-.df-sidebar-step-button[aria-current="step"] { background: #faf9ff; }
+.df-sidebar-step-button[aria-current="step"] { background: linear-gradient(90deg, #f1eeff, #faf9ff); }
 .df-sidebar-step-button[aria-disabled="true"]:not([aria-current="step"]) { color: #7b8aa2; }
 .df-sidebar-step-index {
   display: grid;
@@ -1022,13 +1067,16 @@
   color: white;
   font-size: 13px;
   font-weight: 800;
+  transition: background 220ms ease, box-shadow 220ms ease, transform 220ms ease;
 }
+.df-sidebar-step[data-active="true"] .df-sidebar-step-index { box-shadow: 0 4px 12px #6255e83d; }
 .df-sidebar-step-button[data-step-complete="true"]:not([aria-current="step"]) .df-sidebar-step-index { background: #e8f7f1; color: #168266; }
 .df-sidebar-step-button[aria-disabled="true"]:not([aria-current="step"]) .df-sidebar-step-index { background: #edf1f7; color: #71809a; }
 .df-sidebar-step-copy { flex: 1 1 auto; min-width: 0; }
 .df-sidebar-step-copy strong,
 .df-sidebar-step-copy small { display: block; }
 .df-sidebar-step-copy strong { color: #253452; font-size: 13px; line-height: 1.35; }
+.df-sidebar-step[data-active="true"] .df-sidebar-step-copy strong { color: #5548d3; }
 .df-sidebar-step-copy small { margin-top: 3px; color: #8793a8; font-size: 11px; }
 .df-sidebar-step-button[aria-disabled="true"]:not([aria-current="step"]) .df-sidebar-step-copy strong { color: #7b8aa2; }
 .df-sidebar-step-chevron { flex: 0 0 auto; color: #9ba8bd; transition: transform 240ms cubic-bezier(.2,.8,.2,1), color 180ms ease; }
@@ -1041,6 +1089,11 @@
 }
 .df-sidebar-step[data-active="true"] .df-sidebar-step-panel { grid-template-rows: 1fr; opacity: 1; }
 .df-sidebar-step-panel-inner { min-height: 0; overflow: hidden; }
+.df-sidebar-step[data-active="true"] .df-sidebar-step-panel-inner { animation: dfSidebarReveal 260ms cubic-bezier(.2,.8,.2,1) both; }
+@keyframes dfSidebarReveal {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 .df-step-toc { display: grid; gap: 3px; margin: 0; padding: 0; list-style: none; }
 .df-sidebar-step-panel .df-step-toc { margin: 0 8px 10px; padding: 8px 0 0; border-top: 1px solid #e8edf5; }
 .df-step-toc button {
@@ -1111,7 +1164,9 @@
 .df-step-toc button:focus-visible,
 .df-sidebar-step-button:focus-visible { outline: 3px solid var(--df-primary); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) {
-  .df-sidebar-step, .df-sidebar-step-button, .df-sidebar-step-chevron, .df-sidebar-step-panel { transition: none; }
+  .df-sidebar-step, .df-sidebar-step-button, .df-sidebar-step-chevron, .df-sidebar-step-panel, .df-sidebar-step-index, .df-header-next { transition: none; }
+  .df-sidebar-step[data-active="true"] .df-sidebar-step-panel-inner { animation: none; }
+  .df-header-next:hover:not(:disabled) { transform: none; }
 }
 
 @media (min-width: 1536px) {

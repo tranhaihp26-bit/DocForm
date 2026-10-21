@@ -37,16 +37,7 @@ export function WorkspaceExport({candidate,pending,error,onPrepare,onDownload,on
  const companyHeaderRegime=candidate&&candidate.formatData.headerProfile===(candidate.formatData.regime==='party'?COMPANY_HEADER_HD05_PROFILE_ID:COMPANY_HEADER_PROFILE_ID)?candidate.formatData.regime:undefined;
 
  return <main data-wizard-step="3" className="df-workspace-export" data-candidate-state={!candidate?'missing':candidate.safe?'safe':candidate.downloadable?'warning':'blocked'} data-candidate-safe={candidate?String(candidate.safe):undefined} data-candidate-instance={candidate?.instanceId} data-candidate-revision={candidate?.revision} data-candidate-sha={candidate?.sha256}>
-  <header className="df-step3-heading">
-   <div>
-    <p className="df-step3-eyebrow">BƯỚC 3 · HOÀN TẤT VĂN BẢN</p>
-    <h1>Xem &amp; xuất</h1>
-    <p className="df-step3-subtitle">Xem bản dựng DOCX trong trình duyệt, sau đó tải xuống và kiểm tra phân trang trong Word.</p>
-   </div>
-   <button type="button" className="df-step3-context-toggle" aria-expanded={contextOpen} aria-controls="df-step3-context-panel" onClick={()=>setContextOpen(open=>!open)}>
-    {contextOpen?'Ẩn thông tin xuất':'Thông tin xuất'}
-   </button>
-  </header>
+  <h1 className="sr-only">Xem &amp; xuất</h1>
 
   <div className="df-step-layout" data-context-open={String(contextOpen)}>
    <div className="df-step-content">
@@ -56,6 +47,9 @@ export function WorkspaceExport({candidate,pending,error,onPrepare,onDownload,on
        <h2 id="df-step3-preview-title">Bản ứng viên hiện tại</h2>
        <p>{candidate?`${regimeLabel} · revision ${candidate.revision}`:'Tạo và kiểm ứng viên từ nội dung đã duyệt để xem trước.'}</p>
       </div>
+      <button type="button" className="df-step3-context-toggle" aria-expanded={contextOpen} aria-controls="df-step3-context-panel" onClick={()=>setContextOpen(open=>!open)}>
+       {contextOpen?'Ẩn thông tin xuất':'Thông tin xuất'}
+      </button>
      </div>
 
      {!candidate&&<div className="df-step3-empty-state">

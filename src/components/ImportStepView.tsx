@@ -323,11 +323,7 @@ export function ImportStepView({
       className="df-step-layout df-import-step df-step-enter"
     >
       <div className="df-step-content" id="df-step1-flow">
-      {/* 1. Header */}
-      <div className="df-import-heading flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-        <h1 className="text-xl sm:text-2xl font-extrabold text-[#17233D] tracking-tight">{flow==="create"?"Tạo văn bản mới":"Tải & nhận diện"}</h1>
-        <p className="text-xs sm:text-sm text-[#52607A]">{flow==="upload"?"Tải tệp, xem kết quả nhận diện và xác nhận trước khi soạn.":flow==="create"?"Chọn thể thức, loại văn bản và mẫu theo từng bước.":"Bạn muốn bắt đầu từ tệp có sẵn hay tạo một văn bản mới?"}</p>
-      </div>
+      <h1 className="sr-only">{flow==="create"?"Tạo văn bản mới":"Tải & nhận diện"}</h1>
 
       <input
         ref={fileInputRef}
