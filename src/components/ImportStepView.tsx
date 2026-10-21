@@ -23,6 +23,9 @@ import {
   Scale,
   ShieldCheck,
   Upload,
+  Plus,
+  ArrowLeft,
+  ArrowRight,
   X,
 } from "lucide-react";
 import DOMPurify from "dompurify";
@@ -81,7 +84,8 @@ export interface ImportStepViewProps {
   onRequestRegimeSwitch: (target: "state" | "party") => void;
   doc: DocumentState;
   templates: TemplatePreset[];
-  onSelectTemplate: (templateId: string) => void;
+  sourceOrigin: "none" | "uploaded_file" | "system_template";
+  onCreateDocument: (selection: {regime:"state"|"party";documentType:string;templateId?:string;headerProfile:"company"|"generic"}) => boolean;
   onFieldChange: (field: keyof DocumentState, value: string) => void;
   onFileUpload: (file: File) => void;
   isUploading: boolean;
@@ -125,7 +129,8 @@ export function ImportStepView({
   onRequestRegimeSwitch,
   doc,
   templates,
-  onSelectTemplate,
+  sourceOrigin,
+  onCreateDocument,
   onFieldChange,
   onFileUpload,
   isUploading,
@@ -159,7 +164,20 @@ export function ImportStepView({
   const [uploadError, setUploadError] = useState("");
   const [showDiffModal, setShowDiffModal] = useState(false);
   const [contextOpen, setContextOpen] = useState(false);
+  const [flow,setFlow]=useState<"upload"|"create"|null>(null);
+  const [phase,setPhase]=useState<"choice"|"upload"|"recognition"|"metadata"|"regime"|"doctype"|"template"|"ready">("choice");
+  const [draftRegime,setDraftRegime]=useState<"state"|"party">(regime);
+  const [draftDocType,setDraftDocType]=useState("");
+  const [draftProfile,setDraftProfile]=useState<"company"|"generic">("company");
+  const [pendingUpload,setPendingUpload]=useState(false);
   const diffDialogRef = useAccessibleDialog(showDiffModal, () => setShowDiffModal(false));
+
+  useEffect(()=>{
+    if(pendingUpload&&sourceOrigin==="uploaded_file"&&!isUploading&&uploadedFileName){
+      setPendingUpload(false);
+      setPhase("recognition");
+    }
+  },[pendingUpload,sourceOrigin,isUploading,uploadedFileName]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -177,15 +195,20 @@ export function ImportStepView({
       return;
     }
     setUploadError("");
+    setPendingUpload(true);
     onFileUpload(file);
   };
 
-  const docTypes = isParty ? DOCUMENT_TYPES_HD05 : DOCUMENT_TYPES_ND30;
+  const choosingNew=flow==="create";
+  const choiceIsParty=choosingNew?draftRegime==="party":isParty;
+  const choiceIsCompany=choosingNew?draftProfile==="company":isCompanyProfile;
+  const docTypes = choiceIsParty ? DOCUMENT_TYPES_HD05 : DOCUMENT_TYPES_ND30;
   const tablesCount = structuredImport?.source.tableCount ?? structuredImport?.body?.tablesCount ?? (doc.bodyHtml.match(/<table\b/gi)?.length || 0);
   const blocksCount = uploadedBlocks.length;
   const appendicesCount = structuredImport?.appendices.length ?? doc.appendices?.length ?? 0;
-  const filteredTemplates = templates.filter((t) => t.type === (isParty ? "party" : "state"));
+  const filteredTemplates = templates.filter((t) => t.type === (draftRegime === "party" ? "party" : "state") && t.defaultData.documentType.toUpperCase().startsWith(draftDocType));
   const hasImportedFile = Boolean(uploadedFileName || blocksCount > 0);
+  const hasUploadedSource = sourceOrigin === "uploaded_file" && hasImportedFile;
   const detection = structuredImport?.regimeDetection ?? null;
   const appliedTemplate = findAppliedTemplate(templates, originalSnapshot);
   const appliedTemplateRegime = appliedTemplate?.type ?? null;
@@ -271,25 +294,39 @@ export function ImportStepView({
   const groupsNeedingReview = importGroups.filter((group) => group.status === "needs-review").length;
   const aiSourceLabel = partitionCheckSource === "gemini_ai" ? "AI đã kiểm tra" : partitionCheckSource === "mixed" ? "AI và quy tắc nội bộ" : partitionCheckSource === "rule_fallback" ? "Quy tắc nội bộ" : "Chưa kiểm tra";
   const canOpenSourceReview = hasSelectedSource && Boolean(onOpenReviewModal);
-  const continueDisabled = !canContinue && !canOpenSourceReview;
+  const flowSourceReady=flow==="upload"?sourceOrigin==="uploaded_file":flow==="create"?sourceOrigin==="system_template":false;
+  const continueDisabled = !flowSourceReady||(!canContinue && !canOpenSourceReview);
   const handleContinue = () => {
+    if (!flowSourceReady) return;
     if (canContinue) onNext();
     else if (canOpenSourceReview) onOpenReviewModal?.();
   };
+  const selectFlow=(next:"upload"|"create")=>{
+    setFlow(next);
+    setPhase(next==="upload"?"upload":"regime");
+    setUploadError("");
+    setDraftDocType("");
+  };
+  const createFromChoice=(templateId?:string)=>{
+    if(!draftDocType)return;
+    if(onCreateDocument({regime:draftRegime,documentType:draftDocType,templateId,headerProfile:draftProfile}))setPhase("ready");
+  };
+  const phaseLabels=flow==="upload"?["Tải tệp","Xem nhận diện","Xác nhận thông tin","Sẵn sàng soạn"]:["Hệ thể thức","Loại văn bản","Chọn mẫu","Sẵn sàng soạn"];
+  const phaseIndex=flow==="upload"?(["upload","recognition","metadata","ready"] as const).indexOf(phase as "upload"):(["regime","doctype","template","ready"] as const).indexOf(phase as "regime");
 
   return (
     <div
       data-wizard-step="1"
       data-has-source={hasSelectedSource ? "true" : "false"}
+      data-flow-phase={phase}
+      data-context-visible={flow==="upload"&&(phase==="recognition"||phase==="ready")?"true":"false"}
       className="df-step-layout df-import-step df-step-enter"
     >
-      <div className="df-step-content">
+      <div className="df-step-content" id="df-step1-flow">
       {/* 1. Header */}
       <div className="df-import-heading flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <h1 className="text-xl sm:text-2xl font-extrabold text-[#17233D] tracking-tight">Tải &amp; nhận diện</h1>
-        <p className="text-xs sm:text-sm text-[#52607A]">
-          Chọn hệ thể thức, loại văn bản, rồi tải tệp hoặc dùng mẫu chuẩn.
-        </p>
+        <p className="text-xs sm:text-sm text-[#52607A]">{flow==="upload"?"Tải tệp, xem kết quả nhận diện và xác nhận trước khi soạn.":flow==="create"?"Chọn thể thức, loại văn bản và mẫu theo từng bước.":"Bạn muốn bắt đầu từ tệp có sẵn hay tạo một văn bản mới?"}</p>
       </div>
 
       <input
@@ -305,8 +342,23 @@ export function ImportStepView({
         className="hidden"
       />
 
+      {flow&&<div className="df-import-flow-progress" aria-label="Tiến trình trong Bước 1">
+        {phaseLabels.map((label,index)=><span key={label} className={index===phaseIndex?"is-current":index<phaseIndex?"is-done":""}><b>{index<phaseIndex?<Check className="w-3 h-3"/>:index+1}</b>{label}</span>)}
+        <button type="button" onClick={()=>{setFlow(null);setPhase("choice");}}><ArrowLeft className="w-3.5 h-3.5"/> Đổi cách bắt đầu</button>
+      </div>}
+
+      {phase==="choice"&&<section className="df-import-entry" aria-labelledby="df-step1-entry-title">
+        <div className="df-import-entry-heading"><span>BƯỚC ĐẦU TIÊN</span><h2 id="df-step1-entry-title">Bạn muốn bắt đầu như thế nào?</h2><p>Chọn một cách để DocForm chỉ hiện những thông tin cần thiết tiếp theo.</p></div>
+        {sourceOrigin!=="none"&&<div className="df-import-resume"><span><strong>Đang mở: {uploadedFileName||doc.documentType}</strong><small>{sourceOrigin==="uploaded_file"?"Tệp đã tải và nhận diện":"Văn bản tạo từ mẫu"}</small></span><button type="button" onClick={()=>{setFlow(sourceOrigin==="uploaded_file"?"upload":"create");setPhase(sourceOrigin==="uploaded_file"?(canContinue?"ready":"recognition"):"ready");}}>Tiếp tục tài liệu hiện tại <ArrowRight size={15}/></button></div>}
+        <div className="df-import-entry-options">
+          <button type="button" onClick={()=>selectFlow("upload")}><span className="df-import-entry-icon"><Upload/></span><strong>Tải tài liệu có sẵn</strong><small>Đọc DOCX/TXT, nhận diện nội dung và duyệt nguồn trước khi soạn.</small><span className="df-import-entry-link">Tải tài liệu <ArrowRight size={16}/></span></button>
+          <button type="button" onClick={()=>selectFlow("create")}><span className="df-import-entry-icon"><Plus/></span><strong>Tạo văn bản mới</strong><small>Chọn hệ thể thức, loại văn bản và mẫu hoặc bắt đầu từ trang trắng.</small><span className="df-import-entry-link">Tạo mới <ArrowRight size={16}/></span></button>
+        </div>
+      </section>}
+
       {/* 2. Hệ thể thức + Mẫu cơ quan */}
-      <div id="df-step1-regime" className="df-import-choice-grid grid grid-cols-1 lg:grid-cols-2 gap-3">
+      {((flow==="create"&&(phase==="regime"||phase==="template"))||(flow==="upload"&&phase==="metadata"))&&<div id="df-step1-regime" className="df-import-choice-grid grid grid-cols-1 lg:grid-cols-2 gap-3">
+        {phase!=="template"&&<>
         <section className="df-import-card bg-white rounded-2xl border border-[#CFD8EA] p-3 shadow-2xs" aria-labelledby="wizard-regime-heading">
           <h2 id="wizard-regime-heading" className="text-xs sm:text-sm font-bold text-[#17233D] mb-2">
             1. Hệ thể thức
@@ -314,10 +366,10 @@ export function ImportStepView({
           <div className="grid grid-cols-1 min-[380px]:grid-cols-2 gap-2" role="group" aria-label="Hệ thể thức">
             <button
               type="button"
-              aria-pressed={!isParty}
-              onClick={() => onRequestRegimeSwitch("state")}
+              aria-pressed={!choiceIsParty}
+              onClick={() => choosingNew ? (setDraftRegime("state"),setDraftDocType("")) : onRequestRegimeSwitch("state")}
               className={`p-2.5 rounded-xl border text-left transition flex items-center justify-between gap-2 cursor-pointer min-h-[52px] ${
-                !isParty
+                !choiceIsParty
                   ? "border-[#6255E8] bg-[#EEF0FE]/70 text-[#17233D] ring-1 ring-[#6255E8]/30 shadow-2xs"
                   : "border-[#CFD8EA] hover:border-slate-400 bg-white text-[#17233D]"
               }`}
@@ -333,7 +385,7 @@ export function ImportStepView({
               </div>
               <span
                 className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] shrink-0 ${
-                  !isParty ? "bg-[#6255E8] text-white font-bold" : "border border-slate-300 text-transparent"
+                  !choiceIsParty ? "bg-[#6255E8] text-white font-bold" : "border border-slate-300 text-transparent"
                 }`}
               >
                 ✓
@@ -342,10 +394,10 @@ export function ImportStepView({
 
             <button
               type="button"
-              aria-pressed={isParty}
-              onClick={() => onRequestRegimeSwitch("party")}
+              aria-pressed={choiceIsParty}
+              onClick={() => choosingNew ? (setDraftRegime("party"),setDraftDocType("")) : onRequestRegimeSwitch("party")}
               className={`p-2.5 rounded-xl border text-left transition flex items-center justify-between gap-2 cursor-pointer min-h-[52px] ${
-                isParty
+                choiceIsParty
                   ? "border-[#6255E8] bg-[#EEF0FE]/70 text-[#17233D] ring-1 ring-[#6255E8]/30 shadow-2xs"
                   : "border-[#CFD8EA] hover:border-slate-400 bg-white text-[#17233D]"
               }`}
@@ -361,7 +413,7 @@ export function ImportStepView({
               </div>
               <span
                 className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] shrink-0 ${
-                  isParty ? "bg-[#6255E8] text-white font-bold" : "border border-slate-300 text-transparent"
+                  choiceIsParty ? "bg-[#6255E8] text-white font-bold" : "border border-slate-300 text-transparent"
                 }`}
               >
                 ✓
@@ -369,16 +421,18 @@ export function ImportStepView({
             </button>
           </div>
         </section>
+        </>}
 
-        <section className="df-import-card bg-white rounded-2xl border border-[#CFD8EA] p-3 shadow-2xs" aria-labelledby="wizard-profile-heading">
+        {phase!=="regime"&&<section className="df-import-card bg-white rounded-2xl border border-[#CFD8EA] p-3 shadow-2xs" aria-labelledby="wizard-profile-heading">
           <h2 id="wizard-profile-heading" className="text-xs sm:text-sm font-bold text-[#17233D] mb-2">
             Mẫu cơ quan
           </h2>
           <div className="grid grid-cols-1 min-[380px]:grid-cols-2 gap-2" role="group" aria-label="Mẫu cơ quan">
             <button
               type="button"
-              aria-pressed={isCompanyProfile}
+              aria-pressed={choiceIsCompany}
               onClick={() => {
+                if(choosingNew){setDraftProfile("company");return;}
                 if (isParty) {
                   onFieldChange("headerProfile" as keyof DocumentState, COMPANY_HEADER_HD05_PROFILE_ID);
                 } else {
@@ -386,7 +440,7 @@ export function ImportStepView({
                 }
               }}
               className={`p-2.5 rounded-xl border text-left transition flex items-center justify-between gap-2 cursor-pointer min-h-[52px] ${
-                isCompanyProfile
+                choiceIsCompany
                   ? "border-[#6255E8] bg-[#EEF0FE]/70 text-[#17233D] ring-1 ring-[#6255E8]/30 shadow-2xs"
                   : "border-[#CFD8EA] hover:border-slate-400 bg-white text-[#17233D]"
               }`}
@@ -402,7 +456,7 @@ export function ImportStepView({
               </div>
               <span
                 className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] shrink-0 ${
-                  isCompanyProfile ? "bg-[#6255E8] text-white font-bold" : "border border-slate-300 text-transparent"
+                  choiceIsCompany ? "bg-[#6255E8] text-white font-bold" : "border border-slate-300 text-transparent"
                 }`}
               >
                 ✓
@@ -411,10 +465,10 @@ export function ImportStepView({
 
             <button
               type="button"
-              aria-pressed={!isCompanyProfile}
-              onClick={() => onFieldChange("headerProfile" as keyof DocumentState, "generic")}
+              aria-pressed={!choiceIsCompany}
+              onClick={() => choosingNew ? setDraftProfile("generic") : onFieldChange("headerProfile" as keyof DocumentState, "generic")}
               className={`p-2.5 rounded-xl border text-left transition flex items-center justify-between gap-2 cursor-pointer min-h-[52px] ${
-                !isCompanyProfile
+                !choiceIsCompany
                   ? "border-[#6255E8] bg-[#EEF0FE]/70 text-[#17233D] ring-1 ring-[#6255E8]/30 shadow-2xs"
                   : "border-[#CFD8EA] hover:border-slate-400 bg-white text-[#17233D]"
               }`}
@@ -430,23 +484,23 @@ export function ImportStepView({
               </div>
               <span
                 className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] shrink-0 ${
-                  !isCompanyProfile ? "bg-[#6255E8] text-white font-bold" : "border border-slate-300 text-transparent"
+                  !choiceIsCompany ? "bg-[#6255E8] text-white font-bold" : "border border-slate-300 text-transparent"
                 }`}
               >
                 ✓
               </span>
             </button>
           </div>
-        </section>
-      </div>
+        </section>}
+      </div>}
 
       {/* 3. Loại văn bản */}
-      <section id="df-step1-document-type" className="df-import-card bg-white rounded-2xl border border-[#CFD8EA] p-3.5 shadow-2xs" aria-labelledby="wizard-doctype-heading">
+      {((flow==="create"&&phase==="doctype")||(flow==="upload"&&phase==="metadata"))&&<section id="df-step1-document-type" className="df-import-card bg-white rounded-2xl border border-[#CFD8EA] p-3.5 shadow-2xs" aria-labelledby="wizard-doctype-heading">
         <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1 mb-2">
           <h2 id="wizard-doctype-heading" className="text-xs sm:text-sm font-bold text-[#17233D]">
-            2. Loại văn bản
+            {choosingNew?"2. Chọn loại văn bản":"Loại văn bản nhận diện"}
           </h2>
-          {sourceDocType && (
+          {!choosingNew&&sourceDocType && (
             <span className="text-[11px] text-[#52607A]">
               Nguồn nhận diện: <strong className="text-[#17233D]">{sourceDocType}</strong>
             </span>
@@ -455,14 +509,14 @@ export function ImportStepView({
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           {docTypes.map((t) => {
-            const isSelected = (doc.documentType || "").toUpperCase() === t.name;
+            const isSelected = (choosingNew?draftDocType:doc.documentType || "").toUpperCase() === t.name;
             return (
               <button
                 key={t.id}
                 type="button"
                 aria-pressed={isSelected}
                 title={t.desc}
-                onClick={() => onFieldChange("documentType", t.name)}
+                onClick={() => choosingNew?setDraftDocType(t.name):onFieldChange("documentType", t.name)}
                 className={`p-2.5 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between min-h-[64px] ${
                   isSelected
                     ? "border-[#6255E8] bg-[#EEF0FE]/75 text-[#17233D] font-bold shadow-2xs ring-1 ring-[#6255E8]/30"
@@ -485,7 +539,7 @@ export function ImportStepView({
           })}
         </div>
 
-        {docTypeMismatch && (
+        {!choosingNew&&docTypeMismatch && (
           <div
             id="source-mismatch-doctype"
             data-source-warning="doc-type"
@@ -546,7 +600,7 @@ export function ImportStepView({
         )}
 
         {/* Info banner: no truncate + wrap so it never overflows horizontally. */}
-        <div className="mt-2.5 p-2 bg-[#F5F6FA] border border-[#CFD8EA] rounded-xl flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[#52607A]">
+        {!choosingNew&&<div className="mt-2.5 p-2 bg-[#F5F6FA] border border-[#CFD8EA] rounded-xl flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[#52607A]">
           <div className="flex items-center gap-2 min-w-0 flex-1 basis-[200px]">
             <Info className="w-3.5 h-3.5 text-[#6255E8] shrink-0" />
             <span className="min-w-0">
@@ -563,15 +617,16 @@ export function ImportStepView({
             <span>Xem khác biệt thể thức</span>
             <ExternalLink className="w-3 h-3" />
           </button>
-        </div>
-      </section>
+        </div>}
+      </section>}
 
       {/* 4. Nguồn tài liệu: tệp hoặc mẫu */}
-      <section id="df-step1-source" className="df-import-source-grid grid grid-cols-1 lg:grid-cols-[1.15fr_1fr] gap-3" aria-labelledby="wizard-source-heading">
+      {((flow==="upload"&&phase==="upload")||(flow==="create"&&phase==="template"))&&<section id="df-step1-source" className="df-import-source-grid grid grid-cols-1 gap-3" aria-label="Chọn nguồn văn bản">
+        {flow==="upload"&&<>
         <div className="df-import-card bg-white rounded-2xl border border-[#CFD8EA] p-3.5 shadow-2xs flex flex-col">
           <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
             <h2 id="wizard-source-heading" className="text-xs sm:text-sm font-bold text-[#17233D]">
-              3. Tải tài liệu của bạn
+              Tải tài liệu của bạn
             </h2>
             <span className="text-[10.5px] font-semibold text-[#6255E8] bg-[#EEF0FE] px-2 py-0.5 rounded-full">
               DOCX / TXT
@@ -615,7 +670,7 @@ export function ImportStepView({
             )}
           </div>
 
-          {hasImportedFile ? (
+          {hasUploadedSource ? (
             <>
               <div className="p-2.5 rounded-xl bg-[#F5F6FA] border border-[#CFD8EA] flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2.5 min-w-0 flex-1 basis-[180px]">
@@ -729,11 +784,13 @@ export function ImportStepView({
           )}
         </div>
 
-        <div id="df-step1-template" className="df-import-card bg-white rounded-2xl border border-[#CFD8EA] p-3.5 shadow-2xs flex flex-col">
-          <h2 className="text-xs sm:text-sm font-bold text-[#17233D]">Hoặc bắt đầu từ mẫu</h2>
-          <p className="text-xs text-[#52607A] mt-0.5 mb-2">Chọn mẫu sẽ thay nguồn hiện tại.</p>
+        </>}
+        {flow==="create"&&<div id="df-step1-template" className="df-import-card bg-white rounded-2xl border border-[#CFD8EA] p-3.5 shadow-2xs flex flex-col">
+          <h2 className="text-xs sm:text-sm font-bold text-[#17233D]">3. Chọn mẫu cho {draftDocType.toLowerCase()}</h2>
+          <p className="text-xs text-[#52607A] mt-0.5 mb-2">Chọn mẫu nội dung có sẵn hoặc tạo bản trắng. Mẫu cơ quan được áp dụng theo lựa chọn phía trên.</p>
 
           <div className="space-y-2">
+            <button type="button" onClick={()=>createFromChoice()} className="df-import-blank-template"><span className="w-8 h-8 rounded-lg bg-indigo-50 text-[#6255E8] flex items-center justify-center shrink-0"><Plus className="w-4 h-4"/></span><span><strong>Văn bản trắng</strong><small>Chỉ thiết lập thể thức và loại; nội dung, người ký và số hiệu để bạn tự soạn.</small></span><ArrowRight size={17}/></button>
             {filteredTemplates.map((t) => (
               <div
                 key={t.id}
@@ -751,7 +808,7 @@ export function ImportStepView({
                 <button
                   type="button"
                   disabled={isUploading}
-                  onClick={() => onSelectTemplate(t.id)}
+                  onClick={() => createFromChoice(t.id)}
                   className="px-3 py-1 rounded-lg border border-[#CFD8EA] bg-white hover:bg-[#EEF0FE] text-[#6255E8] font-bold text-xs shrink-0 transition cursor-pointer"
                 >
                   Dùng mẫu
@@ -764,11 +821,11 @@ export function ImportStepView({
             <Info className="w-3.5 h-3.5 text-[#6255E8] shrink-0" />
             <span>Mẫu chuẩn áp dụng sẵn phông Times New Roman {isParty ? "14pt" : "13pt"}.</span>
           </div>
-        </div>
-      </section>
+        </div>}
+      </section>}
 
       {/* 5. Nhận diện thể thức: chọn / gợi ý / chứng cứ / đã xác nhận */}
-      <section id="df-step1-recognition" className="df-import-card df-import-recognition bg-white rounded-2xl border border-[#CFD8EA] p-3.5 shadow-2xs" aria-labelledby="wizard-detection-heading">
+      {flow==="upload"&&phase==="recognition"&&<section id="df-step1-recognition" className="df-import-card df-import-recognition bg-white rounded-2xl border border-[#CFD8EA] p-3.5 shadow-2xs" aria-labelledby="wizard-detection-heading">
         <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
           <h2 id="wizard-detection-heading" className="text-xs sm:text-sm font-bold text-[#17233D] flex items-center gap-1.5">
             <ShieldCheck className="w-4 h-4 text-[#0D9488]" />
@@ -946,27 +1003,26 @@ export function ImportStepView({
             </span>
           </div>
         )}
-      </section>
+      </section>}
 
-      <div className="df-wizard-actions df-import-actions">
-        <span className="text-[11.5px] text-[#52607A]">
-          {canContinue ? "Nguồn đã đủ điều kiện để mở bước soạn." : canOpenSourceReview ? "Hãy đối chiếu và xác nhận các thành phần nguồn trước khi sang bước soạn." : "Cần một nguồn tài liệu trước khi sang bước soạn."}
-        </span>
-        <button
-          type="button"
-          data-action="wizard-next"
-          aria-disabled={continueDisabled || undefined}
-          aria-describedby={!hasSelectedSource ? "wizard-source-gate-notice" : undefined}
-          disabled={continueDisabled}
-          onClick={handleContinue}
-          className={`df-btn-primary df-import-continue inline-flex items-center justify-center gap-2 min-h-[44px] rounded-xl px-4 py-2 text-sm font-semibold transition ${
-            canContinue ? "bg-[#6255E8] hover:bg-[#5244d4] text-white cursor-pointer" : canOpenSourceReview ? "bg-amber-100 text-amber-900 hover:bg-amber-200 cursor-pointer" : "bg-slate-200 text-[#52607A] cursor-not-allowed"
-          }`}
-        >
-          {canContinue ? "Xác nhận & tiếp tục" : canOpenSourceReview ? "Đối chiếu nguồn trước" : "Chọn nguồn để tiếp tục"}
-          <span aria-hidden="true">→</span>
-        </button>
-      </div>
+      {phase==="ready"&&<section id="df-step1-ready" className="df-import-card df-import-ready" aria-labelledby="df-step1-ready-title">
+        <span className="df-import-ready-icon"><CheckCircle2 size={22}/></span>
+        <div><h2 id="df-step1-ready-title">{flow==="upload"?"Tài liệu đã được nhận diện":"Văn bản mới đã được khởi tạo"}</h2>
+          <p>{flow==="upload"?`${uploadedFileName} · ${blocksCount} khối nguồn · ${tablesCount} bảng · ${appendicesCount} phụ lục`:`${doc.documentType} · ${REGIME_LABEL[regime]} · ${isCompanyProfile?"Mẫu Hoa tiêu miền Bắc":"Cơ quan chung"}`}</p>
+          {flow==="upload"&&<p>{canContinue?"Nguồn đã được duyệt, có thể soạn nội dung.":"Kiểm tra và duyệt phân vùng nguồn trước khi tiếp tục."}</p>}
+          {flow==="upload"&&canOpenSourceReview&&<button type="button" onClick={onOpenReviewModal}>Xem và duyệt nguồn <ArrowRight size={15}/></button>}
+        </div>
+      </section>}
+
+      {flow&&phase!=="choice"&&<div className="df-wizard-actions df-import-actions">
+        <button type="button" className="df-import-back" onClick={()=>setPhase(phase==="upload"||phase==="regime"?"choice":phase==="recognition"?"upload":phase==="metadata"?"recognition":phase==="doctype"?"regime":phase==="template"?"doctype":flow==="upload"?"metadata":"template")}><ArrowLeft size={15}/> Quay lại</button>
+        {phase==="upload"&&<button type="button" className="df-import-forward" disabled={!hasUploadedSource||isUploading} onClick={()=>setPhase("recognition")}>Xem kết quả nhận diện <ArrowRight size={16}/></button>}
+        {phase==="recognition"&&<button type="button" className="df-import-forward" onClick={()=>setPhase("metadata")}>Xác nhận thông tin <ArrowRight size={16}/></button>}
+        {phase==="metadata"&&<button type="button" className="df-import-forward" disabled={!doc.documentType} onClick={()=>setPhase("ready")}>Xem tóm tắt <ArrowRight size={16}/></button>}
+        {phase==="regime"&&<button type="button" className="df-import-forward" onClick={()=>setPhase("doctype")}>Chọn loại văn bản <ArrowRight size={16}/></button>}
+        {phase==="doctype"&&<button type="button" className="df-import-forward" disabled={!draftDocType} onClick={()=>setPhase("template")}>Chọn mẫu <ArrowRight size={16}/></button>}
+        {phase==="ready"&&<button type="button" data-action="wizard-next" className="df-import-forward" disabled={continueDisabled} onClick={handleContinue}>{canContinue&&flowSourceReady?"Sang Bước 2: Soạn & kiểm tra":canOpenSourceReview&&flowSourceReady?"Duyệt nguồn trước":"Chọn nguồn trước khi tiếp tục"} <ArrowRight size={16}/></button>}
+      </div>}
 
       {showDiffModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#17233D]/50 backdrop-blur-xs">
@@ -1030,7 +1086,7 @@ export function ImportStepView({
       )}
       </div>
 
-      <aside className={`df-step-context df-import-context ${contextOpen ? "df-import-context--open" : "df-import-context--closed"}`} aria-label="Tình trạng nhập tài liệu">
+      {flow==="upload"&&(phase==="recognition"||phase==="ready")&&<aside className={`df-step-context df-import-context ${contextOpen ? "df-import-context--open" : "df-import-context--closed"}`} aria-label="Tình trạng nhập tài liệu">
         <details open={contextOpen} onToggle={(event) => setContextOpen(event.currentTarget.open)}>
           <summary>
             <span className="df-import-context-icon" aria-hidden="true">✦</span>
@@ -1079,13 +1135,13 @@ export function ImportStepView({
               {!canContinue && canOpenSourceReview && (
                 <button type="button" onClick={onOpenReviewModal} className="df-import-context-action">Mở đối chiếu nguồn →</button>
               )}
-              {canContinue && (
-                <button type="button" onClick={onNext} className="df-import-context-action">Sang Bước 2 →</button>
+              {canContinue&&flowSourceReady && (
+                <button type="button" onClick={handleContinue} className="df-import-context-action">Sang Bước 2 →</button>
               )}
             </section>
           </div>
         </details>
-      </aside>
+      </aside>}
     </div>
   );
 }

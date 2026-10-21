@@ -11,6 +11,47 @@
   min-width: 0;
   color: var(--df-step-ink);
 }
+.df-import-step[data-context-visible="false"]{grid-template-columns:minmax(0,1fr)}
+.df-import-step[data-flow-phase="regime"] .df-import-choice-grid{grid-template-columns:minmax(0,1fr)}
+.df-import-step .df-import-source-grid{grid-template-columns:minmax(0,1fr)}
+.df-import-flow-progress{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:9px 12px;border:1px solid #e1e7f1;border-radius:12px;background:#fff}
+.df-import-flow-progress>span{display:inline-flex;align-items:center;gap:6px;color:#8290a5;font-size:11px;font-weight:650}
+.df-import-flow-progress>span b{display:grid;width:21px;height:21px;place-items:center;border-radius:50%;background:#eef1f7;color:#7a88a0;font-size:10px}
+.df-import-flow-progress>span.is-current{color:#5c50df}
+.df-import-flow-progress>span.is-current b{background:#6255e8;color:#fff}
+.df-import-flow-progress>span.is-done b{background:#e7f7f0;color:#168365}
+.df-import-flow-progress>button{display:inline-flex;align-items:center;gap:5px;margin-left:auto;border:0;background:transparent;color:#6255e8;font-size:11px;font-weight:700;cursor:pointer}
+.df-import-entry{padding:30px;border:1px solid #e1e7f1;border-radius:18px;background:#fff;box-shadow:0 8px 24px rgb(25 43 77 / 5%)}
+.df-import-entry-heading{text-align:center}
+.df-import-entry-heading>span{color:#6255e8;font-size:11px;font-weight:800;letter-spacing:.1em}
+.df-import-entry-heading h2{margin:8px 0;color:#17233d;font-size:clamp(20px,2vw,28px)}
+.df-import-entry-heading p{margin:0;color:#66738c;font-size:13px}
+.df-import-resume{display:flex;align-items:center;justify-content:space-between;gap:12px;max-width:850px;margin:20px auto 0;padding:12px 15px;border:1px solid #dcd7ff;border-radius:11px;background:#f8f7ff}
+.df-import-resume span{display:grid;min-width:0;gap:3px}
+.df-import-resume strong{overflow:hidden;color:#273653;font-size:12px;text-overflow:ellipsis;white-space:nowrap}
+.df-import-resume small{color:#71809a;font-size:11px}
+.df-import-resume button{display:inline-flex;flex:none;align-items:center;gap:5px;border:0;background:transparent;color:#6255e8;font-size:11px;font-weight:750;cursor:pointer}
+.df-import-entry-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;max-width:850px;margin:25px auto 0}
+.df-import-entry-options>button{display:flex;min-height:180px;flex-direction:column;align-items:flex-start;gap:10px;padding:20px;border:1px solid #d9e1ef;border-radius:15px;background:#fff;color:#17233d;text-align:left;cursor:pointer;transition:border-color .15s,box-shadow .15s,transform .15s}
+.df-import-entry-options>button:hover,.df-import-entry-options>button:focus-visible{border-color:#6255e8;box-shadow:0 8px 24px rgb(98 85 232 / 12%);transform:translateY(-2px)}
+.df-import-entry-icon{display:grid;width:40px;height:40px;place-items:center;border-radius:11px;background:#efedff;color:#6255e8}
+.df-import-entry-icon svg{width:20px;height:20px}
+.df-import-entry-options strong{font-size:16px}
+.df-import-entry-options small{max-width:36ch;color:#66738c;font-size:12px;line-height:1.5}
+.df-import-entry-link{display:inline-flex;align-items:center;gap:6px;margin-top:auto;color:#6255e8;font-size:12px;font-weight:750}
+.df-import-blank-template{display:flex;width:100%;align-items:center;gap:12px;padding:12px;border:1px dashed #aebbe0;border-radius:11px;background:#f8f9ff;color:#17233d;text-align:left;cursor:pointer}
+.df-import-blank-template:hover{border-color:#6255e8;background:#f0efff}
+.df-import-blank-template>span:nth-child(2){display:grid;flex:1;gap:3px}
+.df-import-blank-template small{color:#66738c;font-size:11px}
+.df-import-ready{display:flex;align-items:flex-start;gap:14px;padding:24px!important}
+.df-import-ready-icon{display:grid;width:42px;height:42px;flex:none;place-items:center;border-radius:12px;background:#e6f7ef;color:#13815e}
+.df-import-ready h2{margin:0;color:#17233d;font-size:18px;font-weight:800}
+.df-import-ready p{margin:7px 0 0;color:#66738c;font-size:12px;line-height:1.5}
+.df-import-ready button{display:inline-flex;align-items:center;gap:6px;margin-top:12px;padding:8px 11px;border:1px solid #dcd7ff;border-radius:8px;background:#f3f1ff;color:#6255e8;font-size:12px;font-weight:700;cursor:pointer}
+.df-import-step .df-import-back,.df-import-step .df-import-forward{display:inline-flex;min-height:43px;align-items:center;justify-content:center;gap:7px;padding:9px 14px;border:1px solid #d9e1ef;border-radius:9px;background:#fff;color:#52607a;font-size:12px;font-weight:750;cursor:pointer}
+.df-import-step .df-import-forward{margin-left:auto;border-color:#6255e8;background:#6255e8;color:#fff}
+.df-import-step .df-import-forward:disabled{border-color:#dbe1eb;background:#edf0f5;color:#8995a8;cursor:not-allowed}
+@media(max-width:700px){.df-import-entry{padding:18px}.df-import-entry-options{grid-template-columns:minmax(0,1fr)}.df-import-flow-progress>span{font-size:0}.df-import-flow-progress>span b{font-size:10px}.df-import-flow-progress>span.is-current{font-size:11px}}
 
 .df-import-step > .df-step-content {
   display: grid;
@@ -67,7 +108,7 @@
 
 .df-import-step .df-import-source-grid {
   align-items: stretch;
-  grid-template-columns: minmax(0, 1.08fr) minmax(270px, 0.92fr);
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .df-import-step .df-upload-dropzone {

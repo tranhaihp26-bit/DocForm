@@ -1865,10 +1865,7 @@ export default function App() {
     .sort((left, right) => Number(left.id) - Number(right.id));
   const sidebarItems: Array<{ id: string; label: string; selector?: string }> = currentStep === 1
     ? [
-        { id: "df-step1-regime", label: "Hệ thể thức" },
-        { id: "df-step1-template", label: "Mẫu cơ quan" },
-        { id: "df-step1-document-type", label: "Loại văn bản" },
-        { id: "df-step1-source", label: "Nguồn tài liệu & nhận diện" },
+        { id: "df-step1-flow", label: "Chọn nguồn và thiết lập" },
       ]
     : currentStep === 2
       ? [
@@ -1893,7 +1890,7 @@ export default function App() {
   const [activeTocTarget, setActiveTocTarget] = useState("");
   useEffect(() => {
     const firstGroup = numericComponentGroups.find(group => Number(group.id) >= 1 && Number(group.id) <= 5)?.id ?? 1;
-    setActiveTocTarget(currentStep === 1 ? "df-step1-regime" : currentStep === 2 ? `df-step2-group-${firstGroup}` : "df-step3-preview");
+    setActiveTocTarget(currentStep === 1 ? "df-step1-flow" : currentStep === 2 ? `df-step2-group-${firstGroup}` : "df-step3-preview");
   }, [currentStep]);
 
   const scrollToTocItem = (item: { id: string; selector?: string }) => {
@@ -2026,15 +2023,17 @@ export default function App() {
       : "Đã chuyển sang phần đầu tùy chỉnh; bạn có thể sửa thông tin cơ quan.");
   };
 
-  const applyTemplate = (t: TemplatePreset) => {
+  const applyTemplate = (t: TemplatePreset, headerProfile: "company" | "generic" = "company") => {
     if (JSON.stringify(doc) !== JSON.stringify(versions[0]?.data)) {
       pushVersion("Bản soạn trước khi đổi mẫu", doc);
     }
     invalidateActiveAiSession();
 
-    const selectedBaseDoc = t.type === "state"
-      ? applyCompanyProfile({...t.defaultData})
-      : applyCompanyHD05Profile({...t.defaultData});
+    const selectedBaseDoc = headerProfile === "generic"
+      ? {...t.defaultData, headerProfile: "generic" as const, orgHeader1: "", orgHeader2: ""}
+      : t.type === "state"
+        ? applyCompanyProfile({...t.defaultData})
+        : applyCompanyHD05Profile({...t.defaultData});
     const preparedTemplate=prepareTemplateTables(t.id,selectedBaseDoc),selectedDoc=preparedTemplate.doc;
 
     const snapshot: OriginalDocumentSnapshot = {
@@ -2058,7 +2057,7 @@ export default function App() {
     let nextWorkspace=createWorkspaceSnapshot({doc:nextSession.doc,standardType:nextSession.standardType,reviewBlocks:nextSession.reviewBlocks,structuredImport:nextSession.structuredImport});
     if(preparedTemplate.models.length){
       const registered=transactWorkspace(nextWorkspace,0,{type:'registerTemplateTables',templateId:t.id,models:preparedTemplate.models});
-      if(!registered.ok){setErrorMsg(`Không thể khởi tạo bảng của mẫu ${t.name}; mẫu trước được giữ nguyên. ${registered.details.join(' · ')}`);return;}
+      if(!registered.ok){setErrorMsg(`Không thể khởi tạo bảng của mẫu ${t.name}; mẫu trước được giữ nguyên. ${registered.details.join(' · ')}`);return false;}
       nextWorkspace=registered.snapshot;
     }
     applyImportSessionState(nextSession,nextWorkspace);
@@ -2080,6 +2079,32 @@ export default function App() {
     setSourceOrigin("system_template");
     // Nguồn mới ⇒ quyết định override của nguồn cũ không còn hiệu lực.
     setDocTypeOverride(null);
+    return true;
+  };
+
+  const createNewDocument = ({regime,documentType,templateId,headerProfile}:{regime:"state"|"party";documentType:string;templateId?:string;headerProfile:"company"|"generic"}) => {
+    markUserInteraction();
+    const preset=TEMPLATES.find(t=>t.id===templateId&&t.type===regime);
+    const fallback=TEMPLATES.find(t=>t.type===regime) ?? TEMPLATES[0];
+    const blank=!preset;
+    const base:DocumentState=blank?{
+      ...fallback.defaultData,
+      headerProfile:"generic",
+      orgHeader1:"",orgHeader2:"",
+      nationalHeader1:regime==="party"?"ĐẢNG CỘNG SẢN VIỆT NAM":"CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM",
+      nationalHeader2:regime==="party"?"":"Độc lập - Tự do - Hạnh phúc",
+      referenceNumber:regime==="party"?"Số …-…/…":"Số: …/…",
+      locationAndDate:"",subject:"",bodyHtml:"<p></p>",signTitle:"",signName:"",recipients:"",appendices:[],unclassified:[],
+    }:{...preset.defaultData};
+    const selected:TemplatePreset={
+      ...(preset??fallback),
+      id:preset?.id??`blank-${regime}-${documentType.normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[Đđ]/g,"d").toLowerCase().replace(/[^a-z0-9]+/g,"-")}`,
+      name:preset?.name??`Văn bản trắng · ${documentType}`,
+      desc:preset?.desc??"Trang soạn trống theo thể thức đã chọn",
+      type:regime,
+      defaultData:{...base,documentType},
+    };
+    return applyTemplate(selected,headerProfile);
   };
 
   const selectTemplate = (tId: string) => {
@@ -3023,8 +3048,8 @@ export default function App() {
             <strong>Màn hình hiện tại · Bước {currentStep}</strong>
             <span>{currentStep === 1
               ? sourceChosen
-                ? (importReviewSatisfied ? "Nguồn đã sẵn sàng cho bước soạn." : "Nguồn đang chờ đối chiếu và duyệt.")
-                : "Chọn tệp DOCX/TXT hoặc mẫu có sẵn để bắt đầu."
+                ? "Tiếp tục tài liệu hiện tại hoặc bắt đầu bằng một nguồn mới."
+                : "Tải tệp DOCX/TXT hoặc tạo văn bản mới để bắt đầu."
               : currentStep === 2
                 ? `Bản soạn r${workspaceSnapshot.workspace.workingRevision} · ${doc.appendices?.length ?? 0} phụ lục`
                 : visibleCandidate?.downloadable
@@ -3045,7 +3070,8 @@ export default function App() {
           onRequestRegimeSwitch={requestRegimeSwitch}
           doc={doc}
           templates={TEMPLATES}
-          onSelectTemplate={(tid) => selectTemplate(tid)}
+          sourceOrigin={sourceOrigin}
+          onCreateDocument={createNewDocument}
           onFieldChange={handleFieldChange}
           onFileUpload={handleFileUpload}
           isUploading={isUploading}
