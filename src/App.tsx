@@ -1601,20 +1601,29 @@ export default function App() {
     importReviewApprovedSourceHash,
   };
 
-  const persistDraftNow = React.useCallback(async () => {
+  const persistDraftNow = React.useCallback(async (silent = false) => {
     const payload = draftPayloadRef.current;
     if (!payload) return;
-    setIsAutoSaving(true);
+    if (!silent) setIsAutoSaving(true);
     try {
       if(restoreBlockedRef.current)throw Error('Bản nháp chưa khôi phục được. Chọn nguồn mới để thay thế rõ ràng.');
       const saveJob=saveQueueRef.current.catch(()=>{}).then(()=>saveDraft(payload));
       saveQueueRef.current=saveJob;await saveJob;
-      if(canonicalWorkspaceValue({...draftPayloadRef.current,updatedAt:undefined})!==canonicalWorkspaceValue({...payload,updatedAt:undefined}))return;
-      setIsAutoSaving(false);
+      const currentPayload = draftPayloadRef.current;
+      if (!currentPayload) return;
+      // A route/canvas change can be saved after this job started. It does not
+      // make the document dirty or keep the visible saving indicator active.
+      const documentValue = (value: typeof payload) => canonicalWorkspaceValue({
+        ...value, updatedAt: undefined, currentStep: undefined, editorState: undefined,
+      });
+      if (documentValue(currentPayload) !== documentValue(payload)) return;
+      if (!silent) setIsAutoSaving(false);
       setSaveError(null);
       setHasPersistedDraft(true);
-      const timeStr = new Date().toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
-      setAutoSaveStatus(`Đã lưu (${timeStr})`);
+      if (!silent) {
+        const timeStr = new Date().toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
+        setAutoSaveStatus(`Đã lưu (${timeStr})`);
+      }
     } catch (err) {
       setIsAutoSaving(false);
       setSaveError(err instanceof Error ? err.message : "Lỗi lưu trữ cục bộ");
@@ -1631,7 +1640,7 @@ export default function App() {
       void persistDraftNow();
     }, 1000);
     return () => clearTimeout(timer);
-  }, [doc, workspace,editorState,standardType, versions, originalSnapshot, reviewBlocks, structuredImport, uploadedBlocks, uploadedFileName, uploadedFileType, rawText, currentStep, sourceOrigin, persistDraftNow]);
+  }, [doc, workspace,standardType, versions, originalSnapshot, reviewBlocks, structuredImport, uploadedBlocks, uploadedFileName, uploadedFileType, rawText, sourceOrigin, persistDraftNow]);
 
   useEffect(() => {
     if (!draftHydratedRef.current && !userInteractedRef.current) {
@@ -1639,7 +1648,14 @@ export default function App() {
     }
     void persistDraftNow();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentStep, sourceOrigin, standardType, doc.headerProfile, doc.documentType, uploadedFileName, docTypeOverride]);
+  }, [sourceOrigin, standardType, doc.headerProfile, doc.documentType, uploadedFileName, docTypeOverride]);
+
+  // Navigation and active canvas are restored on refresh, but do not change
+  // document content. Persist them without flashing the document save status.
+  useEffect(() => {
+    if (!draftHydratedRef.current && !userInteractedRef.current) return;
+    void persistDraftNow(true);
+  }, [currentStep, editorState, persistDraftNow]);
 
   const buildDocumentFormatData = React.useCallback((currentDoc: DocumentState, currentStandard: "state" | "party"): DocumentFormatType =>
     composeDocumentFormatData({ doc: currentDoc, standardType: currentStandard, reviewBlocks, structuredImport, uploadedBlocks }),
