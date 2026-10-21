@@ -958,6 +958,20 @@
   flex: 1 1 auto;
   padding: 2px 10px;
 }
+.df-header-save-status {
+  box-sizing: border-box;
+  width: 108px;
+  justify-content: center;
+  white-space: nowrap;
+}
+@media (min-width: 1280px) {
+  .df-header-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  }
+  .df-header-row > .df-header-stepper { flex: none; }
+  .df-header-row > .df-header-actions { min-width: 0; }
+}
 .df-header-stepper button {
   display: inline-flex;
   align-items: center;

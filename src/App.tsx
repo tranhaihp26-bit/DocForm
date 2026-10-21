@@ -2888,7 +2888,7 @@ export default function App() {
 
       {/* 1. TOP APPLICATION BAR (SINGLE-ROW ON WIDE DESKTOP ~56PX, 2-ROW ON NARROW/TABLET ~80PX) */}
       <header className="df-glass-header text-[#17233D] px-3 sm:px-6 py-1.5 xl:py-0 z-30 sticky top-0 border-b border-slate-200/80 w-full bg-white/85 backdrop-blur-md shrink-0">
-        <div className="w-full flex flex-col xl:flex-row xl:items-center xl:justify-between min-h-[56px] xl:h-14 gap-1 xl:gap-3">
+        <div className="df-header-row w-full flex flex-col xl:flex-row xl:items-center xl:justify-between min-h-[56px] xl:h-14 gap-1 xl:gap-3">
 
           {/* Group 1 (Row 1 on narrow, Left on wide desktop): Brand + Filename + (Save & Tools on narrow) */}
           <div className="flex items-center justify-between xl:justify-start gap-2.5 min-w-0 h-9 xl:h-10 shrink-0">
@@ -2914,7 +2914,7 @@ export default function App() {
             {/* Save Status & Tools on narrow screens (< xl) placed in Row 1 */}
             <div className="flex items-center gap-2 xl:hidden ml-auto shrink-0">
               <div
-                className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-50 border border-slate-200 text-[11px] text-[#52607A]"
+                className="df-header-save-status flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-50 border border-slate-200 text-[11px] text-[#52607A]"
                 title={saveTooltip}
                 role="status"
               >
@@ -2962,10 +2962,10 @@ export default function App() {
           </nav>
 
           {/* Group 3 (Right on wide desktop >= xl): Step Navigation + Save Status + Tools */}
-          <div className="hidden xl:flex items-center gap-2.5 shrink-0 justify-end">
+          <div className="df-header-actions hidden xl:flex items-center gap-2.5 shrink-0 justify-end">
 
             <div
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-50 border border-slate-200/90 text-xs text-[#52607A]"
+              className="df-header-save-status flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-50 border border-slate-200/90 text-xs text-[#52607A]"
               title={saveTooltip}
               role="status"
             >
