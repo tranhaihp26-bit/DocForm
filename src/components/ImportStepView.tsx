@@ -360,11 +360,11 @@ export function ImportStepView({
       {((flow==="create"&&(phase==="regime"||phase==="template"))||(flow==="upload"&&phase==="metadata"))&&<div id="df-step1-regime" className="df-import-choice-grid grid grid-cols-1 lg:grid-cols-2 gap-3">
         {phase!=="template"&&<>
         <section className="df-import-card bg-white rounded-2xl border border-[#CFD8EA] p-3 shadow-2xs" aria-labelledby="wizard-regime-heading">
-          <span className="df-import-stage-kicker">BƯỚC 1 / 4 · TẠO VĂN BẢN</span>
+          <span className="df-import-stage-kicker">{choosingNew ? "BƯỚC 1 / 4 · TẠO VĂN BẢN" : "XÁC NHẬN TÀI LIỆU"}</span>
           <h2 id="wizard-regime-heading" className="text-xs sm:text-sm font-bold text-[#17233D] mb-2">
             Chọn hệ thể thức
           </h2>
-          <p className="df-import-stage-description">Văn bản của bạn sẽ theo quy định trình bày nào? Lựa chọn này quyết định các mẫu và loại văn bản ở bước tiếp theo.</p>
+          <p className="df-import-stage-description">{choosingNew ? "Văn bản của bạn sẽ theo quy định trình bày nào? Lựa chọn này quyết định các mẫu và loại văn bản ở bước tiếp theo." : "Kiểm tra hệ thể thức nhận diện từ tệp; chỉ đổi khi nguồn thuộc hệ khác."}</p>
           <div className="grid grid-cols-1 min-[380px]:grid-cols-2 gap-2" role="group" aria-label="Hệ thể thức">
             <button
               type="button"
@@ -431,7 +431,7 @@ export function ImportStepView({
           <h2 id="wizard-profile-heading" className="text-xs sm:text-sm font-bold text-[#17233D] mb-2">
             {choosingNew?"Thông tin cơ quan ban hành":"Mẫu cơ quan"}
           </h2>
-          {choosingNew&&<p className="df-import-stage-description">Dùng phần đầu Hoa tiêu miền Bắc đã thiết lập, hoặc để trống thông tin cơ quan và tự nhập ở Bước 2.</p>}
+          <p className="df-import-stage-description">{choosingNew ? "Dùng phần đầu Hoa tiêu miền Bắc đã thiết lập, hoặc để trống thông tin cơ quan và tự nhập ở Bước 2." : "Chọn mẫu phần đầu sẽ dùng khi xuất tài liệu."}</p>
           <div className="grid grid-cols-1 min-[380px]:grid-cols-2 gap-2" role="group" aria-label="Mẫu cơ quan">
             <button
               type="button"
@@ -640,7 +640,6 @@ export function ImportStepView({
             </span>
           </div>
           <p className="df-import-stage-description">Tải tệp Word hoặc TXT. DocForm sẽ đọc nội dung, nhận diện các thành phần và cho bạn duyệt trước khi soạn.</p>
-          {originalSnapshot?.sourceType==='uploaded_file'&&originalAvailable&&onDownloadOriginal&&<button type="button" data-original-download onClick={onDownloadOriginal} className="self-start mb-3 min-h-10 px-3 border border-slate-300 rounded-lg text-xs font-semibold">Tải tệp gốc · tải lại nguyên vẹn</button>}
 
           <details className="df-import-ai-options" data-testid="ai-partition-consent-panel">
             <summary>Tùy chọn kiểm tra phân vùng bằng AI <span>{aiPartitionConsent?"Đang bật":"Mặc định tắt"}</span></summary>
@@ -697,6 +696,8 @@ export function ImportStepView({
                     </span>
                   </div>
                 </div>
+                <div className="df-import-file-actions">
+                {originalSnapshot?.sourceType==='uploaded_file'&&originalAvailable&&onDownloadOriginal&&<button type="button" data-original-download onClick={onDownloadOriginal} className="px-2.5 py-1 rounded-lg border border-[#CFD8EA] bg-white text-xs font-semibold text-[#17233D]">Tải tệp gốc</button>}
                 <button
                   type="button"
                   disabled={isUploading}
@@ -706,6 +707,7 @@ export function ImportStepView({
                   <RefreshCw className="w-3 h-3 text-[#6255E8]" />
                   <span>Thay tệp</span>
                 </button>
+                </div>
               </div>
 
               <div className="text-[11.5px] text-[#52607A] font-medium mt-1.5 px-1">
@@ -713,43 +715,35 @@ export function ImportStepView({
                 {blocksCount > 0 ? ` · ${blocksCount} khối nguồn` : ""}
               </div>
 
-              <div className="mt-2 border border-[#CFD8EA] rounded-xl overflow-hidden bg-white shadow-2xs flex flex-col">
-                <div className="bg-slate-50 border-b border-[#CFD8EA] px-3 py-1.5 text-xs font-bold text-[#17233D] flex items-center justify-between gap-2">
-                  <span>Xem nhanh nguồn</span>
+              <div className="df-import-source-tools">
+                <details className="df-import-disclosure df-import-source-details">
+                  <summary>Xem nhanh nội dung nguồn <span>Mở khi cần</span></summary>
+                  <div
+                    id="wizard-source-preview"
+                    data-testid="wizard-source-preview"
+                    className="max-h-[220px] overflow-y-auto p-3 text-[13px] leading-relaxed text-[#17233D] custom-scroll bg-white"
+                    style={{ fontFamily: '"Times New Roman", Times, serif' }}
+                  >
+                    {structuredImport?.body?.html ? (
+                      <div className="prose prose-xs max-w-none text-[#17233D]" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(structuredImport.body.html) }} />
+                    ) : doc.bodyHtml ? (
+                      <div className="prose prose-xs max-w-none text-[#17233D]" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(doc.bodyHtml) }} />
+                    ) : (
+                      <p className="italic text-slate-400">Nội dung tệp nguồn đang được đồng bộ hóa.</p>
+                    )}
+                  </div>
+                </details>
                   {onOpenReviewModal && (
                     <button
                       type="button"
                       onClick={onOpenReviewModal}
-                      className="text-[#6255E8] hover:underline font-semibold flex items-center gap-1 cursor-pointer"
+                      className="df-import-review-link"
                     >
                       <span>Đối chiếu nguồn</span>
                       <ExternalLink className="w-3 h-3" />
                     </button>
                   )}
-                </div>
-                <div
-                  id="wizard-source-preview"
-                  data-testid="wizard-source-preview"
-                  className="max-h-[220px] overflow-y-auto p-3 text-[13px] leading-relaxed text-[#17233D] custom-scroll bg-white"
-                  style={{ fontFamily: '"Times New Roman", Times, serif' }}
-                >
-                  {structuredImport?.body?.html ? (
-                    <div
-                      className="prose prose-xs max-w-none text-[#17233D]"
-                      dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(structuredImport.body.html) }}
-                    />
-                  ) : doc.bodyHtml ? (
-                    <div
-                      className="prose prose-xs max-w-none text-[#17233D]"
-                      dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(doc.bodyHtml) }}
-                    />
-                  ) : (
-                    <p className="italic text-slate-400">Nội dung tệp nguồn đang được đồng bộ hóa.</p>
-                  )}
-                </div>
               </div>
-
-              <p className="mt-1.5 text-[11px] text-slate-500">Kéo thả tệp khác để thay nguồn.</p>
             </>
           ) : (
             <>
@@ -922,6 +916,8 @@ export function ImportStepView({
           </div>
         ) : (
           <>
+            <details className="df-import-disclosure df-import-regime-evidence">
+              <summary>Hệ thể thức và chứng cứ <span>{suggestedRegimeText ?? REGIME_LABEL[regime]}</span></summary>
             <dl className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11.5px]">
               <div className="p-2.5 rounded-xl bg-[#F5F6FA] border border-[#CFD8EA] min-w-0">
                 <dt className="text-[10.5px] uppercase tracking-wide text-[#52607A] font-semibold">Hệ bạn chọn</dt>
@@ -976,9 +972,12 @@ export function ImportStepView({
                 {detection.documentType.exactQuote}”
               </p>
             )}
+            </details>
           </>
         )}
 
+        {(profileMismatch || templateMismatch) && <details className="df-import-disclosure df-import-recognition-warnings">
+          <summary>Cần kiểm tra lựa chọn mẫu <span>{Number(profileMismatch) + Number(templateMismatch)} lưu ý</span></summary>
         {profileMismatch && (
           <div
             id="source-mismatch-profile"
@@ -1009,6 +1008,7 @@ export function ImportStepView({
             </span>
           </div>
         )}
+        </details>}
       </section>}
 
       {phase==="ready"&&<section id="df-step1-ready" className="df-import-card df-import-ready" aria-labelledby="df-step1-ready-title">
