@@ -325,7 +325,7 @@ export function ImportStepView({
       <div className="df-step-content" id="df-step1-flow">
       {/* 1. Header */}
       <div className="df-import-heading flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-        <h1 className="text-xl sm:text-2xl font-extrabold text-[#17233D] tracking-tight">Tải &amp; nhận diện</h1>
+        <h1 className="text-xl sm:text-2xl font-extrabold text-[#17233D] tracking-tight">{flow==="create"?"Tạo văn bản mới":"Tải & nhận diện"}</h1>
         <p className="text-xs sm:text-sm text-[#52607A]">{flow==="upload"?"Tải tệp, xem kết quả nhận diện và xác nhận trước khi soạn.":flow==="create"?"Chọn thể thức, loại văn bản và mẫu theo từng bước.":"Bạn muốn bắt đầu từ tệp có sẵn hay tạo một văn bản mới?"}</p>
       </div>
 
@@ -360,9 +360,11 @@ export function ImportStepView({
       {((flow==="create"&&(phase==="regime"||phase==="template"))||(flow==="upload"&&phase==="metadata"))&&<div id="df-step1-regime" className="df-import-choice-grid grid grid-cols-1 lg:grid-cols-2 gap-3">
         {phase!=="template"&&<>
         <section className="df-import-card bg-white rounded-2xl border border-[#CFD8EA] p-3 shadow-2xs" aria-labelledby="wizard-regime-heading">
+          <span className="df-import-stage-kicker">BƯỚC 1 / 4 · TẠO VĂN BẢN</span>
           <h2 id="wizard-regime-heading" className="text-xs sm:text-sm font-bold text-[#17233D] mb-2">
-            1. Hệ thể thức
+            Chọn hệ thể thức
           </h2>
+          <p className="df-import-stage-description">Văn bản của bạn sẽ theo quy định trình bày nào? Lựa chọn này quyết định các mẫu và loại văn bản ở bước tiếp theo.</p>
           <div className="grid grid-cols-1 min-[380px]:grid-cols-2 gap-2" role="group" aria-label="Hệ thể thức">
             <button
               type="button"
@@ -383,6 +385,7 @@ export function ImportStepView({
                   <span className="block text-[10.5px] text-[#52607A]">Nghị định 30</span>
                 </div>
               </div>
+              {choosingNew&&<span className="df-import-regime-detail">Dành cho công văn, quyết định, kế hoạch và các văn bản hành chính.</span>}
               <span
                 className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] shrink-0 ${
                   !choiceIsParty ? "bg-[#6255E8] text-white font-bold" : "border border-slate-300 text-transparent"
@@ -411,6 +414,7 @@ export function ImportStepView({
                   <span className="block text-[10.5px] text-[#52607A]">Hướng dẫn 05</span>
                 </div>
               </div>
+              {choosingNew&&<span className="df-import-regime-detail">Dành cho văn bản của tổ chức Đảng theo Hướng dẫn 05.</span>}
               <span
                 className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] shrink-0 ${
                   choiceIsParty ? "bg-[#6255E8] text-white font-bold" : "border border-slate-300 text-transparent"
@@ -425,8 +429,9 @@ export function ImportStepView({
 
         {phase!=="regime"&&<section className="df-import-card bg-white rounded-2xl border border-[#CFD8EA] p-3 shadow-2xs" aria-labelledby="wizard-profile-heading">
           <h2 id="wizard-profile-heading" className="text-xs sm:text-sm font-bold text-[#17233D] mb-2">
-            Mẫu cơ quan
+            {choosingNew?"Thông tin cơ quan ban hành":"Mẫu cơ quan"}
           </h2>
+          {choosingNew&&<p className="df-import-stage-description">Dùng phần đầu Hoa tiêu miền Bắc đã thiết lập, hoặc để trống thông tin cơ quan và tự nhập ở Bước 2.</p>}
           <div className="grid grid-cols-1 min-[380px]:grid-cols-2 gap-2" role="group" aria-label="Mẫu cơ quan">
             <button
               type="button"
@@ -497,8 +502,9 @@ export function ImportStepView({
       {/* 3. Loại văn bản */}
       {((flow==="create"&&phase==="doctype")||(flow==="upload"&&phase==="metadata"))&&<section id="df-step1-document-type" className="df-import-card bg-white rounded-2xl border border-[#CFD8EA] p-3.5 shadow-2xs" aria-labelledby="wizard-doctype-heading">
         <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1 mb-2">
+          {choosingNew&&<span className="df-import-stage-kicker">BƯỚC 2 / 4 · TẠO VĂN BẢN</span>}
           <h2 id="wizard-doctype-heading" className="text-xs sm:text-sm font-bold text-[#17233D]">
-            {choosingNew?"2. Chọn loại văn bản":"Loại văn bản nhận diện"}
+            {choosingNew?"Bạn muốn tạo loại văn bản nào?":"Loại văn bản nhận diện"}
           </h2>
           {!choosingNew&&sourceDocType && (
             <span className="text-[11px] text-[#52607A]">
@@ -506,8 +512,9 @@ export function ImportStepView({
             </span>
           )}
         </div>
+        {choosingNew&&<p className="df-import-stage-description">Chọn một loại để DocForm hiển thị các mẫu phù hợp với hệ thể thức đã chọn.</p>}
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <div className="df-import-type-grid grid grid-cols-2 sm:grid-cols-4 gap-2">
           {docTypes.map((t) => {
             const isSelected = (choosingNew?draftDocType:doc.documentType || "").toUpperCase() === t.name;
             return (
@@ -626,15 +633,18 @@ export function ImportStepView({
         <div className="df-import-card bg-white rounded-2xl border border-[#CFD8EA] p-3.5 shadow-2xs flex flex-col">
           <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
             <h2 id="wizard-source-heading" className="text-xs sm:text-sm font-bold text-[#17233D]">
-              Tải tài liệu của bạn
+              Chọn tài liệu để bắt đầu
             </h2>
             <span className="text-[10.5px] font-semibold text-[#6255E8] bg-[#EEF0FE] px-2 py-0.5 rounded-full">
               DOCX / TXT
             </span>
           </div>
+          <p className="df-import-stage-description">Tải tệp Word hoặc TXT. DocForm sẽ đọc nội dung, nhận diện các thành phần và cho bạn duyệt trước khi soạn.</p>
           {originalSnapshot?.sourceType==='uploaded_file'&&originalAvailable&&onDownloadOriginal&&<button type="button" data-original-download onClick={onDownloadOriginal} className="self-start mb-3 min-h-10 px-3 border border-slate-300 rounded-lg text-xs font-semibold">Tải tệp gốc · tải lại nguyên vẹn</button>}
 
-          <div className="mb-2.5 rounded-xl border border-[#CFD8EA] bg-[#F8F9FD] p-2.5" data-testid="ai-partition-consent-panel">
+          <details className="df-import-ai-options" data-testid="ai-partition-consent-panel">
+            <summary>Tùy chọn kiểm tra phân vùng bằng AI <span>{aiPartitionConsent?"Đang bật":"Mặc định tắt"}</span></summary>
+            <div>
             <label className="flex items-start gap-2 text-xs font-semibold text-[#17233D] cursor-pointer">
               <input
                 type="checkbox"
@@ -668,7 +678,8 @@ export function ImportStepView({
                 )}
               </div>
             )}
-          </div>
+            </div>
+          </details>
 
           {hasUploadedSource ? (
             <>
@@ -742,9 +753,6 @@ export function ImportStepView({
             </>
           ) : (
             <>
-              <p className="text-xs text-[#52607A] mb-2 leading-relaxed">
-                Mở tệp Word hoặc văn bản để nhận diện các phần và đối chiếu với nội dung nguồn.
-              </p>
               <button
                 type="button"
                 disabled={isUploading}
@@ -786,8 +794,9 @@ export function ImportStepView({
 
         </>}
         {flow==="create"&&<div id="df-step1-template" className="df-import-card bg-white rounded-2xl border border-[#CFD8EA] p-3.5 shadow-2xs flex flex-col">
-          <h2 className="text-xs sm:text-sm font-bold text-[#17233D]">3. Chọn mẫu cho {draftDocType.toLowerCase()}</h2>
-          <p className="text-xs text-[#52607A] mt-0.5 mb-2">Chọn mẫu nội dung có sẵn hoặc tạo bản trắng. Mẫu cơ quan được áp dụng theo lựa chọn phía trên.</p>
+          <span className="df-import-stage-kicker">BƯỚC 3 / 4 · TẠO VĂN BẢN</span>
+          <h2 className="text-xs sm:text-sm font-bold text-[#17233D]">Bắt đầu {draftDocType.toLowerCase()} từ đâu?</h2>
+          <p className="df-import-stage-description">Chọn mẫu nội dung có sẵn hoặc trang trắng. Sau khi tạo, bạn có thể chỉnh sửa ở Bước 2.</p>
 
           <div className="space-y-2">
             <button type="button" onClick={()=>createFromChoice()} className="df-import-blank-template"><span className="w-8 h-8 rounded-lg bg-indigo-50 text-[#6255E8] flex items-center justify-center shrink-0"><Plus className="w-4 h-4"/></span><span><strong>Văn bản trắng</strong><small>Chỉ thiết lập thể thức và loại; nội dung, người ký và số hiệu để bạn tự soạn.</small></span><ArrowRight size={17}/></button>
@@ -819,7 +828,7 @@ export function ImportStepView({
 
           <div className="mt-auto pt-2 border-t border-[#CFD8EA] text-[11px] text-[#52607A] flex items-center gap-1.5">
             <Info className="w-3.5 h-3.5 text-[#6255E8] shrink-0" />
-            <span>Mẫu chuẩn áp dụng sẵn phông Times New Roman {isParty ? "14pt" : "13pt"}.</span>
+            <span>Mẫu chuẩn áp dụng sẵn phông Times New Roman {draftRegime === "party" ? "14pt" : "13pt"}.</span>
           </div>
         </div>}
       </section>}
@@ -829,7 +838,7 @@ export function ImportStepView({
         <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
           <h2 id="wizard-detection-heading" className="text-xs sm:text-sm font-bold text-[#17233D] flex items-center gap-1.5">
             <ShieldCheck className="w-4 h-4 text-[#0D9488]" />
-            4. Nhận diện thể thức
+            Kết quả nhận diện tài liệu
           </h2>
           {detection && (
             <span className="text-[10.5px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-[#52607A]">
@@ -1016,6 +1025,7 @@ export function ImportStepView({
 
       {flow&&phase!=="choice"&&<div className="df-wizard-actions df-import-actions">
         <button type="button" className="df-import-back" onClick={()=>setPhase(phase==="upload"||phase==="regime"?"choice":phase==="recognition"?"upload":phase==="metadata"?"recognition":phase==="doctype"?"regime":phase==="template"?"doctype":flow==="upload"?"metadata":"template")}><ArrowLeft size={15}/> Quay lại</button>
+        <span className="df-import-action-hint">{phase==="regime"?`Đang chọn: ${draftRegime==="party"?"Văn bản Đảng · Hướng dẫn 05":"Văn bản hành chính · Nghị định 30"}`:phase==="doctype"?draftDocType?`Đã chọn: ${draftDocType}`:"Chọn một loại văn bản để tiếp tục":phase==="template"?`Thể thức ${draftRegime==="party"?"Đảng":"hành chính"} · ${draftDocType}`:phase==="upload"?"Tệp DOCX hoặc TXT · dữ liệu nguồn được giữ để đối chiếu":""}</span>
         {phase==="upload"&&<button type="button" className="df-import-forward" disabled={!hasUploadedSource||isUploading} onClick={()=>setPhase("recognition")}>Xem kết quả nhận diện <ArrowRight size={16}/></button>}
         {phase==="recognition"&&<button type="button" className="df-import-forward" onClick={()=>setPhase("metadata")}>Xác nhận thông tin <ArrowRight size={16}/></button>}
         {phase==="metadata"&&<button type="button" className="df-import-forward" disabled={!doc.documentType} onClick={()=>setPhase("ready")}>Xem tóm tắt <ArrowRight size={16}/></button>}

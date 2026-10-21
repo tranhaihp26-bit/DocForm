@@ -500,3 +500,307 @@
   .df-import-step .df-import-group:nth-child(5),
   .df-import-step .df-import-group:nth-child(6) { grid-column: auto; }
 }
+
+/* Step 1 is a short guided task, so keep its choices readable at desktop width. */
+.df-import-step > .df-step-content {
+  width: 100%;
+  max-width: 1120px;
+  margin-inline: auto;
+  gap: 20px;
+}
+
+.df-import-step .df-import-heading {
+  padding: 4px 0 0;
+}
+
+.df-import-step .df-import-heading h1 {
+  font-size: clamp(1.6rem, 2vw, 2rem);
+}
+
+.df-import-step .df-import-heading p {
+  flex: 0 1 auto;
+  max-width: 520px;
+  font-size: 13px;
+}
+
+.df-import-step .df-import-flow-progress {
+  min-height: 64px;
+  gap: 16px;
+  padding: 12px 20px;
+  border-radius: 16px;
+  box-shadow: 0 4px 16px rgb(25 43 77 / 3%);
+}
+
+.df-import-step .df-import-flow-progress > span {
+  gap: 9px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.df-import-step .df-import-flow-progress > span b {
+  width: 28px;
+  height: 28px;
+  font-size: 12px;
+}
+
+.df-import-step .df-import-flow-progress > button {
+  min-height: 36px;
+  padding: 0 9px;
+  border-radius: 9px;
+  font-size: 12px;
+}
+
+.df-import-step .df-import-flow-progress > button:hover,
+.df-import-step .df-import-flow-progress > button:focus-visible {
+  background: #f0efff;
+}
+
+.df-import-stage-kicker {
+  display: block;
+  margin-bottom: 10px;
+  color: #6255e8;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .08em;
+}
+
+.df-import-stage-description {
+  max-width: 68ch;
+  margin: 8px 0 24px;
+  color: #66738c;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.df-import-step[data-flow-phase="regime"] #df-step1-regime > section,
+.df-import-step[data-flow-phase="doctype"] #df-step1-document-type {
+  min-height: 380px;
+  padding: clamp(24px, 3vw, 42px);
+}
+
+.df-import-step[data-flow-phase="regime"] #df-step1-regime > section {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.df-import-step[data-flow-phase="regime"] #wizard-regime-heading,
+.df-import-step[data-flow-phase="doctype"] #wizard-doctype-heading,
+.df-import-step[data-flow-phase="template"] #df-step1-template h2 {
+  margin: 0;
+  font-size: clamp(20px, 2vw, 26px);
+  line-height: 1.25;
+}
+
+.df-import-step[data-flow-phase="regime"] #df-step1-regime > section > div[role="group"] {
+  gap: 18px;
+}
+
+.df-import-step[data-flow-phase="regime"] #df-step1-regime > section > div[role="group"] > button {
+  position: relative;
+  flex-direction: column;
+  min-height: 154px;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 12px;
+  padding: 24px;
+  border-radius: 16px;
+}
+
+.df-import-step[data-flow-phase="regime"] .df-import-regime-detail {
+  max-width: 42ch;
+  color: #66738c;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.df-import-step[data-flow-phase="regime"] #df-step1-regime > section > div[role="group"] > button > span:last-child {
+  position: absolute;
+  top: 24px;
+  right: 24px;
+}
+
+.df-import-step[data-flow-phase="regime"] #df-step1-regime > section > div[role="group"] > button > div {
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.df-import-step[data-flow-phase="regime"] #df-step1-regime > section > div[role="group"] > button > div > span {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+}
+
+.df-import-step[data-flow-phase="regime"] #df-step1-regime > section > div[role="group"] > button > div > span svg {
+  width: 22px;
+  height: 22px;
+}
+
+.df-import-step[data-flow-phase="regime"] #df-step1-regime > section > div[role="group"] > button .block.text-xs {
+  margin-top: 3px;
+  font-size: 16px;
+}
+
+.df-import-step[data-flow-phase="regime"] #df-step1-regime > section > div[role="group"] > button .text-\[10\.5px\] {
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+.df-import-step[data-flow-phase="doctype"] #df-step1-document-type > div:first-child {
+  display: block;
+}
+
+.df-import-step[data-flow-phase="doctype"] #df-step1-document-type > .df-import-type-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.df-import-step[data-flow-phase="doctype"] .df-import-type-grid > button {
+  min-height: 86px;
+  padding: 15px 18px;
+  border-radius: 13px;
+}
+
+.df-import-step[data-flow-phase="doctype"] .df-import-type-grid > button .text-xs {
+  font-size: 14px;
+}
+
+.df-import-step[data-flow-phase="doctype"] .df-import-type-grid > button > span {
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.df-import-step[data-flow-phase="regime"] #df-step1-regime button:hover,
+.df-import-step[data-flow-phase="doctype"] .df-import-type-grid > button:hover {
+  border-color: #6255e8;
+  box-shadow: 0 8px 22px rgb(98 85 232 / 9%);
+}
+
+.df-import-step .df-import-actions {
+  gap: 14px;
+  margin-top: 0;
+  padding: 18px 22px;
+  border: 1px solid #e1e7f1;
+  border-radius: 15px;
+  background: #fff;
+  box-shadow: 0 4px 16px rgb(25 43 77 / 3%);
+}
+
+.df-import-step .df-import-action-hint {
+  flex: 1;
+  color: #66738c;
+  font-size: 12px;
+  text-align: center;
+}
+
+.df-import-step .df-import-back,
+.df-import-step .df-import-forward {
+  min-height: 46px;
+  padding-inline: 18px;
+  font-size: 13px;
+}
+
+.df-import-step[data-flow-phase="template"] #df-step1-regime {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.df-import-step[data-flow-phase="template"] #df-step1-regime > section {
+  padding: 24px 26px;
+}
+
+.df-import-step[data-flow-phase="template"] #wizard-profile-heading {
+  margin: 0;
+  font-size: 18px;
+}
+
+.df-import-step[data-flow-phase="template"] #df-step1-regime .df-import-stage-description {
+  margin-bottom: 16px;
+}
+
+.df-import-step[data-flow-phase="template"] #df-step1-regime button {
+  min-height: 78px;
+  padding: 14px;
+}
+
+.df-import-step[data-flow-phase="template"] #df-step1-template {
+  padding: 26px;
+}
+
+.df-import-step[data-flow-phase="template"] #df-step1-template .space-y-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.df-import-step[data-flow-phase="template"] #df-step1-template .space-y-2 > * {
+  min-height: 92px;
+  margin: 0;
+  padding: 16px;
+}
+
+.df-import-step[data-flow-phase="template"] #df-step1-template .space-y-2 > .df-import-blank-template {
+  grid-column: 1 / -1;
+}
+
+.df-import-step[data-flow-phase="upload"] #df-step1-source > .df-import-card {
+  padding: 28px;
+}
+
+.df-import-step[data-flow-phase="upload"] #wizard-source-heading {
+  font-size: 22px;
+}
+
+.df-import-step[data-flow-phase="upload"] .df-import-stage-description {
+  margin-bottom: 20px;
+}
+
+.df-import-step .df-import-ai-options {
+  margin: 16px 0;
+  padding: 0;
+  border: 1px solid #e1e7f1;
+  border-radius: 11px;
+  background: #f8f9fd;
+}
+
+.df-import-step .df-import-ai-options > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  color: #33425e;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  list-style: none;
+}
+
+.df-import-step .df-import-ai-options > summary::-webkit-details-marker { display: none; }
+.df-import-step .df-import-ai-options > summary::before { content: "›"; color: #6255e8; font-size: 19px; line-height: 12px; }
+.df-import-step .df-import-ai-options[open] > summary::before { transform: rotate(90deg); }
+.df-import-step .df-import-ai-options > summary span { margin-left: auto; color: #8290a5; font-size: 11px; font-weight: 600; }
+.df-import-step .df-import-ai-options > div { padding: 4px 14px 14px; }
+
+.df-import-step[data-flow-phase="upload"] .df-upload-dropzone {
+  min-height: 220px;
+  border-width: 1.5px;
+  background: #f5f4ff;
+}
+
+.df-import-step[data-flow-phase="upload"] .df-upload-dropzone strong { font-size: 16px; }
+.df-import-step[data-flow-phase="upload"] .df-upload-icon { width: 50px; height: 50px; }
+
+@media (max-width: 800px) {
+  .df-import-step .df-import-flow-progress { gap: 9px; padding: 10px 12px; }
+  .df-import-step .df-import-flow-progress > span { font-size: 0; }
+  .df-import-step .df-import-flow-progress > span.is-current { font-size: 11px; }
+  .df-import-step[data-flow-phase="regime"] #df-step1-regime > section > div[role="group"],
+  .df-import-step[data-flow-phase="doctype"] #df-step1-document-type > .df-import-type-grid,
+  .df-import-step[data-flow-phase="template"] #df-step1-template .space-y-2 { grid-template-columns: minmax(0, 1fr); }
+  .df-import-step[data-flow-phase="regime"] #df-step1-regime > section,
+  .df-import-step[data-flow-phase="doctype"] #df-step1-document-type { min-height: 0; padding: 22px; }
+  .df-import-step[data-flow-phase="regime"] #df-step1-regime > section > div[role="group"] > button { min-height: 106px; padding: 16px; }
+  .df-import-step .df-import-action-hint { order: -1; flex-basis: 100%; text-align: left; }
+  .df-import-step[data-flow-phase="upload"] #df-step1-source > .df-import-card { padding: 18px; }
+  .df-import-step[data-flow-phase="upload"] .df-upload-dropzone { min-height: 172px; }
+}
