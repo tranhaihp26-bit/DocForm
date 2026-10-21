@@ -1876,22 +1876,22 @@ export default function App() {
   const canEnterStep=(step:1|2|3)=>step===1||sourceChosen&&canEnterWorkspaceStep(workspaceSnapshot,step)&&(step!==3||canExportSource);
   const stepIsComplete=(step:1|2|3)=>step===1?sourceChosen&&canEnterWorkspaceStep(workspaceSnapshot,2):step===2?canExportSource:Boolean(visibleCandidate?.downloadable);
 
-  const sidebarItems: Array<{ id: string; label: string; selector?: string }> = currentStep === 1
-    ? [
-        { id: "df-step1-flow", label: "Chọn nguồn và thiết lập" },
-      ]
-    : currentStep === 2
-      ? [
-          { id: "df-step2-groups-before", label: "Phần đầu · Nhóm 01–05" },
-          { id: "df-step2-body", label: "Nội dung văn bản · Body" },
-          { id: "df-step2-groups-after", label: "Phần cuối · Nhóm 07–09" },
-          { id: "df-step2-appendices", label: `Phụ lục (${doc.appendices?.length ?? 0})` },
-        ]
-      : [
-          { id: "df-step3-preview", label: "Duyệt trang DOCX" },
-          { id: "df-step3-reference", label: "Đối chiếu Body nguồn" },
-          { id: "df-step3-export", label: "Tải xuống / in" },
-        ];
+  const sidebarItemsByStep: Record<1 | 2 | 3, Array<{ id: string; label: string; selector?: string }>> = {
+    1: [
+      { id: "df-step1-flow", label: "Chọn nguồn và thiết lập" },
+    ],
+    2: [
+      { id: "df-step2-groups-before", label: "Phần đầu · Nhóm 01–05" },
+      { id: "df-step2-body", label: "Nội dung văn bản · Body" },
+      { id: "df-step2-groups-after", label: "Phần cuối · Nhóm 07–09" },
+      { id: "df-step2-appendices", label: `Phụ lục (${doc.appendices?.length ?? 0})` },
+    ],
+    3: [
+      { id: "df-step3-preview", label: "Duyệt trang DOCX" },
+      { id: "df-step3-reference", label: "Đối chiếu Body nguồn" },
+      { id: "df-step3-export", label: "Tải xuống / in" },
+    ],
+  };
   const [activeTocTarget, setActiveTocTarget] = useState("");
   useEffect(() => {
     setActiveTocTarget(currentStep === 1 ? "df-step1-flow" : currentStep === 2 ? "df-step2-groups-before" : "df-step3-preview");
@@ -2902,11 +2902,11 @@ export default function App() {
   return (
     <div data-current-step={currentStep} className="min-h-screen df-app-shell text-[#17233D] flex flex-col font-sans select-text">
 
-      {/* 1. TOP APPLICATION BAR (SINGLE-ROW ON WIDE DESKTOP ~56PX, 2-ROW ON NARROW/TABLET ~80PX) */}
+      {/* Application bar: document identity, save status, and tools. */}
       <header className="df-glass-header text-[#17233D] px-3 sm:px-6 py-1.5 xl:py-0 z-30 sticky top-0 border-b border-slate-200/80 w-full bg-white/85 backdrop-blur-md shrink-0">
-        <div className="df-header-row w-full flex flex-col xl:flex-row xl:items-center xl:justify-between min-h-[56px] xl:h-14 gap-1 xl:gap-3">
+        <div className="df-header-row w-full flex items-center justify-between min-h-[56px] xl:h-14 gap-3">
 
-          {/* Group 1 (Row 1 on narrow, Left on wide desktop): Brand + Filename + (Save & Tools on narrow) */}
+          {/* Brand, filename, and compact controls on narrow screens. */}
           <div className="flex items-center justify-between xl:justify-start gap-2.5 min-w-0 h-9 xl:h-10 shrink-0">
             <div className="flex items-center gap-2 shrink-0">
               <div className="w-7 h-7 xl:w-8 xl:h-8 rounded-xl bg-gradient-to-tr from-[#6255E8] to-[#3979E8] text-white shadow-xs flex items-center justify-center shrink-0">
@@ -2950,34 +2950,7 @@ export default function App() {
             </div>
           </div>
 
-          <nav aria-label="Tiến trình 3 bước" className="df-header-stepper">
-            {([
-              { step: 1, label: "Tải & nhận diện" },
-              { step: 2, label: "Soạn & kiểm tra" },
-              { step: 3, label: "Xem & xuất" },
-            ] as const).map((item, index) => (
-              <React.Fragment key={item.step}>
-                {index > 0 && <span className="df-stepper-connector" aria-hidden="true" />}
-                <button
-                  type="button"
-                  aria-label={`Bước ${item.step}: ${item.label}`}
-                  aria-current={currentStep === item.step ? "step" : undefined}
-                  aria-disabled={!canEnterStep(item.step) || undefined}
-                  data-step={item.step}
-                  data-step-complete={String(stepIsComplete(item.step))}
-                  data-step-allowed={String(canEnterStep(item.step))}
-                  onClick={() => goToStep(item.step)}
-                >
-                  <span className="df-step-index" aria-hidden="true">
-                    {stepIsComplete(item.step) ? "✓" : item.step}
-                  </span>
-                  <span>{item.label}</span>
-                </button>
-              </React.Fragment>
-            ))}
-          </nav>
-
-          {/* Group 3 (Right on wide desktop >= xl): Step Navigation + Save Status + Tools */}
+          {/* Group 3 (Right on wide desktop >= xl): Save Status + Tools */}
           <div className="df-header-actions hidden xl:flex items-center gap-2.5 shrink-0 justify-end">
 
             <div
@@ -3023,31 +2996,67 @@ export default function App() {
       )}
 
       <div className="df-workspace-layout" data-current-step={currentStep}>
-        <nav aria-label={`Mục lục Bước ${currentStep}`} className="df-workspace-sidebar">
+        <nav aria-label="Quy trình xử lý và mục lục" className="df-workspace-sidebar">
           <p className="df-sidebar-eyebrow">QUY TRÌNH XỬ LÝ</p>
-          <div className="df-sidebar-step-title">
-            <span className="df-sidebar-step-index" aria-hidden="true">{currentStep}</span>
-            <div>
-              <strong>{currentStep === 1 ? "Tải & nhận diện" : currentStep === 2 ? "Soạn & kiểm tra" : "Xem & xuất"}</strong>
-              <small>Bước {currentStep} / 3</small>
-            </div>
+          <div className="df-sidebar-steps">
+            {([
+              { step: 1, label: "Tải & nhận diện" },
+              { step: 2, label: "Soạn & kiểm tra" },
+              { step: 3, label: "Xem & xuất" },
+            ] as const).map(({ step, label }) => {
+              const active = currentStep === step;
+              const complete = stepIsComplete(step);
+              return (
+                <section className="df-sidebar-step" data-active={active} key={step}>
+                  <button
+                    type="button"
+                    className="df-sidebar-step-button"
+                    aria-label={`Bước ${step}: ${label}`}
+                    aria-current={active ? "step" : undefined}
+                    aria-expanded={active}
+                    aria-controls={`df-sidebar-step-panel-${step}`}
+                    aria-disabled={!canEnterStep(step) || undefined}
+                    data-step={step}
+                    data-step-complete={String(complete)}
+                    data-step-allowed={String(canEnterStep(step))}
+                    onClick={() => goToStep(step)}
+                  >
+                    <span className="df-sidebar-step-index" aria-hidden="true">{complete && !active ? "✓" : step}</span>
+                    <span className="df-sidebar-step-copy">
+                      <strong>{label}</strong>
+                      <small>{active ? `Bước ${step} / 3` : complete ? "Đã hoàn thành" : `Bước ${step} / 3`}</small>
+                    </span>
+                    <ChevronRight className="df-sidebar-step-chevron" aria-hidden="true" size={16} />
+                  </button>
+                  <div
+                    className="df-sidebar-step-panel"
+                    id={`df-sidebar-step-panel-${step}`}
+                    aria-hidden={!active}
+                    inert={!active}
+                  >
+                    <div className="df-sidebar-step-panel-inner">
+                      <ol className="df-step-toc">
+                        {sidebarItemsByStep[step].map(item => (
+                          <li key={item.id}>
+                            <button
+                              type="button"
+                              aria-controls={item.id}
+                              aria-current={activeTocTarget === item.id ? "location" : undefined}
+                              data-toc-target={item.id}
+                              onClick={() => scrollToTocItem(item)}
+                            >
+                              <span aria-hidden="true" />
+                              <span>{item.label}</span>
+                            </button>
+                          </li>
+                        ))}
+                      </ol>
+                    </div>
+                  </div>
+                </section>
+              );
+            })}
           </div>
-          <ol className="df-step-toc">
-            {sidebarItems.map(item => (
-              <li key={item.id}>
-                <button
-                  type="button"
-                  aria-controls={item.id}
-                  aria-current={activeTocTarget === item.id ? "location" : undefined}
-                  data-toc-target={item.id}
-                  onClick={() => scrollToTocItem(item)}
-                >
-                  <span aria-hidden="true" />
-                  <span>{item.label}</span>
-                </button>
-              </li>
-            ))}
-          </ol>
           <div className="df-sidebar-current" role="status">
             <strong>Màn hình hiện tại · Bước {currentStep}</strong>
             <span>{currentStep === 1
