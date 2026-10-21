@@ -38,7 +38,7 @@ export function WorkspaceExport({candidate,pending,error,onPrepare,onDownload,on
    <div>
     <p className="df-step3-eyebrow">BƯỚC 3 · HOÀN TẤT VĂN BẢN</p>
     <h1>Xem &amp; xuất</h1>
-    <p className="df-step3-subtitle">Duyệt bản DOCX ứng viên theo trang A4, sau đó tải xuống hoặc in.</p>
+    <p className="df-step3-subtitle">Xem bản dựng DOCX trong trình duyệt, sau đó tải xuống và kiểm tra phân trang trong Word.</p>
    </div>
    <button type="button" className="df-step3-context-toggle" aria-expanded={contextOpen} aria-controls="df-step3-context-panel" onClick={()=>setContextOpen(open=>!open)}>
     {contextOpen?'Ẩn thông tin xuất':'Thông tin xuất'}
@@ -53,7 +53,6 @@ export function WorkspaceExport({candidate,pending,error,onPrepare,onDownload,on
        <h2 id="df-step3-preview-title">Bản ứng viên hiện tại</h2>
        <p>{candidate?`${regimeLabel} · revision ${candidate.revision}`:'Tạo và kiểm ứng viên từ nội dung đã duyệt để xem trước.'}</p>
       </div>
-      {candidate&&<span className={`df-step3-status-pill ${candidate.safe?'is-safe':'is-blocked'}`} role="status">{candidate.safe?'Ứng viên đã qua đối chiếu':candidate.downloadable?'Có cảnh báo đối chiếu':'Không tạo được DOCX'}</span>}
      </div>
 
      {!candidate&&<div className="df-step3-empty-state">
@@ -61,13 +60,6 @@ export function WorkspaceExport({candidate,pending,error,onPrepare,onDownload,on
       <p>{pending?'Đang tạo và kiểm ứng viên…':'Tạo ứng viên để dựng bản xem từ đúng DOCX sẽ tải xuống.'}</p>
       <button type="button" onClick={onPrepare} disabled={pending}>{pending?'Đang kiểm…':'Tạo và kiểm DOCX ứng viên'}</button>
      </div>}
-     {candidate&&!candidate.safe&&<div className="df-step3-blocked-state" role="alert">
-      <h3>{candidate.downloadable?'Cảnh báo trước khi xuất':'Không tạo được DOCX ứng viên'}</h3>
-      <p>{candidate.downloadable?'Bạn vẫn có thể xem, tải DOCX hoặc in. Các khác biệt dưới đây chưa được chứng minh bảo toàn; hãy đối chiếu tệp gốc và bản xuất trước khi phát hành.':'Không có tệp DOCX hợp lệ để tải. Hãy tạo lại ứng viên.'}</p>
-      <ul>{warningReasons.map((reason,i)=><li key={i}>{reason}</li>)}</ul>
-      {actions.length>0&&<nav className="df-step3-blocker-actions" aria-label="Đối chiếu cảnh báo">{actions.map(({action,targetId},i)=><button type="button" key={i} onClick={()=>action==='review_source'?onReviewSource():action==='edit_target'?onEditTarget(targetId):onDownloadOriginal()}>{action==='review_source'?'Đối chiếu nguồn':action==='edit_target'?'Mở vị trí cần sửa':'Tải tệp gốc'}</button>)}</nav>}
-     </div>}
-     {candidate?.safe&&candidate.profileHeaderLines>0&&<p className="df-step3-reference-notice">Phần đầu đã dùng mẫu Hoa Tiêu chuẩn. Đường kẻ trong tệp gốc được thay bằng Shape của mẫu; hãy đối chiếu bản xem trước khi phát hành.</p>}
      {candidate?.downloadable&&mode==='candidate'&&previewBytes&&<CandidateDocumentPreview bytes={previewBytes} sha256={candidate.sha256} instanceId={candidate.instanceId}/>}
     </section>
 
@@ -93,13 +85,6 @@ export function WorkspaceExport({candidate,pending,error,onPrepare,onDownload,on
      </div>}
     </section>
 
-    {candidate&&<details className="df-step3-evidence" data-candidate-evidence data-candidate-sha={candidate.sha256} data-candidate-instance={candidate.instanceId}>
-     <summary>Bằng chứng kiểm tra ứng viên</summary>
-     <p className="df-ws-hash">SHA-256: {candidate.sha256}</p>
-     <p>Instance: {candidate.instanceId} · revision: {candidate.revision}</p>
-     <pre>{JSON.stringify({warnings:candidate.blockers,downloadable:candidate.downloadable,table:candidate.tableFidelity.safe,content:candidate.contentFidelity.safe,safety:candidate.exportSafety.decision,profileHeaderLines:candidate.profileHeaderLines,evidence:candidate.evidence},null,2)}</pre>
-    </details>}
-    {error&&<p className="df-step3-error" role="alert">{error}</p>}
    </div>
 
    <aside id="df-step3-context-panel" className="df-step-context" aria-label="Trạng thái và thao tác xuất">
@@ -112,9 +97,22 @@ export function WorkspaceExport({candidate,pending,error,onPrepare,onDownload,on
        <li><span>Đối chiếu nội dung</span><strong data-gate-state={candidate.contentFidelity.safe?'safe':'blocked'}>{candidate.contentFidelity.safe?'Đã qua':'Cảnh báo'}</strong></li>
        <li><span>Đối chiếu an toàn</span><strong data-gate-state={candidate.exportSafety.decision==='allow'?'safe':'blocked'}>{candidate.exportSafety.decision==='allow'?'Đã qua':'Cảnh báo'}</strong></li>
       </ul>
+      {candidate&&!candidate.safe&&<section className="df-step3-warning-panel" role="alert" aria-labelledby="df-step3-warning-title">
+       <h3 id="df-step3-warning-title">{candidate.downloadable?'Cảnh báo đối chiếu':'Không tạo được DOCX ứng viên'}</h3>
+       <p>{candidate.downloadable?'Bạn vẫn có thể xem, tải hoặc in. Hãy đối chiếu bản xuất với tệp gốc trước khi phát hành.':'Không có DOCX hợp lệ để tải. Hãy tạo lại ứng viên.'}</p>
+       {warningReasons.length>0&&<details className="df-step3-warning-details"><summary>{warningReasons.length} nội dung cần kiểm tra</summary><ul>{warningReasons.map((reason,i)=><li key={i}>{reason}</li>)}</ul></details>}
+       {actions.length>0&&<nav className="df-step3-blocker-actions" aria-label="Đối chiếu cảnh báo">{actions.map(({action,targetId},i)=><button type="button" key={i} onClick={()=>action==='review_source'?onReviewSource():action==='edit_target'?onEditTarget(targetId):onDownloadOriginal()}>{action==='review_source'?'Đối chiếu nguồn':action==='edit_target'?'Mở vị trí cần sửa':'Tải tệp gốc'}</button>)}</nav>}
+      </section>}
+      <p className="df-step3-reference-notice">Bản xem trình duyệt chỉ chia vùng theo ngắt trang, có thể không hiện đường kẻ Shape và không xác nhận số trang trong Word. Hãy kiểm tra DOCX trong Word trước khi phát hành.</p>
+      {candidate.profileHeaderLines>0&&<p className="df-step3-reference-notice">Phần đầu dùng Shape của mẫu Hoa Tiêu. Hãy kiểm tra các đường kẻ trong Word.</p>}
       <p className="df-step3-candidate-inventory">{tableCount} bảng · {appendixCount} phụ lục · {regimeLabel}</p>
       <details className="df-step3-candidate-identity"><summary>SHA-256 và phiên bản</summary><code>{candidate.sha256}</code><span>revision {candidate.revision} · {candidate.instanceId}</span></details>
+      <details className="df-step3-evidence" data-candidate-evidence data-candidate-sha={candidate.sha256} data-candidate-instance={candidate.instanceId}>
+       <summary>Bằng chứng kiểm tra ứng viên</summary>
+       <pre>{JSON.stringify({warnings:candidate.blockers,downloadable:candidate.downloadable,table:candidate.tableFidelity.safe,content:candidate.contentFidelity.safe,safety:candidate.exportSafety.decision,profileHeaderLines:candidate.profileHeaderLines,evidence:candidate.evidence},null,2)}</pre>
+      </details>
      </>}
+     {error&&<p className="df-step3-error" role="alert">{error}</p>}
     </section>
 
     <section id="df-step3-export" className="df-step3-context-card df-step3-export-card" aria-labelledby="df-step3-export-title">
@@ -122,8 +120,8 @@ export function WorkspaceExport({candidate,pending,error,onPrepare,onDownload,on
      <button type="button" className="df-step3-prepare-button" onClick={onPrepare} disabled={pending}>{pending?'Đang kiểm…':candidate?'Kiểm tra lại ứng viên':'Tạo và kiểm DOCX ứng viên'}</button>
      {candidate?.downloadable?<>
       <button type="button" className="df-step3-download-button" data-candidate-download data-candidate-sha={candidate.sha256} data-candidate-instance={candidate.instanceId} onClick={onDownload}>Tải xuống DOCX</button>
-      <button type="button" className="df-step3-print-button" data-candidate-print data-candidate-sha={candidate.sha256} data-candidate-instance={candidate.instanceId} onClick={onPrintCandidate}>In / Lưu PDF bằng trình duyệt</button>
-      <p className="df-step3-export-note">{candidate.safe?'Bản in dùng đúng DOCX ứng viên hiện hành. Hãy kiểm tra phân trang trong Word trước khi phát hành.':'Tệp có cảnh báo đối chiếu. Hãy so với tệp gốc và kiểm tra trong Word trước khi phát hành.'}</p>
+      <button type="button" className="df-step3-print-button" data-candidate-print data-candidate-sha={candidate.sha256} data-candidate-instance={candidate.instanceId} onClick={onPrintCandidate}>In bản xem / Lưu PDF tham khảo</button>
+      <p className="df-step3-export-note">{candidate.safe?'Bản in trình duyệt chỉ mang tính tham khảo. Hãy kiểm tra phân trang trong Word trước khi phát hành.':'Tệp có cảnh báo đối chiếu; bản in trình duyệt chỉ mang tính tham khảo. Hãy kiểm tra trong Word trước khi phát hành.'}</p>
      </>:<p className="df-step3-export-note">Tạo DOCX ứng viên hợp lệ để tải hoặc in.</p>}
      {originalAvailable&&<button type="button" className="df-step3-original-button" data-original-download onClick={onDownloadOriginal}>Tải tệp gốc nguyên vẹn</button>}
      <button type="button" className="df-step3-back-button" onClick={onPrev}>Quay lại Bước 2</button>

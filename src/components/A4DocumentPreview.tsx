@@ -913,7 +913,7 @@ export const A4DocumentPreview: React.FC<A4DocumentPreviewProps> = ({
   );
 };
 
-/** Main Workspace preview: consumes validated bytes; never composes or regenerates a DOCX. */
+/** Main Workspace browser preview: consumes candidate bytes without claiming Word pagination. */
 export const CandidateDocumentPreview=React.memo(function CandidateDocumentPreview({bytes,sha256,instanceId}:{bytes:Uint8Array;sha256:string;instanceId:string}) {
   const host=useRef<HTMLDivElement>(null);
   const viewport=useRef<HTMLDivElement>(null);
@@ -987,14 +987,14 @@ export const CandidateDocumentPreview=React.memo(function CandidateDocumentPrevi
   },[]);
   const setRelativeZoom=(direction:-1|1)=>setZoomScale(Math.min(1.5,Math.max(.35,scale+direction*.1)));
   return <section className="df-candidate-preview" data-candidate-preview data-preview-bytes-sha={renderedSha||undefined} data-candidate-sha={sha256} data-candidate-instance={instanceId} data-preview-page-count={ready?geometry?.pageCount:undefined} aria-label="Bản xem DOCX ứng viên">
-      <p className="df-candidate-preview-note">Bản xem được dựng từ DOCX ứng viên hiện hành. Cần đối chiếu phân trang bản in trước khi phát hành.</p>
+      <p className="df-candidate-preview-note">Bản xem được dựng từ DOCX ứng viên hiện hành.</p>
       {!ready&&!error&&<p role="status">Đang dựng bản xem từ DOCX ứng viên…</p>}
     {error&&<p role="alert">Không dựng được bản xem: {error}. Không thay bằng bản dựng khác.</p>}
     <div className="df-candidate-preview-toolbar" role="toolbar" aria-label="Điều hướng trang và thu phóng">
       <div className="df-candidate-page-nav">
-        <button type="button" data-preview-prev aria-label="Trang trước" disabled={!ready||currentPage<=1} onClick={()=>goToPage(currentPage-2)}>‹</button>
-        <span aria-live="polite">Trang <strong>{ready?currentPage:'—'}</strong> / {ready?geometry?.pageCount??0:'—'}</span>
-        <button type="button" data-preview-next aria-label="Trang sau" disabled={!ready||currentPage>=(geometry?.pageCount??0)} onClick={()=>goToPage(currentPage)}>›</button>
+        <button type="button" data-preview-prev aria-label="Vùng xem trước" disabled={!ready||currentPage<=1} onClick={()=>goToPage(currentPage-2)}>‹</button>
+        <span aria-live="polite">Vùng xem <strong>{ready?currentPage:'—'}</strong> / {ready?geometry?.pageCount??0:'—'}</span>
+        <button type="button" data-preview-next aria-label="Vùng xem sau" disabled={!ready||currentPage>=(geometry?.pageCount??0)} onClick={()=>goToPage(currentPage)}>›</button>
       </div>
       <span className="df-candidate-page-orientation">A4 dọc</span>
       <div className="df-candidate-zoom-controls">
@@ -1004,12 +1004,12 @@ export const CandidateDocumentPreview=React.memo(function CandidateDocumentPrevi
         <button type="button" data-preview-fit aria-pressed={zoomScale===null} disabled={!ready} onClick={()=>setZoomScale(null)}>Vừa chiều rộng</button>
         <button type="button" data-preview-actual aria-pressed={zoomScale===1} disabled={!ready} onClick={()=>setZoomScale(1)}>100%</button>
       </div>
-      <span className="df-candidate-preview-state">Chế độ: Xem trước in ấn</span>
+      <span className="df-candidate-preview-state">Bản xem trình duyệt · phân trang tham khảo</span>
     </div>
     <div className="df-candidate-preview-layout">
-      <nav className="df-candidate-page-list" aria-label="Danh sách trang trong DOCX">
-        <h3>Trang</h3>
-        {ready&&geometry&&geometry.pageCount>0?Array.from({length:geometry.pageCount},(_,index)=><button type="button" key={index} data-preview-page-link={index+1} aria-current={currentPage===index+1?'page':undefined} onClick={()=>goToPage(index)}><span aria-hidden="true">{String(index+1).padStart(2,'0')}</span><span>Trang {index+1}</span></button>):<p>{ready?'Không tìm thấy trang trong DOCX.':'Đang đọc trang…'}</p>}
+      <nav className="df-candidate-page-list" aria-label="Danh sách vùng xem DOCX">
+        <h3>Vùng xem</h3>
+        {ready&&geometry&&geometry.pageCount>0?Array.from({length:geometry.pageCount},(_,index)=><button type="button" key={index} data-preview-page-link={index+1} aria-current={currentPage===index+1?'page':undefined} onClick={()=>goToPage(index)}><span aria-hidden="true">{String(index+1).padStart(2,'0')}</span><span>Vùng {index+1}</span></button>):<p>{ready?'Không tìm thấy vùng xem DOCX.':'Đang dựng bản xem…'}</p>}
       </nav>
       <div className="df-candidate-preview-scroll" ref={viewport} data-preview-mode={zoomScale===null?'fit':zoomScale===1?'actual':'manual'} data-preview-ready={String(ready)}>
         <div className="df-candidate-preview-frame" style={{width:layoutWidth,height:layoutHeight}}>
