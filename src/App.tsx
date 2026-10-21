@@ -2887,6 +2887,26 @@ export default function App() {
   const displayDocumentTitle = sourceOrigin === "none" ? "Văn bản mới · chưa chọn nguồn" : uploadedFileName || (doc.documentType ? `${doc.documentType} ${doc.referenceNumber || ""}`.trim() : "Văn bản mới");
   const saveStatusLabel = isAutoSaving ? "Đang lưu..." : saveError ? "Lỗi lưu" : hasPersistedDraft ? "Đã lưu" : "Chưa lưu";
   const saveTooltip = isAutoSaving ? "Hệ thống đang tự động lưu dữ liệu vào IndexedDB" : saveError ? `Lỗi lưu trữ: ${saveError}` : hasPersistedDraft ? "Dữ liệu được lưu an toàn trong trình duyệt (IndexedDB)" : "Chưa có thay đổi nào được ghi vào IndexedDB";
+  const sidebarCurrent = currentStep === 1
+    ? {
+        label: "NGUỒN TÀI LIỆU",
+        title: !sourceChosen ? "Chưa chọn nguồn" : sourceOrigin === "uploaded_file" && !importReviewSatisfied ? "Chờ duyệt nguồn" : canEnterStep(2) ? "Sẵn sàng soạn" : "Đang nhận diện nguồn",
+        detail: !sourceChosen ? "Tải tệp hoặc chọn mẫu để bắt đầu." : sourceOrigin === "uploaded_file" ? importReviewSatisfied ? "Tệp đã duyệt · có thể chuyển bước." : "Tệp đã tải · cần duyệt kết quả nhận diện." : "Mẫu chuẩn đã chọn.",
+        tone: canEnterStep(2) ? "ready" : "neutral",
+      }
+    : currentStep === 2
+      ? {
+          label: "BẢN SOẠN",
+          title: canEnterStep(3) ? "Sẵn sàng xem bản xuất" : "Đang soạn thảo",
+          detail: `Phiên bản r${workspaceSnapshot.workspace.workingRevision} · ${doc.appendices?.length ?? 0} phụ lục`,
+          tone: canEnterStep(3) ? "ready" : "neutral",
+        }
+      : {
+          label: "BẢN XUẤT DOCX",
+          title: candidatePending ? "Đang tạo bản xem" : visibleCandidate?.downloadable ? "Sẵn sàng tải DOCX" : "Chưa có bản DOCX",
+          detail: candidatePending ? "Đang dựng DOCX từ bản soạn." : visibleCandidate?.downloadable ? visibleCandidate.safe ? "Không có cảnh báo đối chiếu." : "Có cảnh báo cần đối chiếu." : "Chưa tạo được bản xuất từ bản soạn.",
+          tone: candidatePending ? "neutral" : visibleCandidate?.downloadable && !visibleCandidate.safe ? "review" : visibleCandidate?.downloadable ? "ready" : "neutral",
+        };
   const partitionBlocksForProposalReview = reviewBlocks.length > 0 ? reviewBlocks : (structuredImport?.blocks || uploadedBlocks);
   const partitionRegimeForProposalReview = standardType === "party" ? "party" : "administrative";
   const visiblePartitionProposals = partitionProposals.filter(proposal =>
@@ -3057,19 +3077,10 @@ export default function App() {
               );
             })}
           </div>
-          <div className="df-sidebar-current" role="status">
-            <strong>Màn hình hiện tại · Bước {currentStep}</strong>
-            <span>{currentStep === 1
-              ? sourceChosen
-                ? "Tiếp tục tài liệu hiện tại hoặc bắt đầu bằng một nguồn mới."
-                : "Tải tệp DOCX/TXT hoặc tạo văn bản mới để bắt đầu."
-              : currentStep === 2
-                ? `Bản soạn r${workspaceSnapshot.workspace.workingRevision} · ${doc.appendices?.length ?? 0} phụ lục`
-                : visibleCandidate?.downloadable
-                  ? `Ứng viên hiện hành${visibleCandidate.safe?'':' · có cảnh báo'} · SHA-256 ${visibleCandidate.sha256.slice(0, 12)}…`
-                  : candidatePending
-                    ? "Đang tạo DOCX ứng viên hiện hành."
-                    : "Chưa có DOCX ứng viên hợp lệ hiện hành."}</span>
+          <div className="df-sidebar-current" role="status" data-tone={sidebarCurrent.tone}>
+            <span className="df-sidebar-current-label">{sidebarCurrent.label}</span>
+            <strong>{sidebarCurrent.title}</strong>
+            <span>{sidebarCurrent.detail}</span>
           </div>
           {workspaceSnapshot.workspace.staged && (
             <button type="button" className="df-sidebar-cancel" onClick={closePartitionReview}>Hủy phân vùng</button>

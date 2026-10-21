@@ -140,7 +140,6 @@ export function WorkspaceEditor({
     : undefined;
   const beforeGroups = projection.groups.filter(group => group.id >= 1 && group.id <= 5);
   const afterGroups = projection.groups.filter(group => group.id >= 7 && group.id <= 9);
-  const sourceName = snapshot.structuredImport?.source.filename || 'Tài liệu hiện tại';
 
   const command = (name: 'undo' | 'redo' | 'toggleBold' | 'toggleItalic' | 'toggleUnderline' | 'toggleBulletList' | 'toggleOrderedList' | 'alignLeft' | 'alignCenter' | 'alignRight' | 'alignJustify') => {
     const editor = editors.current.get(activeEditorId);
@@ -202,8 +201,6 @@ export function WorkspaceEditor({
         <div>
           <p className="df-ws-eyebrow">Bước 2</p>
           <h1>Soạn &amp; kiểm tra</h1>
-          <p className="df-ws-muted">Chọn ô để sửa thông tin; soạn nội dung trong Canvas Body.</p>
-          <p className="df-ws-revision">{sourceName} <span>·</span> Bản soạn r{snapshot.workspace.workingRevision}</p>
         </div>
         <div className="df-ws-heading-actions">
         <button
@@ -340,7 +337,7 @@ export function WorkspaceEditor({
     </main>
 
     <aside id="df-step2-context" className="df-step-context df-ws-refine" aria-label="Kiểm tra và trợ lý AI">
-      <header className="df-ws-ai-heading"><span aria-hidden="true"><Sparkles size={17} /></span><div><h2>Kiểm tra &amp; AI</h2><p>Hỗ trợ bản soạn hiện tại</p></div></header>
+      <header className="df-ws-ai-heading"><span aria-hidden="true"><Sparkles size={17} /></span><h2>Kiểm tra &amp; AI</h2></header>
       <div role="tablist" aria-label="Chế độ rà soát" className="df-ws-context-tabs" onKeyDown={event => {
         if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
         event.preventDefault();
@@ -349,13 +346,9 @@ export function WorkspaceEditor({
         document.getElementById(next === 'ai' ? 'df-ws-ai-tab' : 'df-ws-checks-tab')?.focus();
       }}>
         <button type="button" role="tab" id="df-ws-ai-tab" aria-controls="df-ws-ai-panel" aria-selected={contextTab === 'ai'} tabIndex={contextTab === 'ai' ? 0 : -1} onClick={() => setContextTab('ai')}>Trợ lý AI</button>
-        <button type="button" role="tab" id="df-ws-checks-tab" aria-controls="df-ws-checks-panel" aria-selected={contextTab === 'checks'} tabIndex={contextTab === 'checks' ? 0 : -1} onClick={() => setContextTab('checks')}>Kiểm tra tự động</button>
+        <button type="button" role="tab" id="df-ws-checks-tab" aria-label="Kiểm tra tự động" aria-controls="df-ws-checks-panel" aria-selected={contextTab === 'checks'} tabIndex={contextTab === 'checks' ? 0 : -1} onClick={() => setContextTab('checks')}>Kiểm tra</button>
       </div>
       <div role="tabpanel" id="df-ws-ai-panel" aria-labelledby="df-ws-ai-tab" hidden={contextTab !== 'ai'} className="df-ws-context-panel">
-        <div className="df-ws-ai-document">
-          <strong>{sourceName}</strong>
-          <p>Bản soạn r{snapshot.workspace.workingRevision} · đề xuất chỉ áp dụng sau khi bạn duyệt.</p>
-        </div>
         <h3 className="df-ws-rail-section-title">Đoạn đang chọn <span>{selected === 'body' ? 'Body' : 'Phụ lục'}</span></h3>
         {activeBodyNode
           ? <div className="df-ws-ai-target"><strong>{activeBodyNode.editableNodeId}</strong><p>{selectedText.slice(0, 180) || 'Đoạn chưa có chữ.'}{selectedText.length > 180 ? '…' : ''}</p></div>
@@ -369,7 +362,7 @@ export function WorkspaceEditor({
             <span className="df-ws-ai-icon" aria-hidden="true">✎</span><span><strong>Nâng văn phong</strong><small>Gợi ý diễn đạt rõ ràng, trang trọng hơn</small></span><span aria-hidden="true">→</span>
           </button>
         </div>
-        <p className="df-ws-ai-approval"><strong>{refining ? 'Đang tạo đề xuất…' : 'Đề xuất cần bạn duyệt'}</strong><span>So sánh bản gốc và bản gợi ý trước khi áp dụng. Không tự sửa văn bản.</span></p>
+        <p className="df-ws-ai-approval">{refining ? 'Đang tạo đề xuất…' : 'Đề xuất AI chỉ áp dụng sau khi bạn duyệt.'}</p>
       </div>
       <div role="tabpanel" id="df-ws-checks-panel" aria-labelledby="df-ws-checks-tab" hidden={contextTab !== 'checks'} className="df-ws-context-panel">
         {complianceReport ? <>

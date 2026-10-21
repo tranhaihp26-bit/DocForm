@@ -62,18 +62,6 @@
   text-transform: uppercase;
 }
 
-.df-ws-revision {
-  margin: 0 0 20px;
-  color: #8a97ad;
-  font-size: 11px;
-  overflow-wrap: anywhere;
-}
-
-.df-ws-revision span {
-  padding: 0 5px;
-  color: #bac3d1;
-}
-
 .df-ws-next {
   flex: 0 0 auto;
   min-height: 42px;
@@ -597,21 +585,6 @@
   font-size: 15px;
 }
 
-.df-ws-ai-document {
-  padding: 12px;
-  border: 1px solid #e4e0ff;
-  border-radius: 10px;
-  background: #f7f6ff;
-}
-
-.df-ws-ai-document strong {
-  display: block;
-  color: #3d4964;
-  font-size: 11px;
-  overflow-wrap: anywhere;
-}
-
-.df-ws-ai-document p,
 .df-ws-ai-intro,
 .df-ws-ai-target {
   margin: 6px 0 0;
@@ -698,20 +671,10 @@
 }
 
 .df-ws-ai-approval {
-  display: grid;
-  gap: 5px;
   margin: 13px 0 0;
-  padding: 11px;
-  border: 1px solid #e3e8f0;
-  border-radius: 9px;
-  color: #8491a6;
+  color: #687790;
   font-size: 10px;
   line-height: 1.4;
-}
-
-.df-ws-ai-approval strong {
-  color: #485671;
-  font-size: 10px;
 }
 
 @media (min-width: 1536px) {
@@ -823,8 +786,6 @@
 .df-ws-heading-actions { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
 .df-ws-step-heading { align-items: flex-start; margin: 0 0 14px; }
 .df-ws-step-heading h1 { margin-bottom: 2px; }
-.df-ws-step-heading .df-ws-muted { line-height: 1.35; }
-.df-ws-step-heading .df-ws-revision { margin: 4px 0 0; line-height: 1.25; }
 .df-step-layout-workspace .df-step-context-toggle { margin: 0; }
 .df-ws-region { margin-bottom: 13px; }
 .df-ws-region-heading { margin-bottom: 7px; }
@@ -862,7 +823,6 @@
 
 /* Step 2 review workspace: compact fields, a readable canvas, and a real-data rail. */
 .df-ws-step-heading { margin-bottom: 10px; }
-.df-ws-step-heading .df-ws-revision { margin: 3px 0 0; }
 .df-ws-component-card,
 .df-ws-group-cards-after .df-ws-component-card { min-height: 80px; }
 .df-ws-component-heading h3 { font-size: 11px; }
@@ -881,20 +841,17 @@
 .df-ws-body-region.is-expanded .df-ws-sheet:not([hidden]) { flex: 1 1 auto; min-height: 0; max-height: none; }
 .df-ws-ai-heading { margin-bottom: 10px; }
 .df-ws-ai-heading h2 { font-size: 14px; }
-.df-ws-ai-heading p { margin: 2px 0 0; color: #8794aa; font-size: 10px; }
 .df-ws-context-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; margin: 0 0 12px; padding: 3px; border-radius: 10px; background: #f2f4f9; }
 .df-ws-context-tabs button { min-height: 34px; padding: 6px 4px; border: 0; border-radius: 8px; background: transparent; color: #697792; font-size: 10px; font-weight: 700; cursor: pointer; }
 .df-ws-context-tabs button[aria-selected="true"] { background: #e9e5ff; color: #5c4cd6; box-shadow: 0 1px 5px #6255e81a; }
 .df-ws-context-tabs button:focus-visible, .df-ws-check-details:focus-visible, .df-ws-toolbar-expand:focus-visible { outline: 3px solid #8279ff; outline-offset: 2px; }
 .df-ws-context-panel[hidden] { display: none; }
-.df-ws-ai-document { padding: 10px; }
 .df-ws-ai-target { margin: 0 0 12px; padding: 10px; background: #f6f7fc; }
 .df-ws-ai-target strong { display: block; color: #394966; font-size: 10px; }
 .df-ws-ai-target p { margin: 5px 0 0; color: #697792; font-size: 11px; line-height: 1.5; }
 .df-ws-rail-section-title { display: flex; justify-content: space-between; align-items: center; gap: 6px; margin: 14px 0 7px; color: #35435e; font-size: 11px; font-weight: 750; }
 .df-ws-rail-section-title span { padding: 3px 7px; border-radius: 99px; background: #efedff; color: #6557d7; font-size: 9px; }
 .df-ws-ai-actions button { min-height: 58px; background: #f8f7ff; border-color: #eeebff; }
-.df-ws-ai-approval { background: #fafbfe; }
 .df-ws-check-summary { display: flex; align-items: flex-start; gap: 9px; padding: 11px; border: 1px solid #dcefe8; border-radius: 10px; background: #f0faf6; color: #188266; }
 .df-ws-check-summary div { display: grid; gap: 3px; }
 .df-ws-check-summary strong { color: #236b58; font-size: 11px; }
