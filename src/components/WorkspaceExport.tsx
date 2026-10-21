@@ -3,6 +3,8 @@ import DOMPurify from 'dompurify';
 import type {ExportCandidate} from '../utils/exportCandidate.ts';
 import {CandidateDocumentPreview} from './A4DocumentPreview.tsx';
 import {describeExportBlocker} from '../utils/workspaceExportMessages.ts';
+import {COMPANY_HEADER_PROFILE_ID} from '../canonical/nd30/companyHeader.ts';
+import {COMPANY_HEADER_HD05_PROFILE_ID} from '../canonical/hd05/companyHeaderHD05.ts';
 import './WorkspaceExport.css';
 
 type WorkspaceExportProps={
@@ -32,6 +34,7 @@ export function WorkspaceExport({candidate,pending,error,onPrepare,onDownload,on
  const tableCount=Object.keys(candidate?.formatData.importedTables??{}).length;
  const appendixCount=candidate?.formatData.appendices?.length??0;
  const regimeLabel=candidate?.formatData.regime==='party'?'Văn bản Đảng · Hướng dẫn 05':'Hành chính · Nghị định 30';
+ const companyHeaderRegime=candidate&&candidate.formatData.headerProfile===(candidate.formatData.regime==='party'?COMPANY_HEADER_HD05_PROFILE_ID:COMPANY_HEADER_PROFILE_ID)?candidate.formatData.regime:undefined;
 
  return <main data-wizard-step="3" className="df-workspace-export" data-candidate-state={!candidate?'missing':candidate.safe?'safe':candidate.downloadable?'warning':'blocked'} data-candidate-safe={candidate?String(candidate.safe):undefined} data-candidate-instance={candidate?.instanceId} data-candidate-revision={candidate?.revision} data-candidate-sha={candidate?.sha256}>
   <header className="df-step3-heading">
@@ -60,7 +63,7 @@ export function WorkspaceExport({candidate,pending,error,onPrepare,onDownload,on
       <p>{pending?'Đang tạo và kiểm ứng viên…':'Tạo ứng viên để dựng bản xem từ đúng DOCX sẽ tải xuống.'}</p>
       <button type="button" onClick={onPrepare} disabled={pending}>{pending?'Đang kiểm…':'Tạo và kiểm DOCX ứng viên'}</button>
      </div>}
-     {candidate?.downloadable&&mode==='candidate'&&previewBytes&&<CandidateDocumentPreview bytes={previewBytes} sha256={candidate.sha256} instanceId={candidate.instanceId}/>}
+     {candidate?.downloadable&&mode==='candidate'&&previewBytes&&<CandidateDocumentPreview bytes={previewBytes} sha256={candidate.sha256} instanceId={candidate.instanceId} companyHeaderRegime={companyHeaderRegime}/>}
     </section>
 
     <section id="df-step3-reference" className="df-step3-reference-section" aria-labelledby="df-step3-reference-title">

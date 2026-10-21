@@ -914,7 +914,7 @@ export const A4DocumentPreview: React.FC<A4DocumentPreviewProps> = ({
 };
 
 /** Main Workspace browser preview: consumes candidate bytes without claiming Word pagination. */
-export const CandidateDocumentPreview=React.memo(function CandidateDocumentPreview({bytes,sha256,instanceId}:{bytes:Uint8Array;sha256:string;instanceId:string}) {
+export const CandidateDocumentPreview=React.memo(function CandidateDocumentPreview({bytes,sha256,instanceId,companyHeaderRegime}:{bytes:Uint8Array;sha256:string;instanceId:string;companyHeaderRegime?:'administrative'|'party'}) {
   const host=useRef<HTMLDivElement>(null);
   const viewport=useRef<HTMLDivElement>(null);
   const pageElements=useRef<HTMLElement[]>([]);
@@ -936,6 +936,7 @@ export const CandidateDocumentPreview=React.memo(function CandidateDocumentPrevi
     render().then(async actualSha=>{
       if(cancelled||!host.current)return;
       host.current.replaceChildren(...Array.from(staging.childNodes));
+      if(companyHeaderRegime) positionCompanyTableInDocxPreview(host.current,companyHeaderRegime==='party');
       await nextFrame();
       if(cancelled||!host.current)return;
       const wrapper=host.current.querySelector<HTMLElement>('.docx-wrapper');
@@ -952,7 +953,7 @@ export const CandidateDocumentPreview=React.memo(function CandidateDocumentPrevi
       setGeometry({width,height,pageWidth,pageCount:pages.length});setCurrentPage(1);setRenderedSha(actualSha);setReady(true);
     }).catch(e=>{if(!cancelled)setError(String(e));});
     return()=>{cancelled=true;};
-  },[bytes,sha256,instanceId]);
+  },[bytes,sha256,instanceId,companyHeaderRegime]);
   useEffect(()=>{
     const node=viewport.current;if(!node)return;
     const measure=()=>setViewportWidth(node.clientWidth);
@@ -960,7 +961,8 @@ export const CandidateDocumentPreview=React.memo(function CandidateDocumentPrevi
     const observer=new ResizeObserver(measure);observer.observe(node);
     return()=>observer.disconnect();
   },[]);
-  const fitScale=ready&&geometry&&viewportWidth>0?Math.min(1,Math.max(.1,(viewportWidth-32)/geometry.pageWidth)):1;
+  // Include renderer overflow and wrapper padding, not just the nominal A4 sheet.
+  const fitScale=ready&&geometry&&viewportWidth>0?Math.min(1,Math.max(.1,(viewportWidth-32)/geometry.width)):1;
   const scale=zoomScale??fitScale;
   const layoutWidth=geometry?geometry.width*scale:undefined;
   const layoutHeight=geometry?geometry.height*scale:undefined;
