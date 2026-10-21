@@ -806,7 +806,7 @@
 }
 
 /* A standard desktop viewport shows the entire current Step 1 task at once. */
-@media (min-width: 1100px) and (min-height: 680px) {
+@media (min-width: 1001px) {
   .df-import-step[data-flow-phase="template"] > .df-step-content {
     grid-template-columns: minmax(0, .92fr) minmax(0, 1.08fr);
     gap: 14px;
@@ -876,7 +876,7 @@
   }
 }
 
-@media (min-width: 1100px) and (max-height: 800px) {
+@media (min-width: 1001px) and (max-height: 800px) {
   .df-import-step > .df-step-content { gap: 12px; }
   .df-import-step .df-import-flow-progress { min-height: 54px; }
   .df-import-step[data-flow-phase="doctype"] #df-step1-document-type,
@@ -893,4 +893,15 @@
   .df-import-step[data-flow-phase="upload"] .df-import-ai-options { margin: 10px 0; }
   .df-import-step[data-flow-phase="upload"] .df-upload-dropzone { min-height: 150px; padding: 14px; }
   .df-import-step .df-import-actions { padding: 12px 16px; }
+}
+
+@media (min-width: 1001px) and (max-height: 680px) {
+  .df-import-step > .df-step-content { gap: 8px; }
+  .df-import-step .df-import-flow-progress { min-height: 46px; padding-block: 7px; }
+  .df-import-step[data-flow-phase="template"] #df-step1-regime > section,
+  .df-import-step[data-flow-phase="template"] #df-step1-template { padding: 14px 18px; }
+  .df-import-step[data-flow-phase="template"] #df-step1-regime button { min-height: 52px; padding: 9px 12px; }
+  .df-import-step[data-flow-phase="template"] #df-step1-template .space-y-2 > * { min-height: 52px; padding: 8px 11px; }
+  .df-import-step[data-flow-phase="template"] .df-import-stage-description { font-size: 12px; line-height: 1.4; }
+  .df-import-step .df-import-actions { padding: 8px 12px; }
 }
