@@ -1,10 +1,12 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import DOMPurify from 'dompurify';
+import { AlignCenter, AlignJustify, AlignLeft, AlignRight, Bold, CheckCircle2, Italic, List, ListOrdered, Maximize2, Minimize2, Redo2, Sparkles, Underline, Undo2 } from 'lucide-react';
 import { projectWorkspace } from '../utils/workspaceProjection.ts';
 import { assessTableCellCapabilities, workspaceNodeTableId, type EditorSafety } from '../utils/workspaceCapabilities.ts';
 import { canEnterWorkspaceStep, type EditableNode, type WorkspaceSnapshot } from '../utils/workspaceState.ts';
 import type { WorkspaceAction } from '../utils/workspaceTransactions.ts';
 import type { TableModel } from '../shared/tableModel.ts';
+import type { ND30ComplianceReport } from '../shared/schemas/document.schema.ts';
 import { WorkspaceCanvasEditor } from './ND30Editor.tsx';
 import { useAccessibleDialog } from '../utils/useAccessibleDialog.ts';
 import './WorkspaceEditor.css';
@@ -86,7 +88,7 @@ function ComponentCard({
 
 export function WorkspaceEditor({
   snapshot, active, initialCanvasId, onCanvasSelected, onAction, onPartition, onRefine,
-  refining, canContinue, onContinue,
+  refining, canContinue, onContinue, complianceReport, onOpenCompliance,
 }: {
   snapshot: WorkspaceSnapshot;
   active: boolean;
@@ -98,17 +100,31 @@ export function WorkspaceEditor({
   refining: boolean;
   canContinue: boolean;
   onContinue: () => void;
+  complianceReport: ND30ComplianceReport | null;
+  onOpenCompliance: () => void;
 }) {
   const projection = projectWorkspace(snapshot);
   const unlocked = canEnterWorkspaceStep(snapshot, 2);
   const [activeCanvas, setActiveCanvas] = useState(initialCanvasId);
-  const [activeEditorId, setActiveEditorId] = useState(() => projection.body.nodes.find(node => node.editable)?.editableNodeId ?? '');
+  const [activeEditorId, setActiveEditorId] = useState('');
   const [contextOpen, setContextOpen] = useState(false);
+  const [contextTab, setContextTab] = useState<'ai' | 'checks'>('ai');
+  const [canvasExpanded, setCanvasExpanded] = useState(false);
+  useEffect(() => {
+    if (!active) setCanvasExpanded(false);
+  }, [active]);
+  useEffect(() => {
+    if (!canvasExpanded) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setCanvasExpanded(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [canvasExpanded]);
   const setActive = (id: string) => {
     setActiveCanvas(id);
     onCanvasSelected(id);
-    const nodes = id === 'body' ? projection.body.nodes : projection.appendices.find(appendix => appendix.id === id)?.nodes ?? [];
-    setActiveEditorId(nodes.find(node => node.editable)?.editableNodeId ?? '');
+    setActiveEditorId('');
   };
   const editors = useRef(new Map<string, any>());
   const [removeId, setRemoveId] = useState<string | null>(null);
@@ -126,10 +142,18 @@ export function WorkspaceEditor({
   const afterGroups = projection.groups.filter(group => group.id >= 7 && group.id <= 9);
   const sourceName = snapshot.structuredImport?.source.filename || 'Tài liệu hiện tại';
 
-  const command = (name: 'undo' | 'redo' | 'toggleBold' | 'toggleItalic' | 'toggleUnderline') => {
+  const command = (name: 'undo' | 'redo' | 'toggleBold' | 'toggleItalic' | 'toggleUnderline' | 'toggleBulletList' | 'toggleOrderedList' | 'alignLeft' | 'alignCenter' | 'alignRight' | 'alignJustify') => {
     const editor = editors.current.get(activeEditorId);
-    if (editor?.isEditable) editor.chain().focus()[name]().run();
+    if (!editor?.isEditable) return;
+    if (name.startsWith('align')) {
+      editor.chain().focus().setTextAlign(name.slice(5).toLowerCase()).run();
+    } else {
+      editor.chain().focus()[name]().run();
+    }
   };
+  const selectedText = activeBodyNode
+    ? DOMPurify.sanitize(activeBodyNode.html, { ALLOWED_TAGS: [] }).replace(/\s+/g, ' ').trim()
+    : '';
   const tableModel = (id: string): TableModel | undefined => snapshot.doc.importedTables?.[id]
     ?? snapshot.workspace.source?.blocks.find(block => (block.tableModel?.tableId ?? block.id) === id)?.tableModel
     ?? snapshot.reviewBlocks.find(block => (block.tableModel?.tableId ?? block.id) === id)?.tableModel;
@@ -205,10 +229,13 @@ export function WorkspaceEditor({
         </div>
       </section>
 
-      <section id="df-step2-body" className="df-ws-region df-ws-body-region" aria-labelledby="df-step2-body-title">
+      <section id="df-step2-body" className={`df-ws-region df-ws-body-region${canvasExpanded ? ' is-expanded' : ''}`} aria-labelledby="df-step2-body-title">
         <header className="df-ws-body-heading">
           <div><p className="df-ws-eyebrow">Nhóm 06</p><h2 id="df-step2-body-title">Nội dung văn bản (Body) — Canvas chính</h2></div>
-          {selected === 'body' && activeBodyNode && <span className="df-ws-status df-ws-status-active">Đang chỉnh sửa</span>}
+          <div className="df-ws-body-meta">
+            {selected === 'body' && activeBodyNode && <span className="df-ws-status df-ws-status-active">Đang chỉnh sửa</span>}
+            <span>{projection.appendices.length} phụ lục</span>
+          </div>
         </header>
         <div role="tablist" aria-label="Canvas nội dung" className="df-ws-canvas-tabs">
           {canvases.map((canvas, index) => <button
@@ -235,10 +262,27 @@ export function WorkspaceEditor({
           }}>Thêm phụ lục</button>
         </div>
         <div role="toolbar" aria-label="Công cụ Canvas đang chọn" className="df-ws-toolbar df-ws-editor-toolbar">
-          {([['undo', 'Hoàn tác'], ['redo', 'Làm lại'], ['toggleBold', 'Đậm'], ['toggleItalic', 'Nghiêng'], ['toggleUnderline', 'Gạch chân']] as const).map(([name, label]) => <button key={name} data-workspace-command={name} aria-label={label} onMouseDown={event => event.preventDefault()} onClick={() => command(name)}>{label}</button>)}
+          <span className="df-ws-toolbar-group">
+            <button type="button" data-workspace-command="undo" aria-label="Hoàn tác" title="Hoàn tác" onMouseDown={event => event.preventDefault()} onClick={() => command('undo')}><Undo2 size={16} /></button>
+            <button type="button" data-workspace-command="redo" aria-label="Làm lại" title="Làm lại" onMouseDown={event => event.preventDefault()} onClick={() => command('redo')}><Redo2 size={16} /></button>
+          </span>
+          <span className="df-ws-toolbar-hint" aria-hidden="true">Đoạn văn · Times New Roman</span>
+          <span className="df-ws-toolbar-group">
+            <button type="button" data-workspace-command="toggleBold" aria-label="Đậm" title="Đậm" onMouseDown={event => event.preventDefault()} onClick={() => command('toggleBold')}><Bold size={16} /></button>
+            <button type="button" data-workspace-command="toggleItalic" aria-label="Nghiêng" title="Nghiêng" onMouseDown={event => event.preventDefault()} onClick={() => command('toggleItalic')}><Italic size={16} /></button>
+            <button type="button" data-workspace-command="toggleUnderline" aria-label="Gạch chân" title="Gạch chân" onMouseDown={event => event.preventDefault()} onClick={() => command('toggleUnderline')}><Underline size={16} /></button>
+          </span>
+          <span className="df-ws-toolbar-group">
+            {([['alignLeft', 'Căn trái', AlignLeft], ['alignCenter', 'Căn giữa', AlignCenter], ['alignRight', 'Căn phải', AlignRight], ['alignJustify', 'Căn đều', AlignJustify]] as const).map(([name, label, Icon]) => <button type="button" key={name} data-workspace-command={name} aria-label={label} title={label} onMouseDown={event => event.preventDefault()} onClick={() => command(name)}><Icon size={16} /></button>)}
+          </span>
+          <span className="df-ws-toolbar-group">
+            <button type="button" data-workspace-command="toggleBulletList" aria-label="Danh sách dấu đầu dòng" title="Danh sách dấu đầu dòng" onMouseDown={event => event.preventDefault()} onClick={() => command('toggleBulletList')}><List size={16} /></button>
+            <button type="button" data-workspace-command="toggleOrderedList" aria-label="Danh sách đánh số" title="Danh sách đánh số" onMouseDown={event => event.preventDefault()} onClick={() => command('toggleOrderedList')}><ListOrdered size={16} /></button>
+          </span>
+          <button type="button" className="df-ws-toolbar-expand" aria-label={canvasExpanded ? 'Thu nhỏ Canvas' : 'Mở rộng Canvas'} aria-pressed={canvasExpanded} title={canvasExpanded ? 'Thu nhỏ Canvas (Esc)' : 'Mở rộng Canvas'} onClick={() => setCanvasExpanded(value => !value)}>{canvasExpanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}<span>{canvasExpanded ? 'Thu nhỏ' : 'Mở rộng'}</span></button>
         </div>
-        {canvases.map(canvas => <section key={canvas.id} id={`canvas-${canvas.id}`} role="tabpanel" aria-labelledby={`canvas-tab-${canvas.id}`} hidden={selected !== canvas.id} data-canvas-id={canvas.id} className="df-ws-sheet">
-          <h3>{canvas.id === 'body' ? 'Nội dung Body' : canvas.title || 'Phụ lục'}</h3>
+        {canvases.map(canvas => <section key={canvas.id} id={`canvas-${canvas.id}`} role="tabpanel" aria-labelledby={`canvas-tab-${canvas.id}`} tabIndex={selected === canvas.id ? 0 : -1} hidden={selected !== canvas.id} data-canvas-id={canvas.id} className="df-ws-sheet">
+          {canvas.id !== 'body' && <h3>{canvas.title || 'Phụ lục'}</h3>}
           {canvas.id !== 'body' && <div className="df-ws-appendix-actions">
             <label>Tiêu đề phụ lục<input aria-label={`Tiêu đề ${canvas.id}`} value={snapshot.doc.appendices?.find(appendix => appendix.id === canvas.id)?.title ?? ''} onChange={event => onAction({ type: 'renameAppendix', id: canvas.id, title: event.target.value })} /></label>
             <button type="button" onClick={() => onAction({ type: 'moveAppendix', id: canvas.id, index: 0 })}>Đưa lên đầu</button>
@@ -295,25 +339,48 @@ export function WorkspaceEditor({
       </div></div>}
     </main>
 
-    <aside id="df-step2-context" className="df-step-context df-ws-refine" aria-label="Trợ lý AI rà soát nội dung">
-      <header className="df-ws-ai-heading"><span aria-hidden="true">✦</span><div><p className="df-ws-eyebrow">Trợ lý AI DocForm</p><h2>Hỗ trợ phần Body</h2></div></header>
-      <div className="df-ws-ai-document">
-        <strong>{sourceName}</strong>
-        <p>Bản soạn r{snapshot.workspace.workingRevision} · đề xuất chỉ được áp dụng sau khi bạn duyệt.</p>
+    <aside id="df-step2-context" className="df-step-context df-ws-refine" aria-label="Kiểm tra và trợ lý AI">
+      <header className="df-ws-ai-heading"><span aria-hidden="true"><Sparkles size={17} /></span><div><h2>Kiểm tra &amp; AI</h2><p>Hỗ trợ bản soạn hiện tại</p></div></header>
+      <div role="tablist" aria-label="Chế độ rà soát" className="df-ws-context-tabs" onKeyDown={event => {
+        if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+        event.preventDefault();
+        const next = contextTab === 'ai' ? 'checks' : 'ai';
+        setContextTab(next);
+        document.getElementById(next === 'ai' ? 'df-ws-ai-tab' : 'df-ws-checks-tab')?.focus();
+      }}>
+        <button type="button" role="tab" id="df-ws-ai-tab" aria-controls="df-ws-ai-panel" aria-selected={contextTab === 'ai'} tabIndex={contextTab === 'ai' ? 0 : -1} onClick={() => setContextTab('ai')}>Trợ lý AI</button>
+        <button type="button" role="tab" id="df-ws-checks-tab" aria-controls="df-ws-checks-panel" aria-selected={contextTab === 'checks'} tabIndex={contextTab === 'checks' ? 0 : -1} onClick={() => setContextTab('checks')}>Kiểm tra tự động</button>
       </div>
-      <p className="df-ws-ai-intro">Rà đoạn Body đang chọn. Nội dung sẽ không thay đổi trước khi bạn xác nhận đề xuất.</p>
-      {activeBodyNode
-        ? <p className="df-ws-ai-target">Đoạn đang chọn: <code>{activeBodyNode.editableNodeId}</code></p>
-        : <p className="df-ws-ai-target">{selected === 'body' ? 'Chọn một đoạn có thể sửa trong Body để bắt đầu.' : 'AI chỉ hỗ trợ đoạn trong Body; phụ lục và ô bảng chưa được gửi.'}</p>}
-      <div className="df-ws-ai-actions">
-        <button type="button" data-ai-action="proofread" data-ai-target-node={activeBodyNode?.editableNodeId ?? ''} disabled={selected !== 'body' || refining || !activeBodyNode} onClick={() => activeBodyNode && onRefine('proofread', activeBodyNode.editableNodeId)}>
-          <span className="df-ws-ai-icon" aria-hidden="true">⌕</span><span><strong>Rà chính tả, câu từ</strong><small>Đề xuất trên đoạn Body đang chọn</small></span><span aria-hidden="true">→</span>
-        </button>
-        <button type="button" data-ai-action="formalize" data-ai-target-node={activeBodyNode?.editableNodeId ?? ''} disabled={selected !== 'body' || refining || !activeBodyNode} onClick={() => activeBodyNode && onRefine('formalize', activeBodyNode.editableNodeId)}>
-          <span className="df-ws-ai-icon" aria-hidden="true">✎</span><span><strong>Nâng văn phong</strong><small>Đề xuất trên đoạn Body đang chọn</small></span><span aria-hidden="true">→</span>
-        </button>
+      <div role="tabpanel" id="df-ws-ai-panel" aria-labelledby="df-ws-ai-tab" hidden={contextTab !== 'ai'} className="df-ws-context-panel">
+        <div className="df-ws-ai-document">
+          <strong>{sourceName}</strong>
+          <p>Bản soạn r{snapshot.workspace.workingRevision} · đề xuất chỉ áp dụng sau khi bạn duyệt.</p>
+        </div>
+        <h3 className="df-ws-rail-section-title">Đoạn đang chọn <span>{selected === 'body' ? 'Body' : 'Phụ lục'}</span></h3>
+        {activeBodyNode
+          ? <div className="df-ws-ai-target"><strong>{activeBodyNode.editableNodeId}</strong><p>{selectedText.slice(0, 180) || 'Đoạn chưa có chữ.'}{selectedText.length > 180 ? '…' : ''}</p></div>
+          : <p className="df-ws-ai-target">{selected === 'body' ? 'Chọn một đoạn có thể sửa trong Body để bắt đầu.' : 'AI hiện chỉ hỗ trợ đoạn trong Body; phụ lục và ô bảng không được gửi.'}</p>}
+        <h3 className="df-ws-rail-section-title">Công cụ AI hỗ trợ</h3>
+        <div className="df-ws-ai-actions">
+          <button type="button" data-ai-action="proofread" data-ai-target-node={activeBodyNode?.editableNodeId ?? ''} disabled={selected !== 'body' || refining || !activeBodyNode} onClick={() => activeBodyNode && onRefine('proofread', activeBodyNode.editableNodeId)}>
+            <span className="df-ws-ai-icon" aria-hidden="true">⌕</span><span><strong>Rà chính tả, câu từ</strong><small>Kiểm tra lỗi chính tả, ngữ pháp và câu từ</small></span><span aria-hidden="true">→</span>
+          </button>
+          <button type="button" data-ai-action="formalize" data-ai-target-node={activeBodyNode?.editableNodeId ?? ''} disabled={selected !== 'body' || refining || !activeBodyNode} onClick={() => activeBodyNode && onRefine('formalize', activeBodyNode.editableNodeId)}>
+            <span className="df-ws-ai-icon" aria-hidden="true">✎</span><span><strong>Nâng văn phong</strong><small>Gợi ý diễn đạt rõ ràng, trang trọng hơn</small></span><span aria-hidden="true">→</span>
+          </button>
+        </div>
+        <p className="df-ws-ai-approval"><strong>{refining ? 'Đang tạo đề xuất…' : 'Đề xuất cần bạn duyệt'}</strong><span>So sánh bản gốc và bản gợi ý trước khi áp dụng. Không tự sửa văn bản.</span></p>
       </div>
-      <p className="df-ws-ai-approval"><strong>Đề xuất chưa được áp dụng</strong><span>Hãy xem khác biệt rồi chọn áp dụng hoặc bỏ qua.</span></p>
+      <div role="tabpanel" id="df-ws-checks-panel" aria-labelledby="df-ws-checks-tab" hidden={contextTab !== 'checks'} className="df-ws-context-panel">
+        {complianceReport ? <>
+          <div className="df-ws-check-summary"><CheckCircle2 size={18} aria-hidden="true" /><div><strong>{complianceReport.passedChecks}/{complianceReport.totalChecks} trường thể thức đạt</strong><span>{complianceReport.issues.length === 0 ? 'Chưa phát hiện vấn đề theo bộ quy tắc hiện tại.' : `${complianceReport.issues.length} mục cần xem lại trong báo cáo.`}</span></div></div>
+          <h3 className="df-ws-rail-section-title">Nội dung cần xem lại</h3>
+          {complianceReport.issues.length > 0
+            ? <ul className="df-ws-check-list">{complianceReport.issues.slice(0, 5).map(issue => <li key={issue.id} data-severity={issue.severity}><strong>{issue.title}</strong><span>{issue.message}</span></li>)}</ul>
+            : <p className="df-ws-check-empty">Các trường thể thức được kiểm tra đã đạt. Rà chính tả và văn phong được thực hiện riêng khi bạn chọn công cụ AI.</p>}
+          <button type="button" className="df-ws-check-details" onClick={onOpenCompliance}>Xem báo cáo kiểm tra đầy đủ <span aria-hidden="true">→</span></button>
+        </> : <p className="df-ws-check-empty">Đang chuẩn bị kết quả kiểm tra thể thức.</p>}
+      </div>
     </aside>
   </div>;
 }
