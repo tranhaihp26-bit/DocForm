@@ -32,7 +32,13 @@ export function projectWorkspace(snapshot: WorkspaceSnapshot) {
   const groups: WorkspaceGroupProjection[] = COMPONENT_GROUPS.filter(g => typeof g.id === 'number').map(meta => {
     const id = meta.id as number, roles = groupRoles[id - 1];
     const fields = groupFields[id - 1].filter(key => !(snapshot.standardType === 'party' && key === 'nationalHeader2')).map(key => ({
-      key, value: String(snapshot.doc[key] ?? ''), editable: unlocked && !lockedFields.has(key)
+      key, value: key === 'nationalHeader1'
+        ? snapshot.doc.omitNationalHeader ? '' : snapshot.standardType === 'party' ? 'ĐẢNG CỘNG SẢN VIỆT NAM' : 'CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM'
+        : key === 'nationalHeader2'
+          ? snapshot.doc.omitNationalHeader || snapshot.standardType === 'party' ? '' : 'Độc lập - Tự do - Hạnh phúc'
+          : String(snapshot.doc[key] ?? ''), editable: unlocked
+        && key !== 'nationalHeader1' && key !== 'nationalHeader2'
+        && !lockedFields.has(key)
         && (key !== 'bodyHtml' || workspaceEditorSafety(snapshot.doc.bodyHtml).editable),
       sourceBlockIds: snapshot.structuredImport?.fields[key]?.sourceBlockIds ?? [],
     }));

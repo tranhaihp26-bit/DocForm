@@ -259,7 +259,7 @@ export function validateProposalAgainstSource(
     else if (fieldKey === "referenceNumber") componentGroupIndex = 3;
     else if (fieldKey === "locationAndDate") componentGroupIndex = 4;
   } else if (suggestedRole === "metadata") {
-    componentGroupIndex = 5; // Tên loại & trích yếu
+    componentGroupIndex = fieldKey === "locationAndDate" ? 4 : 5; // Địa danh/ngày tháng hoặc tên loại & trích yếu
   } else if (suggestedRole === "body") {
     componentGroupIndex = 6; // Nội dung
   } else if (suggestedRole === "signature") {

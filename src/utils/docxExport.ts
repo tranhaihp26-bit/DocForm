@@ -19,7 +19,7 @@
 import { 
   Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, Tab,
   WidthType, BorderStyle, AlignmentType, convertMillimetersToTwip, PageOrientation,
-  Header, PageNumber, LevelFormat, PageBreak, TableLayoutType, VerticalMergeType, HeightRule,
+  Header, PageNumber, LevelFormat, PageBreak, SectionType, TableLayoutType, VerticalMergeType, HeightRule,
   XmlComponent, Attributes, LineRuleType, Bookmark
 } from "docx";
 import JSZip from "jszip";
@@ -28,6 +28,7 @@ import { type DocumentFormatType, type SourceBlock, isPlaceholderValue } from ".
 import { containsSeparatorParagraph } from "../shared/separator.ts";
 import type { TableModel } from "../shared/tableModel.ts";
 import { COMPANY_HEADER_PROFILE_ID, createCompanyHeaderTable, COMPANY_HEADER_GEOMETRY_MM } from "../canonical/nd30/companyHeader.ts";
+import { COMPANY_ND30_BODY_PROFILE } from "../canonical/nd30/companyBodyProfile.ts";
 import { COMPANY_HEADER_HD05_PROFILE_ID, createCompanyHeaderHD05Table, COMPANY_HEADER_HD05_GEOMETRY_MM } from "../canonical/hd05/companyHeaderHD05.ts";
 import { 
   calculateTableColumnWidthsTwip, 
@@ -61,7 +62,10 @@ export interface DocumentStyleProfile {
 /**
  * Trả về Style Profile theo Nghị định 30/2020/NĐ-CP (Hành chính) hoặc Hướng dẫn 05-HD/VPTW (Đảng)
  */
-export function getStyleProfile(regime: "administrative" | "party" = "administrative"): DocumentStyleProfile {
+export function getStyleProfile(
+  regime: "administrative" | "party" = "administrative",
+  headerProfile?: string
+): DocumentStyleProfile {
   if (regime === "party") {
     return {
       regime: "party",
@@ -79,7 +83,7 @@ export function getStyleProfile(regime: "administrative" | "party" = "administra
       pageNumberFontSize: 14, // 14pt cho số trang
     };
   }
-  return {
+  const administrativeProfile: DocumentStyleProfile = {
     regime: "administrative",
     bodyFontSize: 13,
     heading1FontSize: 14,
@@ -94,6 +98,16 @@ export function getStyleProfile(regime: "administrative" | "party" = "administra
     signNameFontSize: 13,
     pageNumberFontSize: 13,
   };
+  if (headerProfile === COMPANY_ND30_BODY_PROFILE.id) {
+    return {
+      ...administrativeProfile,
+      bodyFontSize: COMPANY_ND30_BODY_PROFILE.body.fontSizePt,
+      heading1FontSize: COMPANY_ND30_BODY_PROFILE.body.fontSizePt,
+      heading2FontSize: COMPANY_ND30_BODY_PROFILE.body.fontSizePt,
+      heading3FontSize: COMPANY_ND30_BODY_PROFILE.body.fontSizePt,
+    };
+  }
+  return administrativeProfile;
 }
 
 /**
@@ -290,7 +304,11 @@ function splitCellTextIntoParagraphs(text: string): string[] {
   return lines.length > 0 ? lines : [text];
 }
 
-export function buildDocxTableFromModel(model: TableModel): Table {
+export function buildDocxTableFromModel(model: TableModel, headerProfile?: string): Table {
+  const useCompanyTableFormat = headerProfile === COMPANY_ND30_BODY_PROFILE.id;
+  const tableFontHalfPoints = useCompanyTableFormat
+    ? COMPANY_ND30_BODY_PROFILE.table.fontSizePt * 2
+    : undefined;
   const mapBorder = (b?: { style?: string; size?: number; color?: string }) => {
     if (!b || b.style === "none") return { style: BorderStyle.NONE, size: 0, color: "auto" };
     let style: any = BorderStyle.SINGLE;
@@ -304,10 +322,11 @@ export function buildDocxTableFromModel(model: TableModel): Table {
     };
   };
 
-  const tableRows = model.rows.map((row) => {
+  const tableRows = model.rows.map((row, rowIndex) => {
+    const isHeaderRow = Boolean(row.isHeader || (useCompanyTableFormat && rowIndex === COMPANY_ND30_BODY_PROFILE.table.headerRowIndex));
     return new TableRow({
       cantSplit: row.cantSplit ? true : undefined,
-      tableHeader: row.isHeader ? true : undefined,
+      tableHeader: isHeaderRow ? true : undefined,
       height: row.heightTwips ? { value: row.heightTwips, rule: HeightRule.ATLEAST } : undefined,
       children: row.cells.map((cell) => {
         let colWidth = model.gridColumnsTwips[cell.gridColumn] || 2000;
@@ -338,9 +357,9 @@ export function buildDocxTableFromModel(model: TableModel): Table {
                 ? p.runs.flatMap((r, runIndex) => splitTextWithBreaks(r.text, runIndex > 0).map(part => new TextRun({
                     text: part.text,
                     break: part.break,
-                    font: r.font || "Times New Roman",
-                    size: r.sizeHalfPt ?? 24,
-                    bold: r.bold ?? row.isHeader,
+                    font: useCompanyTableFormat ? COMPANY_ND30_BODY_PROFILE.table.fontFace : (r.font || "Times New Roman"),
+                    size: tableFontHalfPoints ?? r.sizeHalfPt ?? 24,
+                    bold: isHeaderRow ? true : r.bold,
                     italics: r.italic,
                     underline: r.underline ? {} : undefined,
                     color: r.color,
@@ -348,13 +367,15 @@ export function buildDocxTableFromModel(model: TableModel): Table {
                 : splitTextWithBreaks(p.text || "").map(part => new TextRun({
                     text: part.text,
                     break: part.break,
-                    font: "Times New Roman",
-                    size: 24,
-                    bold: row.isHeader,
+                    font: COMPANY_ND30_BODY_PROFILE.table.fontFace,
+                    size: tableFontHalfPoints ?? 24,
+                    bold: isHeaderRow,
                   }));
 
               return new Paragraph({
-                alignment: p.alignment === "center" 
+                alignment: useCompanyTableFormat && rowIndex === COMPANY_ND30_BODY_PROFILE.table.headerRowIndex
+                  ? AlignmentType.CENTER
+                  : p.alignment === "center"
                   ? AlignmentType.CENTER 
                   : (p.alignment === "right" 
                     ? AlignmentType.RIGHT 
@@ -365,14 +386,14 @@ export function buildDocxTableFromModel(model: TableModel): Table {
             })
           : splitCellTextIntoParagraphs(cell.text || "").map((line, lineIndex) =>
               new Paragraph({
-                alignment: row.isHeader ? AlignmentType.CENTER : AlignmentType.LEFT,
+                alignment: isHeaderRow ? AlignmentType.CENTER : AlignmentType.LEFT,
                 spacing: { line: 240, before: 20, after: 20 },
                 children: [
                   new TextRun({
                     text: line,
-                    font: "Times New Roman",
-                    size: 24,
-                    bold: row.isHeader,
+                    font: useCompanyTableFormat ? COMPANY_ND30_BODY_PROFILE.table.fontFace : "Times New Roman",
+                    size: tableFontHalfPoints ?? 24,
+                    bold: isHeaderRow,
                   })
                 ],
               })
@@ -531,11 +552,19 @@ export function convertHtmlToDocxElements(
   html: string,
   regime: "administrative" | "party" = "administrative",
   bodyInsetMm = 0,
-  importedTables?: Record<string, TableModel>
+  importedTables?: Record<string, TableModel>,
+  headerProfile?: string
 ): (Paragraph | Table)[] {
   const elements: (Paragraph | Table)[] = [];
-  const profile = getStyleProfile(regime);
+  const profile = getStyleProfile(regime, headerProfile);
+  const useCompanyBodyFormat = regime === "administrative" && headerProfile === COMPANY_ND30_BODY_PROFILE.id;
   const defaultHalfPoints = profile.bodyFontSize * 2;
+  const tableHalfPoints = useCompanyBodyFormat
+    ? COMPANY_ND30_BODY_PROFILE.table.fontSizePt * 2
+    : (profile.bodyFontSize - 1) * 2;
+  const companyBodyLineTwips = COMPANY_ND30_BODY_PROFILE.body.lineSpacingPt * 20;
+  const companyBodyFirstLineTwips = COMPANY_ND30_BODY_PROFILE.body.firstLineIndentIn * 1440;
+  const companyBodyAfterTwips = COMPANY_ND30_BODY_PROFILE.body.paragraphAfterPt * 20;
   const bodyInsetTwips = convertMillimetersToTwip(bodyInsetMm);
 
   // Luôn làm sạch HTML trước khi parse để triệt tiêu mọi mã độc hoặc payload XSS
@@ -569,7 +598,7 @@ export function convertHtmlToDocxElements(
         const sourceTableId = child.getAttribute("data-source-table-id");
         if (sourceTableId && importedTables && importedTables[sourceTableId]) {
           const { effectiveModel } = syncTableModelFromHtml(child, importedTables[sourceTableId]);
-          elements.push(buildDocxTableFromModel(effectiveModel));
+          elements.push(buildDocxTableFromModel(effectiveModel, headerProfile));
           return;
         }
 
@@ -611,6 +640,7 @@ export function convertHtmlToDocxElements(
               c => c.tagName.toLowerCase() === "td" || c.tagName.toLowerCase() === "th"
             );
             const isHeaderRow = index === 0 && (
+              useCompanyBodyFormat ||
               Array.from(tr.children).some(c => c.tagName.toLowerCase() === "th") ||
               tr.parentElement?.tagName.toLowerCase() === "thead"
             );
@@ -622,7 +652,9 @@ export function convertHtmlToDocxElements(
                 const isHeader = cell.tagName.toLowerCase() === "th" || isHeaderRow;
                 const colWidth = colWidths[colIdx] || Math.round(totalTableWidthTwips / (cellElements.length || 1));
                 const colType = colTypes[colIdx] || "general";
-                const cellAlignment = getColumnDocxAlignment(colType, isHeader);
+                const cellAlignment = useCompanyBodyFormat && index === 0
+                  ? AlignmentType.CENTER
+                  : getColumnDocxAlignment(colType, isHeader);
 
                 // Hỗ trợ colspan và rowspan từ HTML
                 const colSpanAttr = cell.getAttribute("colspan");
@@ -639,7 +671,7 @@ export function convertHtmlToDocxElements(
                 let cellParagraphs: Paragraph[] = [];
                 if (childParagraphEls.length > 0) {
                   cellParagraphs = childParagraphEls.map((pEl, pIdx) => {
-                    const pRuns = parseInlineNodes(pEl, (profile.bodyFontSize - 1) * 2);
+                    const pRuns = parseInlineNodes(pEl, tableHalfPoints, { forceBold: isHeader });
                     return new Paragraph({
                       alignment: cellAlignment,
                       spacing: {
@@ -649,20 +681,20 @@ export function convertHtmlToDocxElements(
                       },
                       children: pRuns.length > 0 ? pRuns : createRunsAndTabsFromText(
                         pEl.textContent?.trim() || "",
-                        (profile.bodyFontSize - 1) * 2,
+                        tableHalfPoints,
                         { bold: isHeader }
                       ),
                     });
                   });
                 } else {
-                  const cellRuns = parseInlineNodes(cell, (profile.bodyFontSize - 1) * 2);
+                  const cellRuns = parseInlineNodes(cell, tableHalfPoints, { forceBold: isHeader });
                   cellParagraphs = [
                     new Paragraph({
                       alignment: cellAlignment,
                       spacing: { line: 240, before: 40, after: 40 },
                       children: cellRuns.length > 0 ? cellRuns : createRunsAndTabsFromText(
                         cell.textContent?.trim() || "",
-                        (profile.bodyFontSize - 1) * 2,
+                        tableHalfPoints,
                         { bold: isHeader }
                       ),
                     }),
@@ -720,9 +752,14 @@ export function convertHtmlToDocxElements(
       if (tagName === "h1") {
         elements.push(
           new Paragraph({
-            alignment: AlignmentType.CENTER,
+            alignment: useCompanyBodyFormat ? AlignmentType.JUSTIFIED : AlignmentType.CENTER,
+            indent: useCompanyBodyFormat
+              ? { ...(bodyInsetMm ? { left: bodyInsetTwips, right: bodyInsetTwips } : {}), firstLine: companyBodyFirstLineTwips }
+              : undefined,
             keepNext: true,
-            spacing: { before: 180, after: 80, line: 276 },
+            spacing: useCompanyBodyFormat
+              ? { before: 180, after: companyBodyAfterTwips, line: companyBodyLineTwips, lineRule: LineRuleType.EXACT }
+              : { before: 180, after: 80, line: 276 },
             children: [
               new TextRun({
                 text: textContent.toUpperCase(),
@@ -739,9 +776,14 @@ export function convertHtmlToDocxElements(
       if (tagName === "h2") {
         elements.push(
           new Paragraph({
-            alignment: AlignmentType.CENTER,
+            alignment: useCompanyBodyFormat ? AlignmentType.JUSTIFIED : AlignmentType.CENTER,
+            indent: useCompanyBodyFormat
+              ? { ...(bodyInsetMm ? { left: bodyInsetTwips, right: bodyInsetTwips } : {}), firstLine: companyBodyFirstLineTwips }
+              : undefined,
             keepNext: true,
-            spacing: { before: 140, after: 60, line: 276 },
+            spacing: useCompanyBodyFormat
+              ? { before: 140, after: companyBodyAfterTwips, line: companyBodyLineTwips, lineRule: LineRuleType.EXACT }
+              : { before: 140, after: 60, line: 276 },
             children: [
               new TextRun({
                 text: textContent.toUpperCase(),
@@ -758,10 +800,14 @@ export function convertHtmlToDocxElements(
       if (tagName === "h3") {
         elements.push(
           new Paragraph({
-            alignment: AlignmentType.LEFT,
-            indent: bodyInsetMm ? {left: bodyInsetTwips, right: bodyInsetTwips, firstLine: 720} : { firstLine: 720 }, // 1.27cm
+            alignment: useCompanyBodyFormat ? AlignmentType.JUSTIFIED : AlignmentType.LEFT,
+            indent: bodyInsetMm
+              ? { left: bodyInsetTwips, right: bodyInsetTwips, firstLine: useCompanyBodyFormat ? companyBodyFirstLineTwips : 720 }
+              : { firstLine: useCompanyBodyFormat ? companyBodyFirstLineTwips : 720 },
             keepNext: true,
-            spacing: { before: 100, after: 60, line: 276 },
+            spacing: useCompanyBodyFormat
+              ? { before: 100, after: companyBodyAfterTwips, line: companyBodyLineTwips, lineRule: LineRuleType.EXACT }
+              : { before: 100, after: 60, line: 276 },
             children: [
               new TextRun({
                 text: textContent,
@@ -785,7 +831,10 @@ export function convertHtmlToDocxElements(
               bullet: tagName === "ul" ? { level: 0 } : undefined,
               numbering: tagName === "ol" ? { reference: "nd30-numbered-list", level: 0 } : undefined,
               indent: { left: 720 },
-              spacing: { before: 40, after: 40, line: 276 },
+              alignment: useCompanyBodyFormat ? AlignmentType.JUSTIFIED : undefined,
+              spacing: useCompanyBodyFormat
+                ? { before: 0, after: companyBodyAfterTwips, line: companyBodyLineTwips, lineRule: LineRuleType.EXACT }
+                : { before: 40, after: 40, line: 276 },
               children: inlineRuns.length > 0 ? inlineRuns : createRunsAndTabsFromText(
                 li.textContent?.trim() || "",
                 defaultHalfPoints
@@ -854,6 +903,12 @@ export function convertHtmlToDocxElements(
         pIndent = { firstLine: firstLineIndentTwips };
       }
 
+      if (useCompanyBodyFormat && !isDividerOnly) {
+        pAlignment = AlignmentType.JUSTIFIED;
+        pAfter = companyBodyAfterTwips;
+        pIndent = { firstLine: companyBodyFirstLineTwips };
+      }
+
       if (bodyInsetMm) {
         pIndent = {
           left: bodyInsetTwips,
@@ -867,9 +922,11 @@ export function convertHtmlToDocxElements(
           alignment: pAlignment,
           indent: pIndent,
           keepNext: pKeepNext,
-          spacing: regime === "party"
-            ? { before: pBefore, after: pAfter, line: 360, lineRule: LineRuleType.EXACT }
-            : { before: pBefore, after: pAfter, line: 276 },
+          spacing: useCompanyBodyFormat && !isDividerOnly
+            ? { before: pBefore, after: pAfter, line: companyBodyLineTwips, lineRule: LineRuleType.EXACT }
+            : regime === "party"
+              ? { before: pBefore, after: pAfter, line: 360, lineRule: LineRuleType.EXACT }
+              : { before: pBefore, after: pAfter, line: 276 },
           children: runs.length > 0 ? runs : createRunsAndTabsFromText(
             textContent,
             defaultHalfPoints,
@@ -900,7 +957,7 @@ export function convertHtmlToDocxElements(
       const sourceTableId = sourceTableIdMatch ? sourceTableIdMatch[1] : undefined;
       if (sourceTableId && importedTables && importedTables[sourceTableId]) {
         const { effectiveModel } = syncTableModelFromHtml(trimmed, importedTables[sourceTableId]);
-        elements.push(buildDocxTableFromModel(effectiveModel));
+        elements.push(buildDocxTableFromModel(effectiveModel, headerProfile));
         continue;
       }
 
@@ -918,7 +975,9 @@ export function convertHtmlToDocxElements(
 
         const docxRows = rowMatches.map((trHtml, rowIndex) => {
           const cellMatches = trHtml.match(/<t[dh][\s\S]*?<\/t[dh]>/gi) || [];
-          const isThRow = rowIndex === 0 && trHtml.toLowerCase().includes("<th");
+          const isThRow = rowIndex === 0 && (
+            useCompanyBodyFormat || trHtml.toLowerCase().includes("<th")
+          );
 
           return new TableRow({
             cantSplit: true,
@@ -927,7 +986,9 @@ export function convertHtmlToDocxElements(
               const isTh = cellHtml.toLowerCase().startsWith("<th") || isThRow;
               const colWidth = colWidths[colIdx] || Math.round(totalTableWidthTwips / (cellMatches.length || 1));
               const colType = colTypes[colIdx] || "general";
-              const alignment = getColumnDocxAlignment(colType, isTh);
+              const alignment = useCompanyBodyFormat && rowIndex === 0
+                ? AlignmentType.CENTER
+                : getColumnDocxAlignment(colType, isTh);
 
               // 1. Kiểm tra colspan & rowspan
               const colSpanMatch = cellHtml.match(/colspan=["']?(\d+)["']?/i);
@@ -949,7 +1010,7 @@ export function convertHtmlToDocxElements(
                       before: pIdx === 0 ? 30 : 20,
                       after: pIdx === pMatches.length - 1 ? 30 : 20,
                     },
-                    children: createRunsAndTabsFromText(pText, (profile.bodyFontSize - 1) * 2, {
+                    children: createRunsAndTabsFromText(pText, tableHalfPoints, {
                       bold: isTh,
                     }),
                   });
@@ -960,7 +1021,7 @@ export function convertHtmlToDocxElements(
                   new Paragraph({
                     alignment,
                     spacing: { line: 240, before: 40, after: 40 },
-                    children: createRunsAndTabsFromText(cellText, (profile.bodyFontSize - 1) * 2, {
+                    children: createRunsAndTabsFromText(cellText, tableHalfPoints, {
                       bold: isTh,
                     }),
                   }),
@@ -1008,7 +1069,10 @@ export function convertHtmlToDocxElements(
             indent: { left: 720 },
             spacing: regime === "party"
               ? { before: 20, after: 20, line: 360, lineRule: LineRuleType.EXACT }
-              : { before: 40, after: 40, line: 276 },
+              : useCompanyBodyFormat
+                ? { before: 0, after: companyBodyAfterTwips, line: companyBodyLineTwips, lineRule: LineRuleType.EXACT }
+                : { before: 40, after: 40, line: 276 },
+            alignment: useCompanyBodyFormat ? AlignmentType.JUSTIFIED : undefined,
             children: createRunsAndTabsFromText(text, defaultHalfPoints),
           })
         );
@@ -1047,6 +1111,12 @@ export function convertHtmlToDocxElements(
         pAfter = 80;
       }
 
+      if (useCompanyBodyFormat && !isDividerOnly) {
+        pAlignment = AlignmentType.JUSTIFIED;
+        pAfter = companyBodyAfterTwips;
+        pIndent = { firstLine: companyBodyFirstLineTwips };
+      }
+
       if (bodyInsetMm) {
         pIndent = {
           left: bodyInsetTwips,
@@ -1060,9 +1130,11 @@ export function convertHtmlToDocxElements(
           alignment: pAlignment,
           indent: pIndent,
           keepNext: pKeepNext,
-          spacing: regime === "party"
-            ? { before: pBefore, after: pAfter, line: 360, lineRule: LineRuleType.EXACT }
-            : { before: pBefore, after: pAfter, line: 276 },
+          spacing: useCompanyBodyFormat && !isDividerOnly
+            ? { before: pBefore, after: pAfter, line: companyBodyLineTwips, lineRule: LineRuleType.EXACT }
+            : regime === "party"
+              ? { before: pBefore, after: pAfter, line: 360, lineRule: LineRuleType.EXACT }
+              : { before: pBefore, after: pAfter, line: 276 },
           children: createRunsAndTabsFromText(text, defaultHalfPoints, {
             bold: isArticleHeader || isTableTitle,
             italics: isLegalBasis,
@@ -1078,7 +1150,11 @@ export function convertHtmlToDocxElements(
 /**
  * Trích xuất các node inline (strong, em, u, text) trong một thẻ HTML
  */
-function parseInlineNodes(element: Element, fontSizeHalfPoints: number = 26): (TextRun | Tab)[] {
+function parseInlineNodes(
+  element: Element,
+  fontSizeHalfPoints: number = 26,
+  options: { forceBold?: boolean } = {}
+): (TextRun | Tab)[] {
   const runs: (TextRun | Tab)[] = [];
 
   const traverse = (node: Node, currentFormat: { bold: boolean; italic: boolean; underline: boolean }) => {
@@ -1119,7 +1195,7 @@ function parseInlineNodes(element: Element, fontSizeHalfPoints: number = 26): (T
   };
 
   Array.from(element.childNodes).forEach((child) => {
-    traverse(child, { bold: false, italic: false, underline: false });
+    traverse(child, { bold: options.forceBold === true, italic: false, underline: false });
   });
 
   return runs;
@@ -1321,12 +1397,13 @@ export function generateND30DocxDocument(data: DocumentFormatType): Document {
   const useCompanyND30Header = !isParty && data.headerProfile === COMPANY_HEADER_PROFILE_ID;
   const useCompanyHD05Header = isParty && data.headerProfile === COMPANY_HEADER_HD05_PROFILE_ID;
   const useCompanyHeader = useCompanyND30Header || useCompanyHD05Header;
-  const profile = getStyleProfile(data.regime);
+  const profile = getStyleProfile(data.regime, data.headerProfile);
   const bodyParagraphs = convertHtmlToDocxElements(
     data.bodyHtml || "",
     data.regime,
     useCompanyND30Header ? COMPANY_HEADER_GEOMETRY_MM.bodyInset : 0,
-    data.importedTables
+    data.importedTables,
+    data.headerProfile
   );
 
   const nationalHeader1Text = isParty
@@ -1341,6 +1418,91 @@ export function generateND30DocxDocument(data: DocumentFormatType): Document {
   const isCongVanParty=renderPlan.isCongVanParty;
   // Recipients remain document content even when the signer fields are cleared.
   const shouldRenderSignature = !hasEmbeddedSignature && (Boolean(data.recipients?.trim()) || (!isSignaturePlaceholder && (Boolean(data.signTitle) || Boolean(data.signName))));
+
+  const pageHeader = new Header({
+    children: [
+      new Paragraph({
+        alignment: AlignmentType.CENTER,
+        spacing: { before: 120, after: 120 },
+        children: [
+          new TextRun({
+            children: [PageNumber.CURRENT],
+            font: "Times New Roman",
+            size: profile.pageNumberFontSize * 2,
+          }),
+        ],
+      }),
+    ],
+  });
+
+  const appendixItems = data.appendices && Array.isArray(data.appendices) ? data.appendices : [];
+  const appendixSections = appendixItems.length > 0 ? [{
+    properties: {
+      titlePage: false,
+      type: SectionType.NEXT_PAGE,
+      page: {
+        size: ND30_PAGE_SIZE,
+        margin: ND30_PAGE_MARGINS,
+        ...(useCompanyND30Header ? { pageNumbers: { start: COMPANY_ND30_BODY_PROFILE.appendix.pageNumberStart } } : {}),
+      },
+    },
+    headers: { default: pageHeader },
+    children: appendixItems.flatMap((app: any, index: number) => [
+      ...(index > 0 ? [new Paragraph({ children: [new PageBreak()] })] : []),
+      candidateSectionMarker(`appendix:${app.id}:start`),
+      new Paragraph({
+        alignment: AlignmentType.CENTER,
+        spacing: { before: 240, after: 120, line: 276 },
+        children: [
+          new TextRun({
+            text: (app.title || "PHỤ LỤC").toUpperCase(),
+            font: "Times New Roman",
+            size: profile.bodyFontSize * 2,
+            bold: true,
+          }),
+        ],
+      }),
+      ...(app.referenceText ? [
+        new Paragraph({
+          alignment: AlignmentType.CENTER,
+          spacing: { before: 60, after: 180, line: 276 },
+          children: [
+            new TextRun({
+              text: app.referenceText,
+              font: "Times New Roman",
+              size: profile.bodyFontSize * 2,
+              italics: true,
+            }),
+          ],
+        }),
+      ] : []),
+      ...convertHtmlToDocxElements(app.html || "", data.regime, 0, data.importedTables, data.headerProfile),
+      candidateSectionMarker(`appendix:${app.id}:end`),
+    ]),
+  }] : [];
+
+  const unclassifiedElements: (Paragraph | Table)[] = [
+    candidateSectionMarker("unclassified:start"),
+    ...((data.unclassified && Array.isArray(data.unclassified) && data.unclassified.length > 0)
+      ? [
+          new Paragraph({ children: [new PageBreak()] }),
+          new Paragraph({
+            children: [new TextRun({ text: "KHỐI CHƯA PHÂN LOẠI — CẦN ĐỐI CHIẾU BẢN GỐC", bold: true, font: "Times New Roman", size: profile.bodyFontSize * 2 })],
+          }),
+          ...(data.unclassified as SourceBlock[]).flatMap((block) => {
+            const fallback = `<p>${(block.text || "[Khối không có văn bản]").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</p>`;
+            return [
+              new Paragraph({ text: `Khối #${block.index + 1} (${block.kind})` }),
+              ...convertHtmlToDocxElements(block.html || fallback, data.regime, 0, data.importedTables),
+            ];
+          }),
+        ]
+      : []),
+    candidateSectionMarker("unclassified:end"),
+  ];
+  if (appendixSections.length > 0) {
+    appendixSections[appendixSections.length - 1].children.push(...unclassifiedElements);
+  }
 
   return new Document({
     styles: {
@@ -1389,33 +1551,17 @@ export function generateND30DocxDocument(data: DocumentFormatType): Document {
             margin: ND30_PAGE_MARGINS,
           },
         },
-        headers: {
-          default: new Header({
-            children: [
-              new Paragraph({
-                alignment: AlignmentType.CENTER,
-                spacing: { before: 120, after: 120 },
-                children: [
-                  new TextRun({
-                    children: [PageNumber.CURRENT],
-                    font: "Times New Roman",
-                    size: profile.pageNumberFontSize * 2,
-                  }),
-                ],
-              }),
-            ],
-          }),
-        },
+        headers: { default: pageHeader },
         children: [
           // ==========================================
           // 1. HEADER KHỐI ĐẦU TRANG (BẢNG ẨN 2 CỘT)
           // ==========================================
           ...(renderSystemHeader && useCompanyND30Header ? [
-            createCompanyHeaderTable(data.referenceNumber, data.locationAndDate),
+            createCompanyHeaderTable(data.referenceNumber, data.locationAndDate, !data.omitNationalHeader),
             new Paragraph({ text: "", spacing: { after: 120 } }),
           ] : []),
           ...(renderSystemHeader && useCompanyHD05Header ? [
-            createCompanyHeaderHD05Table(data.referenceNumber, data.locationAndDate, data.orgHeader1, data.orgHeader2),
+            createCompanyHeaderHD05Table(data.referenceNumber, data.locationAndDate, data.orgHeader1, data.orgHeader2, !data.omitNationalHeader),
             new Paragraph({ text: "", spacing: { after: 120 } }),
           ] : []),
           ...(renderSystemHeader && !useCompanyHeader ? [
@@ -1631,7 +1777,7 @@ export function generateND30DocxDocument(data: DocumentFormatType): Document {
                         borders: INVISIBLE_CELL_BORDER,
                         margins: { top: 0, bottom: 0, left: 0, right: 0 },
                         children: [
-                          new Paragraph({
+                          ...(!data.omitNationalHeader ? [new Paragraph({
                             alignment: AlignmentType.CENTER,
                             spacing: { line: 240, after: 0 },
                             children: [
@@ -1642,8 +1788,8 @@ export function generateND30DocxDocument(data: DocumentFormatType): Document {
                                 bold: true,
                               }),
                             ],
-                          }),
-                          ...(!isParty && data.nationalHeader2 ? [
+                          })] : []),
+                          ...(!data.omitNationalHeader && !isParty && data.nationalHeader2 ? [
                             new Paragraph({
                               alignment: AlignmentType.CENTER,
                               spacing: { line: 240, after: 0 },
@@ -1673,7 +1819,7 @@ export function generateND30DocxDocument(data: DocumentFormatType): Document {
                                 new TextRun({ text: "", size: 2, font: "Times New Roman" }),
                               ],
                             }),
-                          ] : isParty ? [
+                          ] : !data.omitNationalHeader && isParty ? [
                             // Đường kẻ ngang nét liền dưới Quốc hiệu Đảng chuẩn Hướng dẫn 05: Dài bằng chiều dài tiêu đề (100%), không nhân 0.42!
                             new Paragraph({
                               alignment: AlignmentType.CENTER,
@@ -2026,63 +2172,10 @@ export function generateND30DocxDocument(data: DocumentFormatType): Document {
           // 6. PHỤ LỤC ĐỘC LẬP (NẾU CÓ TRONG data.appendices)
           // ==========================================
           candidateSectionMarker("signature:end"),
-          ...((data.appendices && Array.isArray(data.appendices) && data.appendices.length > 0)
-            ? data.appendices.flatMap((app: any) => [
-                candidateSectionMarker(`appendix:${app.id}:start`),
-                new Paragraph({
-                  children: [new PageBreak()],
-                }),
-                new Paragraph({
-                  alignment: AlignmentType.CENTER,
-                  spacing: { before: 240, after: 120, line: 276 },
-                  children: [
-                    new TextRun({
-                      text: (app.title || "PHỤ LỤC").toUpperCase(),
-                      font: "Times New Roman",
-                      size: profile.bodyFontSize * 2,
-                      bold: true,
-                    }),
-                  ],
-                }),
-                ...(app.referenceText ? [
-                  new Paragraph({
-                    alignment: AlignmentType.CENTER,
-                    spacing: { before: 60, after: 180, line: 276 },
-                    children: [
-                      new TextRun({
-                        text: app.referenceText,
-                        font: "Times New Roman",
-                        size: profile.bodyFontSize * 2,
-                        italics: true,
-                      }),
-                    ],
-                  }),
-                ] : []),
-                ...convertHtmlToDocxElements(app.html || "", data.regime, 0, data.importedTables),
-                candidateSectionMarker(`appendix:${app.id}:end`),
-              ])
-            : []),
-
-          candidateSectionMarker("unclassified:start"),
-          // Preserve uncertain source content in the draft so it cannot disappear silently.
-          ...((data.unclassified && Array.isArray(data.unclassified) && data.unclassified.length > 0)
-            ? [
-                new Paragraph({ children: [new PageBreak()] }),
-                new Paragraph({
-                  children: [new TextRun({ text: "KHỐI CHƯA PHÂN LOẠI — CẦN ĐỐI CHIẾU BẢN GỐC", bold: true, font: "Times New Roman", size: profile.bodyFontSize * 2 })],
-                }),
-                ...(data.unclassified as SourceBlock[]).flatMap((block) => {
-                  const fallback = `<p>${(block.text || "[Khối không có văn bản]").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</p>`;
-                  return [
-                    new Paragraph({ text: `Khối #${block.index + 1} (${block.kind})` }),
-                    ...convertHtmlToDocxElements(block.html || fallback, data.regime, 0, data.importedTables),
-                  ];
-                }),
-              ]
-            : []),
-          candidateSectionMarker("unclassified:end"),
+          ...(appendixSections.length === 0 ? unclassifiedElements : []),
         ],
       },
+      ...appendixSections,
     ],
   });
 }

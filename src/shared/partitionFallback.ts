@@ -1,4 +1,5 @@
 import type { PartitionProposal, SourceBlock } from "./schemas/document.schema.ts";
+import { extractStandaloneLocationDate } from "./locationDate.ts";
 
 /** Local deterministic partition suggestions; this does not call or depend on AI. */
 export function analyzePartitionFallback(
@@ -31,6 +32,27 @@ export function analyzePartitionFallback(
         source: "rule_fallback",
       });
       continue;
+    }
+
+    if (regime === "administrative" && currentRole === "unclassified" && block.kind === "paragraph") {
+      const locationAndDate = extractStandaloneLocationDate(text);
+      if (locationAndDate) {
+        proposals.push({
+          id: `fb-location-date-${block.id}`,
+          sourceBlockId: block.id,
+          currentRole,
+          suggestedRole: "metadata",
+          fieldKey: "locationAndDate",
+          exactQuote: text,
+          reason: "Dòng đứng riêng có cấu trúc địa danh, ngày tháng (kể cả dấu chấm chờ điền), thuộc nhóm 04.",
+          confidence: "high",
+          status: "pending",
+          regime,
+          componentGroupIndex: 4,
+          source: "rule_fallback",
+        });
+        continue;
+      }
     }
 
     if (block.kind === "table" && block.tableData && block.tableData.length > 0 && currentRole === "body") {

@@ -1,5 +1,4 @@
 import React,{useMemo,useState} from 'react';
-import DOMPurify from 'dompurify';
 import type {ExportCandidate} from '../utils/exportCandidate.ts';
 import {CandidateDocumentPreview} from './A4DocumentPreview.tsx';
 import {describeExportBlocker} from '../utils/workspaceExportMessages.ts';
@@ -19,12 +18,11 @@ type WorkspaceExportProps={
  onPrev:()=>void;
  onReviewSource:()=>void;
  onEditTarget:(targetId?:string)=>void;
- originalHtml:string;
 };
 
-export function WorkspaceExport({candidate,pending,error,onPrepare,onDownload,onDownloadOriginal,onPrintCandidate,originalAvailable,onPrev,onReviewSource,onEditTarget,originalHtml}:WorkspaceExportProps){
- const [mode,setMode]=useState<'candidate'|'original'|'body-reference'>('candidate');
- const [contextOpen,setContextOpen]=useState(()=>typeof window==='undefined'||window.innerWidth>1535);
+export function WorkspaceExport({candidate,pending,error,onPrepare,onDownload,onDownloadOriginal,onPrintCandidate,originalAvailable,onPrev,onReviewSource,onEditTarget}:WorkspaceExportProps){
+ const [toolbarTarget,setToolbarTarget]=useState<HTMLDivElement|null>(null);
+ const [contextOpen,setContextOpen]=useState(()=>typeof window==='undefined'||window.innerWidth>1000);
  // ExportCandidate.bytes is a defensive-copy getter. Read it once per immutable
  // candidate so UI state changes do not create a new preview input each render.
  const previewBytes=useMemo(()=>candidate?candidate.bytes:null,[candidate]);
@@ -47,6 +45,7 @@ export function WorkspaceExport({candidate,pending,error,onPrepare,onDownload,on
        <h2 id="df-step3-preview-title">Bản ứng viên hiện tại</h2>
        <p>{candidate?`${regimeLabel} · revision ${candidate.revision}`:'Tạo và kiểm ứng viên từ nội dung đã duyệt để xem trước.'}</p>
       </div>
+      <div className="df-step3-heading-toolbar" ref={setToolbarTarget}/>
       <button type="button" className="df-step3-context-toggle" aria-expanded={contextOpen} aria-controls="df-step3-context-panel" onClick={()=>setContextOpen(open=>!open)}>
        {contextOpen?'Ẩn thông tin xuất':'Thông tin xuất'}
       </button>
@@ -57,29 +56,8 @@ export function WorkspaceExport({candidate,pending,error,onPrepare,onDownload,on
       <p>{pending?'Đang tạo và kiểm ứng viên…':'Tạo ứng viên để dựng bản xem từ đúng DOCX sẽ tải xuống.'}</p>
       <button type="button" onClick={onPrepare} disabled={pending}>{pending?'Đang kiểm…':'Tạo và kiểm DOCX ứng viên'}</button>
      </div>}
-     {candidate?.downloadable&&mode==='candidate'&&previewBytes&&<CandidateDocumentPreview bytes={previewBytes} sha256={candidate.sha256} instanceId={candidate.instanceId} companyHeaderRegime={companyHeaderRegime}/>}
-    </section>
-
-    <section id="df-step3-reference" className="df-step3-reference-section" aria-labelledby="df-step3-reference-title">
-     <div className="df-step3-section-heading">
-      <div>
-       <h2 id="df-step3-reference-title">Đối chiếu Body</h2>
-       <p>Chỉ hiển thị phần thân bài làm tài liệu tham khảo.</p>
-      </div>
-     </div>
-     <nav className="df-step3-mode-tabs" aria-label="Chế độ xem">
-      <button type="button" aria-pressed={mode==='candidate'} onClick={()=>setMode('candidate')}>DOCX ứng viên</button>
-      <button type="button" aria-pressed={mode==='original'} onClick={()=>setMode('original')}>Body nguồn · tham khảo</button>
-      <button type="button" aria-pressed={mode==='body-reference'} onClick={()=>setMode('body-reference')}>Body nguồn ↔ ứng viên</button>
-     </nav>
-     {mode!=='candidate'&&<div className="df-step3-body-reference">
-      <p className="df-step3-reference-notice">Đây là đối chiếu tham khảo riêng phần Body. Phần này không thể hiện bố cục toàn văn, phân trang hoặc thay đổi theo từng vị trí.</p>
-      {mode==='original'&&<article><h3>Body nguồn</h3><div className="df-ws-source-html" dangerouslySetInnerHTML={{__html:DOMPurify.sanitize(originalHtml)}}/></article>}
-      {mode==='body-reference'&&<div className="df-step3-body-columns">
-       <article><h3>Body nguồn</h3><div className="df-ws-source-html" dangerouslySetInnerHTML={{__html:DOMPurify.sanitize(originalHtml)}}/></article>
-       <article><h3>Body ứng viên</h3>{candidate?<div className="df-ws-source-html" dangerouslySetInnerHTML={{__html:DOMPurify.sanitize(candidate.formatData.bodyHtml??'')}}/>:<p>Chưa có ứng viên hiện hành để đối chiếu.</p>}</article>
-      </div>}
-     </div>}
+     {candidate?.downloadable&&previewBytes&&<CandidateDocumentPreview bytes={previewBytes} sha256={candidate.sha256} instanceId={candidate.instanceId} companyHeaderRegime={companyHeaderRegime} toolbarTarget={toolbarTarget}/>}
+     {candidate&&!candidate.downloadable&&<div className="df-step3-unavailable-state" role="status"><strong>Ứng viên chưa sẵn sàng để xem.</strong><span>Đọc trạng thái và hướng xử lý trong bảng bên phải.</span></div>}
     </section>
 
    </div>
@@ -100,8 +78,11 @@ export function WorkspaceExport({candidate,pending,error,onPrepare,onDownload,on
        {warningReasons.length>0&&<details className="df-step3-warning-details"><summary>{warningReasons.length} nội dung cần kiểm tra</summary><ul>{warningReasons.map((reason,i)=><li key={i}>{reason}</li>)}</ul></details>}
        {actions.length>0&&<nav className="df-step3-blocker-actions" aria-label="Đối chiếu cảnh báo">{actions.map(({action,targetId},i)=><button type="button" key={i} onClick={()=>action==='review_source'?onReviewSource():action==='edit_target'?onEditTarget(targetId):onDownloadOriginal()}>{action==='review_source'?'Đối chiếu nguồn':action==='edit_target'?'Mở vị trí cần sửa':'Tải tệp gốc'}</button>)}</nav>}
       </section>}
-      <p className="df-step3-reference-notice">Bản xem trình duyệt chỉ chia vùng theo ngắt trang, có thể không hiện đường kẻ Shape và không xác nhận số trang trong Word. Hãy kiểm tra DOCX trong Word trước khi phát hành.</p>
-      {candidate.profileHeaderLines>0&&<p className="df-step3-reference-notice">Phần đầu dùng Shape của mẫu Hoa Tiêu. Hãy kiểm tra các đường kẻ trong Word.</p>}
+      <details className="df-step3-advisory">
+       <summary>Lưu ý về bản xem/in</summary>
+       <p>Bản xem trình duyệt chỉ chia vùng theo ngắt trang, có thể không hiện đường kẻ Shape và không xác nhận số trang trong Word. Hãy kiểm tra DOCX trong Word trước khi phát hành.</p>
+       {candidate.profileHeaderLines>0&&<p>Phần đầu dùng Shape của mẫu Hoa Tiêu. Hãy kiểm tra các đường kẻ trong Word.</p>}
+      </details>
       <p className="df-step3-candidate-inventory">{tableCount} bảng · {appendixCount} phụ lục · {regimeLabel}</p>
       <details className="df-step3-candidate-identity"><summary>SHA-256 và phiên bản</summary><code>{candidate.sha256}</code><span>revision {candidate.revision} · {candidate.instanceId}</span></details>
       <details className="df-step3-evidence" data-candidate-evidence data-candidate-sha={candidate.sha256} data-candidate-instance={candidate.instanceId}>
@@ -123,7 +104,6 @@ export function WorkspaceExport({candidate,pending,error,onPrepare,onDownload,on
      {originalAvailable&&<button type="button" className="df-step3-original-button" data-original-download onClick={onDownloadOriginal}>Tải tệp gốc nguyên vẹn</button>}
      <button type="button" className="df-step3-back-button" onClick={onPrev}>Quay lại Bước 2</button>
     </section>
-    <button type="button" className="df-step3-review-source" onClick={onReviewSource}>Mở đối chiếu nguồn</button>
    </aside>
   </div>
  </main>;

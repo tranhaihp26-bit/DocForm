@@ -81,6 +81,7 @@ export function composeDocumentFormatData(snapshot: DocumentComposerSnapshot): D
     return {
       regime: isParty ? "party" : "administrative",
       headerProfile: effectiveProfile,
+      omitNationalHeader: doc.omitNationalHeader === true,
       nationalHeader1: isParty ? "ĐẢNG CỘNG SẢN VIỆT NAM" : "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM",
       nationalHeader2: (isParty ? "" : "Độc lập - Tự do - Hạnh phúc") as "" | "Độc lập - Tự do - Hạnh phúc",
       fontFamily: "Times New Roman",

@@ -142,6 +142,8 @@ export const DocumentFormatSchema = z.object({
    */
   regime: z.enum(["administrative", "party"]).default("administrative"),
   headerProfile: z.enum(["generic", COMPANY_HEADER_PROFILE_ID, COMPANY_HEADER_HD05_PROFILE_ID]).optional(),
+  /** Explicit omission of the fixed national/Party title in the printed header. */
+  omitNationalHeader: z.boolean().optional(),
 
   /**
    * Quốc hiệu (Dòng 1):
@@ -523,6 +525,7 @@ export interface DocumentState {
   /** User-added physical tables. Source tables remain in immutable provenance. */
   importedTables?: Record<string, TableModel>;
   headerProfile?: "generic" | typeof COMPANY_HEADER_PROFILE_ID | typeof COMPANY_HEADER_HD05_PROFILE_ID;
+  omitNationalHeader?: boolean;
   orgHeader1: string;
   orgHeader2: string;
   nationalHeader1: string;
@@ -589,7 +592,15 @@ export function validateND30Compliance(
 
   // 1. Quốc hiệu
   const expectedH1 = isParty ? "ĐẢNG CỘNG SẢN VIỆT NAM" : "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM";
-  if (doc.nationalHeader1 !== expectedH1) {
+  if (doc.omitNationalHeader === true) {
+    issues.push({
+      id: "nationalHeaderOmitted",
+      field: "nationalHeader1",
+      title: "Đã chọn không dùng tiêu đề thể thức",
+      message: "Bản in sẽ để trống vị trí Quốc hiệu hoặc tiêu đề Đảng theo lựa chọn của người soạn.",
+      severity: "warning",
+    });
+  } else if (doc.nationalHeader1 !== expectedH1) {
     issues.push({
       id: "nationalHeader1",
       field: "nationalHeader1",
@@ -603,7 +614,9 @@ export function validateND30Compliance(
   }
 
   // 2. Tiêu ngữ
-  if (!isParty) {
+  if (doc.omitNationalHeader === true) {
+    // The national heading and motto are intentionally absent in this draft.
+  } else if (!isParty) {
     if (doc.nationalHeader2 !== "Độc lập - Tự do - Hạnh phúc") {
       issues.push({
         id: "nationalHeader2",

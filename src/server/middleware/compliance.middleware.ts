@@ -195,6 +195,7 @@ export function enforceND30Standards(
   const normalizedCandidate = {
     regime,
     headerProfile: source.headerProfile,
+    omitNationalHeader: source.omitNationalHeader === true,
     nationalHeader1,
     nationalHeader2,
     fontFamily,

@@ -62,7 +62,7 @@ const rightAligned = (runs: TextRun[], line = 320, after = 0) => new Paragraph({
  * Company header follows the source Word table; contains NO visible table grid.
  * Uses exact Shape Lines (DrawingML & VML fallback) matching header-reference.docx.
  */
-export function createCompanyHeaderTable(referenceNumber?: string, locationAndDate?: string): Table {
+export function createCompanyHeaderTable(referenceNumber?: string, locationAndDate?: string, showNationalHeader = true): Table {
   const cleanRef = (referenceNumber || "").trim() || COMPANY_DEFAULT_NUMBER;
   const cleanDate = (locationAndDate || "").trim() || COMPANY_DEFAULT_DATE;
 
@@ -96,7 +96,7 @@ export function createCompanyHeaderTable(referenceNumber?: string, locationAndDa
             width: { size: SOURCE_TABLE_TWIPS.right, type: WidthType.DXA },
             borders: INVISIBLE,
             margins: { top: 0, bottom: 0, left: 0, right: 0 },
-            children: [
+            children: showNationalHeader ? [
               centered([RUN(COMPANY_NATIONAL_HEADER, 12, true)], 300, 0),
               centered([RUN(COMPANY_MOTTO, 13, true)], 320, 0),
               // Đoạn văn chứa Shape Line 2 (độ rộng 155.9pt ~ 3118 twips, thụt lề 1064 dxa mỗi bên)
@@ -106,7 +106,7 @@ export function createCompanyHeaderTable(referenceNumber?: string, locationAndDa
                 spacing: { line: 20, lineRule: "exact", before: 0, after: 0 },
                 children: [new TextRun({ text: "[[ND30_SHAPE_LINE_2]]" })],
               }),
-            ],
+            ] : [new Paragraph({ text: "" })],
           }),
         ],
       }),

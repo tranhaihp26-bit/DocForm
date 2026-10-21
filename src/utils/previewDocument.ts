@@ -3,6 +3,7 @@ import type { DocumentFormatType, SourceBlock } from "../shared/schemas/document
 
 export interface PreviewDocumentSource {
   headerProfile?: DocumentFormatType["headerProfile"];
+  omitNationalHeader?: boolean;
   orgHeader1?: string;
   orgHeader2?: string;
   referenceNumber?: string;

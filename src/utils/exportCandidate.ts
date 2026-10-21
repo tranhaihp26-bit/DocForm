@@ -113,7 +113,10 @@ export async function prepareExportCandidate(input: ExportCandidateSnapshot, gen
   const generatedBytes = new Uint8Array(await generateBytes(formatData));
   const digest = await sha256(generatedBytes);
   const tableFidelity = await verifyCandidateExportFidelity(generatedBytes, canonicalTables, expectedManifest,
-    approvedNewTableIds ? { approvedNewTableIds } : undefined);
+    {
+      ...(approvedNewTableIds ? { approvedNewTableIds } : {}),
+      companyNd30TableFormat: formatData.regime === "administrative" && formatData.headerProfile === COMPANY_HEADER_PROFILE_ID,
+    });
   let xml = "";
   let settingsXml = "";
   try {

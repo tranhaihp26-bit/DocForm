@@ -477,7 +477,7 @@ export function buildCanonicalRuleRegistry(): CanonicalRuleDef[] {
     { id: "BODY.HEADING.ARTICLE_FORMAT", title: "Định dạng Điều khoản", regime: "administrative", prop: "article_headings", desc: "Từ 'Điều ...' viết hoa chữ cái đầu, đậm; nội dung điều bắt đầu cùng dòng" },
     { id: "BODY.TABLE.PRESERVATION", title: "Bảo toàn Bảng biểu nội dung", regime: "administrative", prop: "table_geometry", desc: "Bảo toàn số hàng, số cột, ô gộp ngang/dọc và nội dung ô của bảng" },
     { id: "BODY.TABLE.HEADER_ROW", title: "Hàng tiêu đề Bảng biểu", regime: "administrative", prop: "table_header_row", desc: "Hàng đầu bảng in đậm, căn giữa, lặp lại trên trang mới nếu bảng ngắt trang" },
-    { id: "BODY.PARAGRAPH.LINE_SPACING", title: "Khoảng cách dòng", regime: "administrative", prop: "line_spacing", desc: "Giãn dòng từ 1.15 đến 1.5 dòng (hoặc exactly 240-360 twips)" },
+    { id: "BODY.PARAGRAPH.LINE_SPACING", title: "Khoảng cách dòng", regime: "administrative", prop: "line_spacing", desc: "Giãn dòng thân bài theo khoảng từ đơn đến 1.5 dòng; profile Hoa Tiêu MB áp dụng exactly 19pt" },
     { id: "BODY.PARAGRAPH.FIRST_LINE_INDENT", title: "Thụt lề đầu dòng", regime: "administrative", prop: "first_line_indent", desc: "Đầu dòng đoạn văn thụt lề từ 1cm đến 1.27cm (567 - 720 twips)" },
     { id: "BODY.PARTY.FIVE_HYPHENS", title: "5 dấu gạch nối trước nội dung", regime: "party", prop: "five_hyphens", desc: "Văn bản Đảng có tên loại phải có đúng 5 dấu gạch nối '-----' trước nội dung" },
     { id: "BODY.PARTY.SUBJECT_UPRIGHT_BOLD", title: "Trích yếu đứng đậm", regime: "party", prop: "subject_format", desc: "Trích yếu văn bản Đảng có tên loại in thường, đứng, đậm (không in nghiêng)" },
@@ -1153,11 +1153,24 @@ export function evaluateDocumentRules(
               const min = bEv.lineSpacingRangeDxa.min;
               const max = bEv.lineSpacingRangeDxa.max;
               actual = `${min} - ${max} dxa`;
-              const ok = min >= 240 && max <= 360;
-              status = ok ? "PASS" : "FAIL";
-              reason = ok
-                ? `Khoảng cách dòng thân bài (${min}-${max} dxa) đạt chuẩn từ đơn đến 1.5 dòng (240-360 dxa).`
-                : `Khoảng cách dòng thân bài (${min}-${max} dxa) không thuộc khoảng đơn đến 1.5 dòng.`;
+              if (isUsingNd30CompanyProfile) {
+                const bodyParagraphs = bEv.directParagraphs.filter((p: any) =>
+                  p.text.trim().length > 0 && (p.isEligibleBody || p.role === "heading")
+                );
+                const exactCompanySpacing = bodyParagraphs.length > 0 && bodyParagraphs.every((p: any) =>
+                  p.lineRule === "exact" && p.lineSpacingDxa === 380
+                );
+                status = exactCompanySpacing ? "PASS" : "FAIL";
+                reason = exactCompanySpacing
+                  ? "Các đoạn và đề mục thân bài của profile Hoa Tiêu MB dùng Exactly 19pt (380 twips)."
+                  : "Profile Hoa Tiêu MB yêu cầu các đoạn và đề mục thân bài dùng Exactly 19pt (380 twips).";
+              } else {
+                const ok = min >= 240 && max <= 360;
+                status = ok ? "PASS" : "FAIL";
+                reason = ok
+                  ? `Khoảng cách dòng thân bài (${min}-${max} dxa) đạt chuẩn từ đơn đến 1.5 dòng (240-360 dxa).`
+                  : `Khoảng cách dòng thân bài (${min}-${max} dxa) không thuộc khoảng đơn đến 1.5 dòng.`;
+              }
             }
           }
         } else if (r.id === "ND30-BODY-FONT-SIZE") {
@@ -1204,17 +1217,30 @@ export function evaluateDocumentRules(
             (doc.importedTables && Object.keys(doc.importedTables).length > 0) ||
             /<table\b/i.test(doc.bodyHtml || "")
           );
-          const hasTablesWithHeaderRow = Boolean(
-            (doc.importedTables && Object.values(doc.importedTables as Record<string, any>).some((t: any) => t.rows && t.rows.some((row: any) => row.isHeader))) ||
-            /<th\b/i.test(doc.bodyHtml || "")
-          );
+          const hasTablesWithHeaderRow = isUsingNd30CompanyProfile
+            ? hasAnyTables
+            : Boolean(
+                (doc.importedTables && Object.values(doc.importedTables as Record<string, any>).some((t: any) => t.rows && t.rows.some((row: any) => row.isHeader))) ||
+                /<th\b/i.test(doc.bodyHtml || "")
+              );
           if (!hasAnyTables || !hasTablesWithHeaderRow) {
             status = "NOT_APPLICABLE";
             reason = "Văn bản không có bảng yêu cầu hàng tiêu đề lặp lại.";
           } else if (ooxmlEvidence.candidate_fidelity_result) {
             const candidateXml = ooxmlEvidence.candidate_fidelity_result.candidateXml || "";
             const hasHeaderDiff = ooxmlEvidence.candidate_fidelity_result.diffs?.some((d: any) => d.messageVi?.includes("tblHeader") || d.messageVi?.includes("tiêu đề"));
-            const hasTblHeaderXml = candidateXml ? /<w:tblHeader\b/i.test(candidateXml) : !hasHeaderDiff;
+            const hasTblHeaderXml = candidateXml
+              ? isUsingNd30CompanyProfile
+                ? (() => {
+                    const bodyTables = (candidateXml.match(/<w:tbl\b[\s\S]*?<\/w:tbl>/gi) || [])
+                      .filter((tableXml: string) => !/w:tblCaption\b[^>]*w:val=["']system_(?:header_layout|signature_layout)_table["']/i.test(tableXml));
+                    return bodyTables.length > 0 && bodyTables.every((tableXml: string) => {
+                      const firstRow = tableXml.match(/<w:tr\b[\s\S]*?<\/w:tr>/i)?.[0] || "";
+                      return /<w:tblHeader\b/i.test(firstRow);
+                    });
+                  })()
+                : /<w:tblHeader\b/i.test(candidateXml)
+              : !hasHeaderDiff;
             status = (!hasHeaderDiff && hasTblHeaderXml) ? "PASS" : "FAIL";
             reason = status === "PASS"
               ? "Hàng tiêu đề bảng được định dạng và gán thuộc tính lặp w:tblHeader trên DOCX ứng viên."

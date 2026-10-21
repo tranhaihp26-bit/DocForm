@@ -12,6 +12,7 @@ import {
   NATIONAL_HEADER_2_REGEX,
   formatReferenceNumber
 } from "../server/structuralSegmenter.ts";
+import { extractStandaloneLocationDate } from "../shared/locationDate.ts";
 
 export interface ReconstructedDocumentState {
   fields: {
@@ -335,10 +336,19 @@ export function reconstructFromReviewedBlocks(
     subject = baseImport.fields.subject?.value || "";
     if (!referenceNumber) referenceNumber = baseImport.fields.referenceNumber?.value || "";
   } else if (metaBlocks.length > 0) {
+    let foundMetadataLocationDate = false;
     for (const b of metaBlocks) {
       const text = (b.text || "").trim();
       const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
       for (const line of lines) {
+        const locationDate = extractStandaloneLocationDate(line);
+        if (locationDate) {
+          if (!foundMetadataLocationDate) {
+            locationAndDate = locationDate;
+            foundMetadataLocationDate = true;
+          }
+          continue;
+        }
         const upper = line.toUpperCase();
         const matchedDocType = DOC_TYPE_KEYWORDS.find(kw => upper === kw || upper.startsWith(kw + " ") || upper.startsWith(kw + ":"));
         if (matchedDocType && !documentType) {

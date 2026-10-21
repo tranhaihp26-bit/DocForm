@@ -529,11 +529,38 @@ export function validateOoxmlWellFormed(xml: string): { valid: boolean; error?: 
  * Kiểm định độ an toàn và roundtrip trực tiếp trên bộ đệm byte DOCX ứng viên trước khi tải về.
  * Sinh DOCX ứng viên -> giải nén OOXML -> đối chiếu hai chiều từng bảng nguồn với bảng xuất.
  */
+function applyCompanyNd30TableFormatForComparison(model: TableModel): TableModel {
+  return {
+    ...model,
+    rows: model.rows.map((row, rowIndex) => {
+      const isHeader = Boolean(row.isHeader || rowIndex === 0);
+      return {
+        ...row,
+        isHeader,
+        cells: row.cells.map(cell => ({
+          ...cell,
+          ...(rowIndex === 0 ? { alignment: "center" as const } : {}),
+          paragraphs: cell.paragraphs?.map(paragraph => ({
+            ...paragraph,
+            ...(rowIndex === 0 ? { alignment: "center" as const } : {}),
+            runs: paragraph.runs?.map(run => ({
+              ...run,
+              font: "Times New Roman",
+              sizeHalfPt: 26,
+              ...(isHeader ? { bold: true } : {}),
+            })),
+          })),
+        })),
+      };
+    }),
+  };
+}
+
 export async function verifyCandidateExportFidelity(
   candidateDocxBytes: Uint8Array | ArrayBuffer,
   importedTables?: Record<string, TableModel>,
   manifest?: any,
-  options?: { approvedNewTableIds?: string[] }
+  options?: { approvedNewTableIds?: string[]; companyNd30TableFormat?: boolean }
 ): Promise<CandidateExportVerificationResult> {
   const diffs: TableDiff[] = [];
   const violations: ExportSafetyViolation[] = [];
@@ -810,7 +837,10 @@ export async function verifyCandidateExportFidelity(
       continue;
     }
 
-    const tableDiffs = compareTableFidelity(sourceModel, candidateModel);
+    const expectedModel = options?.companyNd30TableFormat
+      ? applyCompanyNd30TableFormatForComparison(sourceModel)
+      : sourceModel;
+    const tableDiffs = compareTableFidelity(expectedModel, candidateModel);
     diffs.push(...tableDiffs);
 
     if (tableDiffs.length === 0) {

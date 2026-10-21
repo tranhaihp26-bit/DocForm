@@ -1200,3 +1200,33 @@
   .df-workspace-layout { padding: 8px; }
   .df-step-toc { grid-template-columns: 1fr; }
 }
+
+/* Steps 2 and 3 use the same viewport slot; their main content owns its scroll. */
+@media (min-width: 1001px) {
+  .df-workspace-layout[data-current-step="2"] > .df-workspace-main,
+  .df-workspace-layout[data-current-step="3"] > .df-workspace-main {
+    overflow: hidden;
+    scrollbar-gutter: auto;
+  }
+
+  .df-workspace-layout[data-current-step="2"] > .df-workspace-main > .df-workspace-step2-shell {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr);
+    height: 100%;
+    min-height: 0;
+    min-width: 0;
+    overflow: hidden;
+  }
+}
+
+@keyframes df-workspace-step-enter {
+  from { opacity: .78; }
+  to { opacity: 1; }
+}
+
+@media (min-width: 1001px) and (prefers-reduced-motion: no-preference) {
+  .df-workspace-layout[data-current-step="2"] .df-step-layout-workspace,
+  .df-workspace-layout[data-current-step="3"] .df-workspace-export {
+    animation: df-workspace-step-enter 160ms ease-out;
+  }
+}

@@ -97,7 +97,8 @@ export function createCompanyHeaderHD05Table(
   referenceNumber?: string,
   locationAndDate?: string,
   customOrgHeader1?: string,
-  customOrgHeader2?: string
+  customOrgHeader2?: string,
+  showNationalHeader = true
 ): Table {
   const cleanRef = (referenceNumber || "").trim();
   const cleanDate = (locationAndDate || "").trim() || COMPANY_HEADER_HD05_DEFAULT_DATE;
@@ -153,11 +154,11 @@ export function createCompanyHeaderHD05Table(
             borders: INVISIBLE,
             margins: { top: 0, bottom: 0, left: 0, right: 0 },
             children: [
-              rightAligned([
+              ...(showNationalHeader ? [rightAligned([
                 // Placeholder sẽ được hoán đổi thành DrawingML & VML Shape Line nguyên bản từ mẫu Word
                 new TextRun({ text: "[[HD05_SHAPE_LINE_TITLE]]" }),
                 RUN(COMPANY_HEADER_HD05_TITLE, 15, true),
-              ], 400, 180),
+              ], 400, 180)] : []),
               rightAligned([
                 RUN(cleanDate, 14, false, true),
               ], 360, 0),

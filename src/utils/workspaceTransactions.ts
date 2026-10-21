@@ -12,7 +12,10 @@ export type WorkspaceError = 'stale_revision' | 'pending_partition' | 'approval_
 export type WorkspaceResult = { ok: true; snapshot: WorkspaceSnapshot } | { ok: false; error: WorkspaceError; details: string[] };
 export type WorkspaceAction =
   | { type: 'editField'; field: keyof DocumentState; value: string }
+  | { type: 'editFields'; fields: Partial<Record<keyof DocumentState, string>> }
   | { type: 'setProfile'; profile: NonNullable<DocumentState['headerProfile']> }
+  | { type: 'setNationalHeaderOmitted'; omitted: boolean }
+  | { type: 'applyIssuerProfile'; orgHeader1: string; orgHeader2: string; profile?: NonNullable<DocumentState['headerProfile']> }
   | { type: 'editBody'; html: string }
   | { type: 'editAppendix'; id: string; html: string }
   | { type: 'editNode'; id:string; html:string }
@@ -78,6 +81,17 @@ export function transactWorkspace(input: WorkspaceSnapshot, expectedRevision: nu
   let event: PendingEvent;
   const app = 'id' in action ? s.doc.appendices?.find(a => a.id === action.id) : undefined;
   switch (action.type) {
+    case 'setNationalHeaderOmitted': {
+      s.doc.omitNationalHeader = action.omitted;
+      event={action:'edit',kind:'field',targetId:'omitNationalHeader',sourceRefs:[]};break;
+    }
+    case 'applyIssuerProfile': {
+      if (action.profile && action.profile !== 'generic' && action.profile !== (s.standardType === 'party' ? COMPANY_HEADER_HD05_PROFILE_ID : COMPANY_HEADER_PROFILE_ID)) return fail('invalid_transaction','profile_regime_mismatch');
+      s.doc.headerProfile=action.profile ?? 'generic';
+      s.doc.orgHeader1=action.orgHeader1;
+      s.doc.orgHeader2=action.orgHeader2;
+      event={action:'edit',kind:'field',targetId:'orgHeader1,orgHeader2',sourceRefs:[]};break;
+    }
     case 'setProfile': {
       if(action.profile!=='generic'&&action.profile!==(s.standardType==='party'?COMPANY_HEADER_HD05_PROFILE_ID:COMPANY_HEADER_PROFILE_ID))return fail('invalid_transaction','profile_regime_mismatch');
       s.doc.headerProfile=action.profile;
@@ -88,9 +102,27 @@ export function transactWorkspace(input: WorkspaceSnapshot, expectedRevision: nu
     case 'editField': {
       const allowed = ['orgHeader1','orgHeader2','nationalHeader1','nationalHeader2','locationAndDate','documentType','referenceNumber','subject','signTitle','signName','recipients','draftNote'];
       if (!allowed.includes(action.field)) return fail('invalid_transaction', 'field_requires_typed_action');
+      if (action.field === 'nationalHeader1' || action.field === 'nationalHeader2') return fail('readonly_content', 'fixed_regime_heading');
       if(s.doc.headerProfile===COMPANY_HEADER_PROFILE_ID&&LOCKED_COMPANY_FIELDS.has(action.field)||s.doc.headerProfile===COMPANY_HEADER_HD05_PROFILE_ID&&LOCKED_COMPANY_HD05_FIELDS.has(action.field))return fail('readonly_content','profile_locked_field');
       (s.doc as any)[action.field] = action.value;
       event = { action: 'edit', kind: 'field', targetId: action.field, sourceRefs: s.structuredImport?.fields[action.field]?.sourceBlockIds ?? [] }; break;
+    }
+    case 'editFields': {
+      const entries = Object.entries(action.fields) as Array<[keyof DocumentState, string]>;
+      const allowed = new Set(['orgHeader1','orgHeader2','locationAndDate','documentType','referenceNumber','subject','signTitle','signName','recipients','draftNote']);
+      if (!entries.length || entries.some(([field]) => !allowed.has(field))) return fail('invalid_transaction', 'field_requires_typed_action');
+      if (entries.some(([field]) => s.doc.headerProfile === COMPANY_HEADER_PROFILE_ID && LOCKED_COMPANY_FIELDS.has(field)
+        || s.doc.headerProfile === COMPANY_HEADER_HD05_PROFILE_ID && LOCKED_COMPANY_HD05_FIELDS.has(field))) {
+        return fail('readonly_content', 'profile_locked_field');
+      }
+      for (const [field, value] of entries) (s.doc as any)[field] = value;
+      event = {
+        action: 'edit',
+        kind: 'field',
+        targetId: entries.map(([field]) => String(field)).join(','),
+        sourceRefs: [...new Set(entries.flatMap(([field]) => s.structuredImport?.fields[field]?.sourceBlockIds ?? []))],
+      };
+      break;
     }
     case 'editBody': case 'editAppendix': {
       if (action.type === 'editAppendix' && !app) return fail('not_found');
@@ -226,7 +258,7 @@ export function changeWorkspaceRegime(input:WorkspaceSnapshot,expectedRevision:n
   if(input.workspace.staged)return fail('pending_partition');
   const errors=workspaceInvariantErrors(input);if(errors.length)return fail('invalid_transaction',...errors);
   if(regime===input.standardType)return{ok:true,snapshot:input};
-  const s=structuredClone(input);s.standardType=regime;
+  const s=structuredClone(input);s.standardType=regime;s.doc.omitNationalHeader=false;
   if(s.doc.headerProfile!=='generic'&&s.doc.headerProfile!==(regime==='party'?COMPANY_HEADER_HD05_PROFILE_ID:COMPANY_HEADER_PROFILE_ID))s.doc.headerProfile='generic';
   for(const [key,value]of Object.entries(s.workspace.overrides))if(value&&typeof value==='object'&&'regime'in value&&(value as any).regime!==regime)delete s.workspace.overrides[key];
   s.workspace.partition=makePartition(s.workspace.source,regime,s.reviewBlocks,s.workspace.partition.revision+1,s.workspace.partition.cells);

@@ -1,14 +1,17 @@
 import React, { useEffect, useRef, useState } from 'react';
 import DOMPurify from 'dompurify';
-import { AlignCenter, AlignJustify, AlignLeft, AlignRight, Bold, CheckCircle2, Italic, List, ListOrdered, Maximize2, Minimize2, Redo2, Sparkles, Underline, Undo2 } from 'lucide-react';
+import { AlignCenter, AlignJustify, AlignLeft, AlignRight, AlertCircle, Bold, CheckCircle2, HelpCircle, Italic, List, ListOrdered, Maximize2, Minimize2, Redo2, Sparkles, Underline, Undo2 } from 'lucide-react';
 import { projectWorkspace } from '../utils/workspaceProjection.ts';
 import { assessTableCellCapabilities, workspaceNodeTableId, type EditorSafety } from '../utils/workspaceCapabilities.ts';
 import { canEnterWorkspaceStep, type EditableNode, type WorkspaceSnapshot } from '../utils/workspaceState.ts';
 import type { WorkspaceAction } from '../utils/workspaceTransactions.ts';
 import type { TableModel } from '../shared/tableModel.ts';
-import type { ND30ComplianceReport } from '../shared/schemas/document.schema.ts';
+import type { DocumentState, ND30ComplianceReport } from '../shared/schemas/document.schema.ts';
 import { WorkspaceCanvasEditor } from './ND30Editor.tsx';
 import { useAccessibleDialog } from '../utils/useAccessibleDialog.ts';
+import { BUILT_IN_ISSUER_PROFILES, loadIssuerProfiles, saveIssuerProfiles, type IssuerProfile } from '../utils/issuerProfiles.ts';
+import { COMPANY_HEADER_PROFILE_ID } from '../canonical/nd30/companyHeader.ts';
+import { COMPANY_HEADER_HD05_PROFILE_ID } from '../canonical/hd05/companyHeaderHD05.ts';
 import './WorkspaceEditor.css';
 
 const labels: Record<string, string> = {
@@ -33,61 +36,288 @@ function capabilityMessage(reason: string): string {
 
 function groupStatus(group: ReturnType<typeof projectWorkspace>['groups'][number], seal: ReturnType<typeof projectWorkspace>['seal']) {
   if (group.id === 8) {
-    if (seal?.status === 'present') return { label: 'Nguồn ghi nhận có', tone: 'evidence' };
-    if (seal?.status === 'missing') return { label: 'Nguồn ghi nhận chưa có', tone: 'quiet' };
-    if (seal?.status === 'unverified') return { label: 'Chưa xác minh', tone: 'review' };
-    return { label: 'Chưa có bằng chứng', tone: 'quiet' };
+    if (seal?.status === 'present') return { label: 'Nguồn ghi nhận có', tone: 'evidence', Icon: CheckCircle2 };
+    if (seal?.status === 'missing') return { label: 'Nguồn ghi nhận chưa có', tone: 'quiet', Icon: AlertCircle };
+    if (seal?.status === 'unverified') return { label: 'Chưa xác minh', tone: 'review', Icon: HelpCircle };
+    return { label: 'Chưa có bằng chứng', tone: 'quiet', Icon: HelpCircle };
   }
   const hasContent = group.fields.some(field => field.value.trim().length > 0) || group.sourceBlockIds.length > 0;
   return hasContent
-    ? { label: 'Có dữ liệu', tone: 'evidence' }
-    : { label: 'Chưa có dữ liệu', tone: 'quiet' };
+    ? { label: 'Có dữ liệu', tone: 'evidence', Icon: CheckCircle2 }
+    : { label: 'Chưa có dữ liệu', tone: 'quiet', Icon: AlertCircle };
+}
+
+function parseLocationAndDate(value: string) {
+  const text = value.trim();
+  const vietnameseDate = text.match(/^(.*?)(?:,\s*|\s+)?ngày\s+(\d{1,2}|[.…]{1,6})\s+tháng\s+(\d{1,2}|[.…]{1,6})\s+năm\s+(\d{4}|[.…]{1,6})$/i);
+  if (vietnameseDate) {
+    const [, location = '', dayText = '', monthText = '', yearText = ''] = vietnameseDate;
+    if (/^\d+$/.test(dayText) && /^\d+$/.test(monthText) && /^\d{4}$/.test(yearText)) {
+      const day = Number(dayText), month = Number(monthText), year = Number(yearText);
+      const date = new Date(Date.UTC(year, month - 1, day));
+      const valid = date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+      return { location: location.trim(), date: valid ? yearText + '-' + monthText.padStart(2, '0') + '-' + dayText.padStart(2, '0') : '', recognized: true };
+    }
+    return { location: location.trim(), date: '', recognized: true };
+  }
+  const slashDate = text.match(/^(.*?)(?:,\s*|\s+)?(?:ngày\s+)?(\d{1,2})\s*[/. -]\s*(\d{1,2})\s*[/. -]\s*(\d{4})$/i);
+  if (slashDate) {
+    const [, location = '', dayText = '', monthText = '', yearText = ''] = slashDate;
+    const day = Number(dayText), month = Number(monthText), year = Number(yearText);
+    const date = new Date(Date.UTC(year, month - 1, day));
+    const valid = date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+    return { location: location.trim(), date: valid ? yearText + '-' + monthText.padStart(2, '0') + '-' + dayText.padStart(2, '0') : '', recognized: true };
+  }
+  return { location: text, date: '', recognized: false };
+}
+
+function composeLocationAndDate(location: string, date: string) {
+  const place = location.trim().replace(/,\s*$/, '');
+  if (!place && !date) return '';
+  let dateText = 'ngày ...... tháng ...... năm ......';
+  if (date) {
+    const [year = '', month = '', day = ''] = date.split('-');
+    dateText = 'ngày ' + day.padStart(2, '0') + ' tháng ' + month.padStart(2, '0') + ' năm ' + year;
+  }
+  return (place ? place + ', ' : '') + dateText;
+}
+
+function formatLocationAndDate(value: string) {
+  const parts = parseLocationAndDate(value);
+  if (parts.recognized) return composeLocationAndDate(parts.location, parts.date);
+  if (/\bngày\b|\d{1,2}\s*[/. -]\s*\d{1,2}\s*[/. -]\s*\d{4}/i.test(value)) return value.trim();
+  return composeLocationAndDate(parts.location, '');
 }
 
 function ComponentCard({
-  group, seal, onAction,
+  group, seal, onAction, isOfficialLetter = false, standardType, omitNationalHeader, headerProfile, onRequestRegimeSwitch,
 }: {
   group: ReturnType<typeof projectWorkspace>['groups'][number];
   seal: ReturnType<typeof projectWorkspace>['seal'];
   onAction: (action: WorkspaceAction) => boolean;
+  isOfficialLetter?: boolean;
+  standardType: 'state' | 'party';
+  omitNationalHeader?: boolean;
+  headerProfile?: DocumentState['headerProfile'];
+  onRequestRegimeSwitch: (regime: 'state' | 'party') => void;
 }) {
   const [editing, setEditing] = useState(false);
-  const status = groupStatus(group, seal);
-  const hasEditableFields = group.fields.some(field => field.editable);
-
-  return <article id={`df-step2-group-${group.id}`} className={`df-ws-component-card${editing ? ' is-editing' : ''}`} data-workspace-group={group.id}>
-    <header className="df-ws-component-heading">
-      <div className="df-ws-component-label"><h3><span>{String(group.id).padStart(2, '0')}.</span> {group.name.replace(/^\d+\.\s*/, '')}</h3><span className={`df-ws-status df-ws-status-${status.tone}`}>{status.label}</span></div>
-      {hasEditableFields && <button type="button" className="df-ws-edit-toggle" aria-expanded={editing} aria-label={`${editing ? 'Đóng chỉnh sửa' : 'Chỉnh sửa'} ${group.name}`} onClick={() => setEditing(value => !value)}>{editing ? 'Đóng' : 'Sửa'}</button>}
-    </header>
-    {group.id === 8
-      ? <p className="df-ws-component-value">{seal?.status === 'present' ? 'Có dấu hoặc chữ ký số trong nguồn.' : seal?.status === 'missing' ? 'Nguồn ghi nhận chưa có dấu hoặc chữ ký số.' : seal?.status === 'unverified' ? 'Dấu hoặc chữ ký số cần được đối chiếu.' : 'Chưa có dữ liệu bằng chứng cho dấu hoặc chữ ký số.'}</p>
-      : <div className="df-ws-component-values">
-        {group.fields.map(field => <p className="df-ws-component-value" key={field.key} title={field.value.trim() || undefined}>
+  const [drafts, setDrafts] = useState<Partial<Record<keyof DocumentState, string>>>({});
+  const [locationDraft, setLocationDraft] = useState('');
+  const [dateDraft, setDateDraft] = useState('');
+  const [issuerProfiles, setIssuerProfiles] = useState<IssuerProfile[]>(loadIssuerProfiles);
+  const [selectedProfileId, setSelectedProfileId] = useState('');
+  const [profileName, setProfileName] = useState('');
+  const [profileNotice, setProfileNotice] = useState('');
+  const [confirmDeleteProfile, setConfirmDeleteProfile] = useState(false);
+  const [profileManagerOpen, setProfileManagerOpen] = useState(false);
+  const previewButton = useRef<HTMLButtonElement | null>(null);
+  const editorPanel = useRef<HTMLDivElement | null>(null);
+  const wasEditing = useRef(false);
+  const status = group.id === 1 && omitNationalHeader
+    ? { label: 'Đã chọn không dùng', tone: 'evidence', Icon: CheckCircle2 }
+    : groupStatus(group, seal);
+  const hasEditableFields = group.id === 1 || group.id === 2 || group.fields.some(field => field.editable);
+  const availableProfiles = [...BUILT_IN_ISSUER_PROFILES, ...issuerProfiles].filter(profile => profile.regime === standardType);
+  const StatusIcon = status.Icon;
+  useEffect(() => {
+    if (editing) {
+      wasEditing.current = true;
+      editorPanel.current?.querySelector<HTMLElement>('select, input, textarea')?.focus();
+    } else if (wasEditing.current) {
+      previewButton.current?.focus();
+      wasEditing.current = false;
+    }
+  }, [editing]);
+  const beginEditing = () => {
+    const nextDrafts: Partial<Record<keyof DocumentState, string>> = {};
+    for (const field of group.fields) nextDrafts[field.key] = field.value;
+    setDrafts(nextDrafts);
+    const dateParts = parseLocationAndDate(group.fields.find(field => field.key === 'locationAndDate')?.value ?? '');
+    setLocationDraft(dateParts.location);
+    setDateDraft(dateParts.date);
+    if (group.id === 2) {
+      const org1 = String(nextDrafts.orgHeader1 ?? '');
+      const org2 = String(nextDrafts.orgHeader2 ?? '');
+      const match = availableProfiles.find(profile => profile.orgHeader1 === org1 && profile.orgHeader2 === org2);
+      setSelectedProfileId(match?.id ?? '');
+      setProfileName(match?.builtIn ? '' : match?.name ?? '');
+      setProfileNotice('');
+      setConfirmDeleteProfile(false);
+      setProfileManagerOpen(false);
+    }
+    setEditing(true);
+  };
+  const saveAndClose = () => {
+    if (group.id === 1) { setEditing(false); return; }
+    if (group.id === 2) {
+      const orgHeader1 = String(drafts.orgHeader1 ?? group.fields.find(field => field.key === 'orgHeader1')?.value ?? '');
+      const orgHeader2 = String(drafts.orgHeader2 ?? group.fields.find(field => field.key === 'orgHeader2')?.value ?? '');
+      if (!selectedProfileId && headerProfile && headerProfile !== 'generic'
+        && orgHeader1 === group.fields.find(field => field.key === 'orgHeader1')?.value
+        && orgHeader2 === group.fields.find(field => field.key === 'orgHeader2')?.value) {
+        setEditing(false); return;
+      }
+      const selected = availableProfiles.find(profile => profile.id === selectedProfileId);
+      const exactPreset = selected?.builtIn && selected.orgHeader1 === orgHeader1 && selected.orgHeader2 === orgHeader2;
+      const profile = exactPreset ? standardType === 'party' ? COMPANY_HEADER_HD05_PROFILE_ID : COMPANY_HEADER_PROFILE_ID : 'generic';
+      if (orgHeader1 === group.fields.find(field => field.key === 'orgHeader1')?.value
+        && orgHeader2 === group.fields.find(field => field.key === 'orgHeader2')?.value && profile === (headerProfile ?? 'generic')) {
+        setEditing(false); return;
+      }
+      if (onAction({ type: 'applyIssuerProfile', orgHeader1, orgHeader2, profile })) setEditing(false);
+      return;
+    }
+    const fields: Partial<Record<keyof DocumentState, string>> = {};
+    for (const field of group.fields) {
+      if (!field.editable) continue;
+      const value = field.key === 'locationAndDate'
+        ? composeLocationAndDate(locationDraft, dateDraft)
+        : drafts[field.key] ?? field.value;
+      if (value !== field.value) fields[field.key] = value;
+    }
+    if (!Object.keys(fields).length || onAction({ type: 'editFields', fields })) setEditing(false);
+  };
+  const selectIssuerProfile = (id: string) => {
+    const selected = availableProfiles.find(profile => profile.id === id);
+    setSelectedProfileId(id);
+    setProfileName(selected?.builtIn ? '' : selected?.name ?? '');
+    setConfirmDeleteProfile(false);
+    setProfileNotice('');
+    if (selected) setDrafts(current => ({ ...current, orgHeader1: selected.orgHeader1, orgHeader2: selected.orgHeader2 }));
+  };
+  const saveIssuerProfile = () => {
+    const name = profileName.trim();
+    const orgHeader1 = String(drafts.orgHeader1 ?? '').trim();
+    const orgHeader2 = String(drafts.orgHeader2 ?? '').trim();
+    if (!name || !orgHeader2) { setProfileNotice('Nhập tên profile và cơ quan ban hành trước khi lưu.'); return; }
+    const existing = issuerProfiles.find(profile => profile.id === selectedProfileId);
+    const nextProfile: IssuerProfile = { id: existing?.id ?? crypto.randomUUID(), name, regime: standardType, orgHeader1, orgHeader2 };
+    const next = existing ? issuerProfiles.map(profile => profile.id === existing.id ? nextProfile : profile) : [...issuerProfiles, nextProfile];
+    if (!saveIssuerProfiles(next)) { setProfileNotice('Không thể lưu profile trên trình duyệt này.'); return; }
+    setIssuerProfiles(next);
+    setSelectedProfileId(nextProfile.id);
+    setProfileNotice('Đã lưu profile. Chọn “Lưu & đóng” để áp dụng vào văn bản.');
+  };
+  const deleteIssuerProfile = () => {
+    const selected = issuerProfiles.find(profile => profile.id === selectedProfileId);
+    if (!selected) return;
+    const next = issuerProfiles.filter(profile => profile.id !== selected.id);
+    if (!saveIssuerProfiles(next)) { setProfileNotice('Không thể xóa profile trên trình duyệt này.'); return; }
+    setIssuerProfiles(next);
+    setSelectedProfileId('');
+    setProfileName('');
+    setDrafts(current => ({
+      ...current,
+      orgHeader1: group.fields.find(field => field.key === 'orgHeader1')?.value ?? '',
+      orgHeader2: group.fields.find(field => field.key === 'orgHeader2')?.value ?? '',
+    }));
+    setConfirmDeleteProfile(false);
+    setProfileNotice('Đã xóa profile. Nội dung đang có trong văn bản được giữ nguyên.');
+  };
+  const statusIcon = <span role="img" className={`df-ws-status-icon df-ws-status-icon-${status.tone}`} aria-label={status.label} title={status.label}><StatusIcon size={16} strokeWidth={2.5} aria-hidden="true" /></span>;
+  const title = <span className="df-ws-component-title" role="heading" aria-level={3}><span>{String(group.id).padStart(2, '0')}.</span> {group.name.replace(/^\d+\.\s*/, '')}</span>;
+  const values = group.id === 2
+    ? <div className="df-ws-issuer-summary">
+      {(['orgHeader1', 'orgHeader2'] as const).map(key => <div className="df-ws-issuer-summary-row" key={key}>
+        <span>{labels[key]}</span>
+        <strong>{group.fields.find(field => field.key === key)?.value.trim() || 'Chưa có dữ liệu'}</strong>
+      </div>)}
+    </div>
+    : group.id === 1 && omitNationalHeader
+    ? <span className="df-ws-component-value df-ws-empty-header">Không dùng tiêu đề thể thức</span>
+    : group.id === 8
+    ? <span className="df-ws-component-value">{seal?.status === 'present' ? 'Có dấu hoặc chữ ký số trong nguồn.' : seal?.status === 'missing' ? 'Nguồn ghi nhận chưa có dấu hoặc chữ ký số.' : seal?.status === 'unverified' ? 'Dấu hoặc chữ ký số cần được đối chiếu.' : 'Chưa có dữ liệu bằng chứng cho dấu hoặc chữ ký số.'}</span>
+    : <span className="df-ws-component-values">
+      {group.fields.map(field => {
+        const value = field.value.trim()
+          ? field.key === 'locationAndDate' ? formatLocationAndDate(field.value) : field.value.trim()
+          : 'Chưa có dữ liệu trong bản soạn.';
+        return <span className="df-ws-component-value" key={field.key} title={value}>
           {group.id === 5 && <span className="df-ws-field-caption">{labels[field.key] ?? field.key}</span>}
-          <span>{field.value.trim() || 'Chưa có dữ liệu trong bản soạn.'}</span>
-        </p>)}
-        {group.fields.length === 0 && <p className="df-ws-component-value">Chưa có dữ liệu trong bản soạn.</p>}
-      </div>}
+          <span>{value}</span>
+        </span>;
+      })}
+      {group.fields.length === 0 && <span className="df-ws-component-value">Chưa có dữ liệu trong bản soạn.</span>}
+    </span>;
+  const fieldEditor = group.id === 1 ? <fieldset className="df-ws-header-choice">
+    <legend>Tiêu đề thể thức</legend>
+    <label><input type="radio" name="national-header-choice" checked={!omitNationalHeader && standardType === 'state'} onChange={() => {
+      if (standardType === 'state') onAction({ type: 'setNationalHeaderOmitted', omitted: false });
+      else onRequestRegimeSwitch('state');
+    }} /> NĐ30 · Quốc hiệu và tiêu ngữ</label>
+    <label><input type="radio" name="national-header-choice" checked={!omitNationalHeader && standardType === 'party'} onChange={() => {
+      if (standardType === 'party') onAction({ type: 'setNationalHeaderOmitted', omitted: false });
+      else onRequestRegimeSwitch('party');
+    }} /> HD05 · Đảng Cộng sản Việt Nam</label>
+    <label><input type="radio" name="national-header-choice" checked={Boolean(omitNationalHeader)} onChange={() => onAction({ type: 'setNationalHeaderOmitted', omitted: true })} /> Không dùng · để trống vị trí này</label>
+  </fieldset> : group.fields.map(field => {
+    if (field.key === 'locationAndDate' && field.editable) return <div className="df-ws-date-fields" key={field.key}>
+      <label>
+        <span>Địa danh</span>
+        <input aria-label="Địa danh" data-workspace-field="location" type="text" value={locationDraft} onChange={event => setLocationDraft(event.target.value)} placeholder="Ví dụ: Hải Phòng" />
+      </label>
+      <label>
+        <span>Ngày tháng (có thể để trống)</span>
+        <input aria-label="Chọn ngày tháng" data-workspace-field="date" type="date" value={dateDraft} onChange={event => setDateDraft(event.target.value)} />
+      </label>
+      <p className="df-ws-date-preview">{composeLocationAndDate(locationDraft, dateDraft) || 'ngày ...... tháng ...... năm ......'}</p>
+    </div>;
+    return <label key={field.key}>
+      <span>{labels[field.key] ?? field.key}</span>
+      {field.editable || group.id === 2
+        ? <textarea
+          aria-label={labels[field.key] ?? field.key}
+          data-workspace-field={field.key}
+          value={drafts[field.key] ?? field.value}
+          rows={field.key === 'recipients' ? 10 : field.key === 'referenceNumber' ? 5 : field.key === 'subject' ? 3 : 2}
+          onChange={event => setDrafts(current => ({ ...current, [field.key]: event.target.value }))}
+        />
+        : <textarea aria-label={labels[field.key] ?? field.key} value={field.value} readOnly rows={field.key === 'subject' ? 3 : 2} />}
+    </label>;
+  });
+
+  return <article id={`df-step2-group-${group.id}`} className={`df-ws-component-card${editing ? ' is-editing' : ''}`} data-workspace-group={group.id} data-office-letter={group.id === 5 && isOfficialLetter ? 'true' : undefined}>
+    {hasEditableFields && !editing
+      ? <button ref={previewButton} type="button" className="df-ws-component-preview" onClick={beginEditing}>
+        <span className="df-ws-component-heading"><span className="df-ws-component-label">{title}{statusIcon}</span></span>
+        {values}
+      </button>
+      : <header className="df-ws-component-heading">
+        <div className="df-ws-component-label"><h3><span>{String(group.id).padStart(2, '0')}.</span> {group.name.replace(/^\d+\.\s*/, '')}</h3>{statusIcon}</div>
+        {editing && <button type="button" className="df-ws-save-close" onClick={saveAndClose}>Lưu &amp; đóng</button>}
+      </header>}
+    {!(hasEditableFields && !editing) && !(group.id === 2 && editing) && values}
     {group.cellReferences.length > 0 && <p className="df-ws-component-note">{group.cellReferences.length} ô bảng nguồn được tham chiếu.</p>}
-    {hasEditableFields && editing && <div className="df-ws-field-editor">
-        {group.fields.map(field => <label key={field.key}>
-          <span>{labels[field.key] ?? field.key}</span>
-          <textarea
-            aria-label={labels[field.key] ?? field.key}
-            data-workspace-field={field.key}
-            value={field.value}
-            readOnly={!field.editable}
-            rows={field.key === 'subject' ? 3 : 2}
-            onChange={event => onAction({ type: 'editField', field: field.key, value: event.target.value })}
-          />
-        </label>)}
+    {hasEditableFields && editing && <div ref={editorPanel} className="df-ws-field-editor" id={`df-ws-field-editor-${group.id}`}>
+      {group.id === 2 && <div className="df-ws-profile-bar">
+        <label><span>Profile cơ quan</span><select aria-label="Chọn profile cơ quan" value={selectedProfileId} onChange={event => selectIssuerProfile(event.target.value)}>
+          <option value="">Thông tin hiện tại / profile mới</option>
+          {availableProfiles.map(profile => <option key={profile.id} value={profile.id}>{profile.name}{profile.builtIn ? ' · mẫu có sẵn' : ''}</option>)}
+        </select></label>
+        <button type="button" aria-expanded={profileManagerOpen} aria-controls="df-ws-profile-manager-2" onClick={() => setProfileManagerOpen(value => !value)}>{profileManagerOpen ? 'Ẩn quản lý' : 'Quản lý'}</button>
       </div>}
+      {fieldEditor}
+      {group.id === 2 && profileManagerOpen && <div className="df-ws-profile-manager" id="df-ws-profile-manager-2">
+        <div className="df-ws-profile-actions">
+          <button type="button" onClick={() => { setSelectedProfileId(''); setProfileName(''); setConfirmDeleteProfile(false); setProfileNotice('Nhập tên và thông tin cơ quan để tạo profile mới.'); }}>Thêm profile</button>
+          {selectedProfileId && !availableProfiles.find(profile => profile.id === selectedProfileId)?.builtIn && (confirmDeleteProfile
+            ? <><span>Xóa profile này?</span><button type="button" onClick={deleteIssuerProfile}>Xác nhận xóa</button><button type="button" onClick={() => setConfirmDeleteProfile(false)}>Hủy</button></>
+            : <button type="button" onClick={() => setConfirmDeleteProfile(true)}>Xóa profile</button>)}
+        </div>
+        {!availableProfiles.find(profile => profile.id === selectedProfileId)?.builtIn && <div className="df-ws-profile-save">
+          <label><span>Tên profile</span><input aria-label="Tên profile cơ quan" value={profileName} onChange={event => setProfileName(event.target.value)} placeholder="Ví dụ: Cơ quan của tôi" /></label>
+          <button type="button" onClick={saveIssuerProfile}>{issuerProfiles.some(profile => profile.id === selectedProfileId) ? 'Cập nhật profile' : 'Lưu profile mới'}</button>
+        </div>}
+        {availableProfiles.find(profile => profile.id === selectedProfileId)?.builtIn && <p>Profile mẫu chỉ đọc. Chọn “Thêm profile” để lưu bản tùy chỉnh.</p>}
+      </div>}
+      {group.id === 2 && profileNotice && <p className="df-ws-profile-notice" role="status">{profileNotice}</p>}
+    </div>}
   </article>;
 }
 
 export function WorkspaceEditor({
-  snapshot, active, initialCanvasId, onCanvasSelected, onAction, onPartition, onRefine,
+  snapshot, active, initialCanvasId, onCanvasSelected, onAction, onRequestRegimeSwitch, onPartition, onRefine,
   refining, canContinue, complianceReport, onOpenCompliance,
 }: {
   snapshot: WorkspaceSnapshot;
@@ -95,6 +325,7 @@ export function WorkspaceEditor({
   initialCanvasId: string;
   onCanvasSelected: (id: string) => void;
   onAction: (a: WorkspaceAction) => boolean;
+  onRequestRegimeSwitch: (regime: 'state' | 'party') => void;
   onPartition: () => void;
   onRefine: (a: 'proofread' | 'formalize', nodeId?: string) => void;
   refining: boolean;
@@ -137,8 +368,11 @@ export function WorkspaceEditor({
   const activeBodyNode = selected === 'body'
     ? selectedCanvas.nodes.find(node => node.editableNodeId === activeEditorId && node.editable)
     : undefined;
-  const beforeGroups = projection.groups.filter(group => group.id >= 1 && group.id <= 5);
+  const printOrder = [2, 1, 3, 4, 5];
+  const beforeGroups = projection.groups.filter(group => group.id >= 1 && group.id <= 5)
+    .sort((a, b) => printOrder.indexOf(a.id) - printOrder.indexOf(b.id));
   const afterGroups = projection.groups.filter(group => group.id >= 7 && group.id <= 9);
+  const isOfficialLetter = snapshot.doc.documentType.trim().toLocaleUpperCase('vi-VN').startsWith('CÔNG VĂN');
 
   const command = (name: 'undo' | 'redo' | 'toggleBold' | 'toggleItalic' | 'toggleUnderline' | 'toggleBulletList' | 'toggleOrderedList' | 'alignLeft' | 'alignCenter' | 'alignRight' | 'alignJustify') => {
     const editor = editors.current.get(activeEditorId);
@@ -213,7 +447,7 @@ export function WorkspaceEditor({
           <span>Nhóm 01–05</span>
         </header>
         <div className="df-ws-groups df-ws-group-cards">
-          {beforeGroups.map(group => <ComponentCard key={group.id} group={group} seal={projection.seal} onAction={onAction} />)}
+          {beforeGroups.map(group => <ComponentCard key={group.id} group={group} seal={projection.seal} onAction={onAction} onRequestRegimeSwitch={onRequestRegimeSwitch} standardType={snapshot.standardType} omitNationalHeader={snapshot.doc.omitNationalHeader} headerProfile={snapshot.doc.headerProfile} isOfficialLetter={isOfficialLetter} />)}
         </div>
       </section>
 
@@ -269,7 +503,7 @@ export function WorkspaceEditor({
           </span>
           <button type="button" className="df-ws-toolbar-expand" aria-label={canvasExpanded ? 'Thu nhỏ Canvas' : 'Mở rộng Canvas'} aria-pressed={canvasExpanded} title={canvasExpanded ? 'Thu nhỏ Canvas (Esc)' : 'Mở rộng Canvas'} onClick={() => setCanvasExpanded(value => !value)}>{canvasExpanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}<span>{canvasExpanded ? 'Thu nhỏ' : 'Mở rộng'}</span></button>
         </div>
-        {canvases.map(canvas => <section key={canvas.id} id={`canvas-${canvas.id}`} role="tabpanel" aria-labelledby={`canvas-tab-${canvas.id}`} tabIndex={selected === canvas.id ? 0 : -1} hidden={selected !== canvas.id} data-canvas-id={canvas.id} className="df-ws-sheet">
+        {canvases.map(canvas => <section key={canvas.id} id={`canvas-${canvas.id}`} role="tabpanel" aria-labelledby={`canvas-tab-${canvas.id}`} tabIndex={selected === canvas.id ? 0 : -1} hidden={selected !== canvas.id} data-canvas-id={canvas.id} data-format-profile={snapshot.doc.headerProfile} className="df-ws-sheet">
           {canvas.id !== 'body' && <h3>{canvas.title || 'Phụ lục'}</h3>}
           {canvas.id !== 'body' && <div className="df-ws-appendix-actions">
             <label>Tiêu đề phụ lục<input aria-label={`Tiêu đề ${canvas.id}`} value={snapshot.doc.appendices?.find(appendix => appendix.id === canvas.id)?.title ?? ''} onChange={event => onAction({ type: 'renameAppendix', id: canvas.id, title: event.target.value })} /></label>
@@ -286,7 +520,7 @@ export function WorkspaceEditor({
           <span>Nhóm 07–09</span>
         </header>
         <div className="df-ws-groups df-ws-group-cards df-ws-group-cards-after">
-          {afterGroups.map(group => <ComponentCard key={group.id} group={group} seal={projection.seal} onAction={onAction} />)}
+          {afterGroups.map(group => <ComponentCard key={group.id} group={group} seal={projection.seal} onAction={onAction} onRequestRegimeSwitch={onRequestRegimeSwitch} standardType={snapshot.standardType} omitNationalHeader={snapshot.doc.omitNationalHeader} headerProfile={snapshot.doc.headerProfile} />)}
         </div>
       </section>
 

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import DOMPurify from "dompurify";
 import { renderAsync } from "docx-preview";
 import { Packer } from "docx";
@@ -309,11 +310,13 @@ export const A4DocumentPreview: React.FC<A4DocumentPreviewProps> = ({
             </div>
           </div>
           <div>
+            {!doc.omitNationalHeader && <>
             <p className="font-bold whitespace-nowrap" style={{ fontSize: "12pt" }}>{COMPANY_NATIONAL_HEADER}</p>
             <div className="inline-flex flex-col items-center mt-0.5">
               <p className="font-bold whitespace-nowrap" style={{ fontSize: "13pt" }}>{COMPANY_MOTTO}</p>
               <div className="w-full border-b border-black mt-0.5" />
             </div>
+            </>}
           </div>
           <p className="mt-1" style={{ fontSize: "13pt" }}>{doc.referenceNumber || "Số: …/…"}</p>
           <p className="mt-1 italic text-right" style={{ fontSize: "13pt" }}>{doc.locationAndDate || "Hải Phòng, ngày … tháng … năm …"}</p>
@@ -364,11 +367,12 @@ export const A4DocumentPreview: React.FC<A4DocumentPreviewProps> = ({
             )}
           </div>
           <div className="text-right">
+            {!doc.omitNationalHeader &&
             <div className="inline-flex flex-col items-stretch text-right">
               <p className="font-bold whitespace-nowrap" style={{ fontSize: "15pt" }}>ĐẢNG CỘNG SẢN VIỆT NAM</p>
               {/* Nét liền 100% bằng độ dài chữ ĐẢNG CỘNG SẢN VIỆT NAM theo HD 05 */}
               <div className="w-full border-b border-black mt-0.5" />
-            </div>
+            </div>}
             <p className="italic text-right whitespace-nowrap" style={{ fontSize: "14pt", marginTop: "9pt" }}>
               {doc.locationAndDate || <span className="df-preview-placeholder no-print">Chưa nhập địa danh, ngày tháng</span>}
             </p>
@@ -422,7 +426,7 @@ export const A4DocumentPreview: React.FC<A4DocumentPreviewProps> = ({
 
           {/* Column 2: National Header & Date */}
           <div>
-            {isParty ? (
+            {doc.omitNationalHeader ? null : isParty ? (
               <div className="inline-flex flex-col items-center">
                 <p className="font-bold uppercase text-[15pt] leading-tight whitespace-nowrap">
                   {doc.nationalHeader1 || "ĐẢNG CỘNG SẢN VIỆT NAM"}
@@ -914,7 +918,7 @@ export const A4DocumentPreview: React.FC<A4DocumentPreviewProps> = ({
 };
 
 /** Main Workspace browser preview: consumes candidate bytes without claiming Word pagination. */
-export const CandidateDocumentPreview=React.memo(function CandidateDocumentPreview({bytes,sha256,instanceId,companyHeaderRegime}:{bytes:Uint8Array;sha256:string;instanceId:string;companyHeaderRegime?:'administrative'|'party'}) {
+export const CandidateDocumentPreview=React.memo(function CandidateDocumentPreview({bytes,sha256,instanceId,companyHeaderRegime,toolbarTarget}:{bytes:Uint8Array;sha256:string;instanceId:string;companyHeaderRegime?:'administrative'|'party';toolbarTarget?:HTMLElement|null}) {
   const host=useRef<HTMLDivElement>(null);
   const viewport=useRef<HTMLDivElement>(null);
   const pageElements=useRef<HTMLElement[]>([]);
@@ -988,17 +992,12 @@ export const CandidateDocumentPreview=React.memo(function CandidateDocumentPrevi
     setCurrentPage(pageIndex+1);
   },[]);
   const setRelativeZoom=(direction:-1|1)=>setZoomScale(Math.min(1.5,Math.max(.35,scale+direction*.1)));
-  return <section className="df-candidate-preview" data-candidate-preview data-preview-bytes-sha={renderedSha||undefined} data-candidate-sha={sha256} data-candidate-instance={instanceId} data-preview-page-count={ready?geometry?.pageCount:undefined} aria-label="Bản xem DOCX ứng viên">
-      <p className="df-candidate-preview-note">Bản xem được dựng từ DOCX ứng viên hiện hành.</p>
-      {!ready&&!error&&<p role="status">Đang dựng bản xem từ DOCX ứng viên…</p>}
-    {error&&<p role="alert">Không dựng được bản xem: {error}. Không thay bằng bản dựng khác.</p>}
-    <div className="df-candidate-preview-toolbar" role="toolbar" aria-label="Điều hướng trang và thu phóng">
+  const toolbar=<div className="df-candidate-preview-toolbar" role="toolbar" aria-label="Điều hướng trang và thu phóng">
       <div className="df-candidate-page-nav">
         <button type="button" data-preview-prev aria-label="Vùng xem trước" disabled={!ready||currentPage<=1} onClick={()=>goToPage(currentPage-2)}>‹</button>
         <span aria-live="polite">Vùng xem <strong>{ready?currentPage:'—'}</strong> / {ready?geometry?.pageCount??0:'—'}</span>
         <button type="button" data-preview-next aria-label="Vùng xem sau" disabled={!ready||currentPage>=(geometry?.pageCount??0)} onClick={()=>goToPage(currentPage)}>›</button>
       </div>
-      <span className="df-candidate-page-orientation">A4 dọc</span>
       <div className="df-candidate-zoom-controls">
         <button type="button" aria-label="Thu nhỏ" disabled={!ready} onClick={()=>setRelativeZoom(-1)}>−</button>
         <span>{Math.round(scale*100)}%</span>
@@ -1006,13 +1005,12 @@ export const CandidateDocumentPreview=React.memo(function CandidateDocumentPrevi
         <button type="button" data-preview-fit aria-pressed={zoomScale===null} disabled={!ready} onClick={()=>setZoomScale(null)}>Vừa chiều rộng</button>
         <button type="button" data-preview-actual aria-pressed={zoomScale===1} disabled={!ready} onClick={()=>setZoomScale(1)}>100%</button>
       </div>
-      <span className="df-candidate-preview-state">Bản xem trình duyệt · phân trang tham khảo</span>
-    </div>
+    </div>;
+  return <section className="df-candidate-preview" data-candidate-preview data-preview-bytes-sha={renderedSha||undefined} data-candidate-sha={sha256} data-candidate-instance={instanceId} data-preview-page-count={ready?geometry?.pageCount:undefined} aria-label="Bản xem DOCX ứng viên">
+      {!ready&&!error&&<p role="status">Đang dựng bản xem từ DOCX ứng viên…</p>}
+    {error&&<p role="alert">Không dựng được bản xem: {error}. Không thay bằng bản dựng khác.</p>}
+    {toolbarTarget?createPortal(toolbar,toolbarTarget):toolbar}
     <div className="df-candidate-preview-layout">
-      <nav className="df-candidate-page-list" aria-label="Danh sách vùng xem DOCX">
-        <h3>Vùng xem</h3>
-        {ready&&geometry&&geometry.pageCount>0?Array.from({length:geometry.pageCount},(_,index)=><button type="button" key={index} data-preview-page-link={index+1} aria-current={currentPage===index+1?'page':undefined} onClick={()=>goToPage(index)}><span aria-hidden="true">{String(index+1).padStart(2,'0')}</span><span>Vùng {index+1}</span></button>):<p>{ready?'Không tìm thấy vùng xem DOCX.':'Đang dựng bản xem…'}</p>}
-      </nav>
       <div className="df-candidate-preview-scroll" ref={viewport} data-preview-mode={zoomScale===null?'fit':zoomScale===1?'actual':'manual'} data-preview-ready={String(ready)}>
         <div className="df-candidate-preview-frame" style={{width:layoutWidth,height:layoutHeight}}>
           <div className="df-candidate-preview-scaled" style={{width:geometry?.width,height:geometry?.height,transform:`scale(${scale})`}}>

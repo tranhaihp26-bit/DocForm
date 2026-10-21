@@ -1326,6 +1326,7 @@ export default function App() {
       if (target === "party") {
         const base = {
           ...prev,
+          omitNationalHeader: false,
           nationalHeader1: "ĐẢNG CỘNG SẢN VIỆT NAM",
           nationalHeader2: "",
           referenceNumber: prev.referenceNumber.startsWith("Số:")
@@ -1336,6 +1337,7 @@ export default function App() {
       } else {
         const base = {
           ...prev,
+          omitNationalHeader: false,
           nationalHeader1: "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM",
           nationalHeader2: "Độc lập - Tự do - Hạnh phúc",
           referenceNumber: prev.referenceNumber.startsWith("Số ") && !prev.referenceNumber.startsWith("Số:")
@@ -1888,7 +1890,6 @@ export default function App() {
     ],
     3: [
       { id: "df-step3-preview", label: "Duyệt trang DOCX" },
-      { id: "df-step3-reference", label: "Đối chiếu Body nguồn" },
       { id: "df-step3-export", label: "Tải xuống / in" },
     ],
   };
@@ -3129,9 +3130,9 @@ export default function App() {
         />
       )}
 
-      {currentStep===3&&<WorkspaceExport candidate={visibleCandidate} pending={candidatePending} error={candidateError} onPrepare={()=>void prepareCandidate()} onDownload={()=>void exportToDocx()} onDownloadOriginal={()=>void handleDownloadOriginalFile()} onPrintCandidate={()=>void handlePrintCandidate()} originalAvailable={sourceBlobAvailability==='available'} onPrev={()=>goToStep(2)} onReviewSource={()=>{setCurrentStep(1);setShowSideBySideModal(true);}} onEditTarget={(targetId)=>{setCurrentStep(2);requestAnimationFrame(()=>{const node=[...document.querySelectorAll<HTMLElement>('[data-workspace-node]')].find(el=>el.dataset.workspaceNode===targetId);(node?.querySelector<HTMLElement>('[contenteditable="true"]')??document.querySelector<HTMLElement>('[data-canvas-id="body"] [contenteditable="true"]'))?.focus({preventScroll:true});});}} originalHtml={originalSnapshot?.bodyHtml??''}/>}
-      <div hidden={currentStep!==2}>
-        {sourceChosen&&canEnterWorkspaceStep(workspaceSnapshot,2)&&<WorkspaceEditor key={workspaceSnapshot.workspace.source?.identity??originalSnapshot?.sourceId??'template'} snapshot={workspaceSnapshot} initialCanvasId={editorState.activeCanvasId} onCanvasSelected={id=>setEditorState({activeCanvasId:id})} active={currentStep===2} onAction={workspaceAction} onPartition={()=>{setCurrentStep(1);setShowSideBySideModal(true);}} onRefine={handleAiRefine} refining={isRefining} canContinue={canEnterStep(3)} complianceReport={complianceReport} onOpenCompliance={()=>setShowComplianceModal(true)}/>}
+      {currentStep===3&&<WorkspaceExport candidate={visibleCandidate} pending={candidatePending} error={candidateError} onPrepare={()=>void prepareCandidate()} onDownload={()=>void exportToDocx()} onDownloadOriginal={()=>void handleDownloadOriginalFile()} onPrintCandidate={()=>void handlePrintCandidate()} originalAvailable={sourceBlobAvailability==='available'} onPrev={()=>goToStep(2)} onReviewSource={()=>{setCurrentStep(1);setShowSideBySideModal(true);}} onEditTarget={(targetId)=>{setCurrentStep(2);requestAnimationFrame(()=>{const node=[...document.querySelectorAll<HTMLElement>('[data-workspace-node]')].find(el=>el.dataset.workspaceNode===targetId);(node?.querySelector<HTMLElement>('[contenteditable="true"]')??document.querySelector<HTMLElement>('[data-canvas-id="body"] [contenteditable="true"]'))?.focus({preventScroll:true});});}}/>}
+      <div className="df-workspace-step2-shell" hidden={currentStep!==2}>
+        {sourceChosen&&canEnterWorkspaceStep(workspaceSnapshot,2)&&<WorkspaceEditor key={workspaceSnapshot.workspace.source?.identity??originalSnapshot?.sourceId??'template'} snapshot={workspaceSnapshot} initialCanvasId={editorState.activeCanvasId} onCanvasSelected={id=>setEditorState({activeCanvasId:id})} active={currentStep===2} onAction={workspaceAction} onRequestRegimeSwitch={requestRegimeSwitch} onPartition={()=>{setCurrentStep(1);setShowSideBySideModal(true);}} onRefine={handleAiRefine} refining={isRefining} canContinue={canEnterStep(3)} complianceReport={complianceReport} onOpenCompliance={()=>setShowComplianceModal(true)}/>}
       </div>
       </div></div>
       {toast && (
