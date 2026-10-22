@@ -147,7 +147,7 @@ import { applyUserSemanticDecision, createFullTextSemanticState, createSemanticS
 import { selectRulesForUnit } from "./canonical/semanticRuleSelector.ts";
 import { applySemanticRuleFormatting, readSemanticParagraphFormatting, resolveSemanticRuleFormatting, type SemanticRuleId } from "./utils/semanticRuleFormatting.ts";
 import { assessWorkspaceNodeCapability } from "./utils/workspaceCapabilities.ts";
-import type { FullDocumentAiCapability, VisualEvidenceManifest } from "./shared/fullDocumentAiProtocol.ts";
+import { asFullDocumentAiCapability, type FullDocumentAiCapability, type VisualEvidenceManifest } from "./shared/fullDocumentAiProtocol.ts";
 import type { SemanticDecisionStatus } from "./shared/semanticDocument.ts";
 import { useAccessibleDialog } from "./utils/useAccessibleDialog.ts";
 import { loadAiApplicationSettings, saveAiDefaultProvider } from "./utils/aiAppSettings.ts";
@@ -1231,8 +1231,8 @@ export default function App() {
   useEffect(() => {
     const controller = new AbortController();
     void fetch("/api/ai/full-document-capability", { signal: controller.signal, cache: "no-store" })
-      .then(async response => response.ok ? response.json() as Promise<FullDocumentAiCapability> : null)
-      .then(capability => { if (!controller.signal.aborted) setFullDocumentCapability(capability); })
+      .then(async response => response.ok ? response.json() as Promise<unknown> : null)
+      .then(capability => { if (!controller.signal.aborted) setFullDocumentCapability(asFullDocumentAiCapability(capability)); })
       .catch(() => { if (!controller.signal.aborted) setFullDocumentCapability(null); });
     return () => controller.abort();
   }, [chatGPTStatus.session.status, chatGPTStatus.session.sharing]);
