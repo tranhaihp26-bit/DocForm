@@ -1,5 +1,6 @@
 import type { PartitionProposal, SourceBlock } from "./schemas/document.schema.ts";
 import { extractStandaloneLocationDate } from "./locationDate.ts";
+import { embeddedRecipientsSignatureTable } from "./embeddedSignatureTable.ts";
 
 /** Local deterministic partition suggestions; this does not call or depend on AI. */
 export function analyzePartitionFallback(
@@ -55,15 +56,18 @@ export function analyzePartitionFallback(
       }
     }
 
-    if (block.kind === "table" && block.tableData && block.tableData.length > 0 && currentRole === "body") {
+    if (block.kind === "table" && block.tableData && block.tableData.length > 0 && currentRole === "body" && !embeddedRecipientsSignatureTable(block)) {
       const numCols = block.tableShape?.columns || block.tableData[0]?.length || 1;
       const combinedText = block.text.toUpperCase();
+      const headings = block.tableData[0].map(cell => cell.trim().toUpperCase());
+      const isDataTable = headings.some(cell => /^(?:STT|TT|SỐ THỨ TỰ)$/.test(cell)) ||
+        headings.filter(cell => /^(?:HỌ VÀ TÊN|CHỨC DANH|CẤP QUẢN LÝ|NỘI DUNG|SỐ LƯỢNG|THỜI GIAN)/.test(cell)).length >= 2;
       const hasSigKeywords =
         (combinedText.includes("THƯ KÝ") && combinedText.includes("TRƯỞNG ĐOÀN")) ||
         combinedText.includes("CHỦ TỊCH") || combinedText.includes("GIÁM ĐỐC") ||
         combinedText.includes("NGƯỜI LẬP BIÊN BẢN");
 
-      if (numCols >= 2 && hasSigKeywords && idx >= Math.floor(blocks.length * 0.5)) {
+      if (!isDataTable && numCols >= 2 && hasSigKeywords && idx >= Math.floor(blocks.length * 0.5)) {
         const quote = combinedText.includes("THƯ KÝ") ? "THƯ KÝ" : (block.tableData[0][0] || text.slice(0, 30));
         proposals.push({
           id: `fb-sig-${block.id}`,

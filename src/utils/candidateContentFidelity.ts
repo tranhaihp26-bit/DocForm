@@ -1,7 +1,7 @@
 import { COMPANY_HEADER_PROFILE_ID } from "../canonical/nd30/companyHeader.ts";
 import { COMPANY_HEADER_HD05_PROFILE_ID } from "../canonical/hd05/companyHeaderHD05.ts";
 import type { DocumentFormatType } from "../shared/schemas/document.schema.ts";
-import { candidateSectionName, parseRecipientLines, getHeaderRenderPlan } from "./docxExport.ts";
+import { candidateSectionName, parseRecipientLines, getHeaderRenderPlan, detectEmbeddedSignature } from "./docxExport.ts";
 import { decodeHtmlEntities } from "./tableFormatUtils.ts";
 import { validateOoxmlWellFormed } from "./tableRoundtrip.ts";
 
@@ -79,7 +79,9 @@ export function verifyCandidateContentFidelity(xml: string, data: DocumentFormat
   compare("header-fields", expectedPrefix, prefixParagraphs);
   const signature = semanticXmlParagraphs(section("body:end", "signature:end"));
   const expectedSignature: string[] = [];
-  if (data.signTitle?.includes("|")) {
+  if (detectEmbeddedSignature(data.bodyHtml)) {
+    // These paragraphs already belong to the preserved physical Body table.
+  } else if (data.signTitle?.includes("|")) {
     data.signTitle.split("|").forEach((title, i) => {
       expectedSignature.push(...title.split("\n").map(l => l.trim()).filter(Boolean).map(l => normalizeSemanticText(/^\s*[\(\[](?:k[ýí]|ghi rõ|đóng dấu|chữ ký).*?[\)\]]\s*$/i.test(l) ? l : l.toUpperCase())), normalizeSemanticText(data.signName?.split("|")[i]?.trim() || "[Họ và tên]"));
     });

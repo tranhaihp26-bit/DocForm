@@ -1,7 +1,7 @@
 import JSZip from "jszip";
 import type { DocumentFormatType } from "../shared/schemas/document.schema.ts";
 import { COMPANY_HEADER_PROFILE_ID, COMPANY_HEADER_PARENT, COMPANY_HEADER_ISSUER, COMPANY_DEFAULT_NUMBER, COMPANY_DEFAULT_DATE } from "../canonical/nd30/companyHeader.ts";
-import { COMPANY_HEADER_HD05_PROFILE_ID, COMPANY_HEADER_HD05_PARENT, COMPANY_HEADER_HD05_ISSUER, COMPANY_HEADER_HD05_DEFAULT_NUMBER, COMPANY_HEADER_HD05_DEFAULT_DATE } from "../canonical/hd05/companyHeaderHD05.ts";
+import { COMPANY_HEADER_HD05_PROFILE_ID, COMPANY_HEADER_HD05_PARENT, COMPANY_HEADER_HD05_ISSUER, COMPANY_HEADER_HD05_DEFAULT_NUMBER, COMPANY_HEADER_HD05_REFERENCE_DATE } from "../canonical/hd05/companyHeaderHD05.ts";
 import { ND30_HOA_TIEU_TABLE_XML, ND30_HOA_TIEU_SETTINGS_XML, HD05_HOA_TIEU_TABLE_XML, HD05_HOA_TIEU_SETTINGS_XML } from "./hoaTieuHeaderReferenceXml.ts";
 
 const normalized = (value: string) => value.normalize("NFC").replace(/\s+/g, " ").trim().toLocaleUpperCase("vi-VN");
@@ -18,7 +18,7 @@ function profileParts(data: DocumentFormatType) {
       (data.orgHeader2 && normalized(data.orgHeader2) !== normalized(issuer))) return null;
   return administrative
     ? { table: ND30_HOA_TIEU_TABLE_XML, settings: ND30_HOA_TIEU_SETTINGS_XML, number: COMPANY_DEFAULT_NUMBER, date: COMPANY_DEFAULT_DATE }
-    : { table: HD05_HOA_TIEU_TABLE_XML, settings: HD05_HOA_TIEU_SETTINGS_XML, number: COMPANY_HEADER_HD05_DEFAULT_NUMBER, date: COMPANY_HEADER_HD05_DEFAULT_DATE };
+    : { table: HD05_HOA_TIEU_TABLE_XML, settings: HD05_HOA_TIEU_SETTINGS_XML, number: COMPANY_HEADER_HD05_DEFAULT_NUMBER, date: COMPANY_HEADER_HD05_REFERENCE_DATE };
 }
 
 function stampedTable(data: DocumentFormatType): { table: string; settings: string } | null {
@@ -27,7 +27,7 @@ function stampedTable(data: DocumentFormatType): { table: string; settings: stri
   return {
     table: parts.table
       .replace(`>${parts.number}</w:t>`, `>${xmlText(data.referenceNumber?.trim() || parts.number)}</w:t>`)
-      .replace(`>${parts.date}</w:t>`, `>${xmlText(data.locationAndDate?.trim() || parts.date)}</w:t>`),
+      .replace(`>${parts.date}</w:t>`, `>${xmlText(data.locationAndDate?.trim() ?? "")}</w:t>`),
     settings: parts.settings,
   };
 }

@@ -17,6 +17,7 @@ import {
   Check,
   CheckCircle2,
   ExternalLink,
+  Eye,
   FileText,
   Info,
   RefreshCw,
@@ -34,6 +35,11 @@ import { COMPANY_HEADER_PROFILE_ID } from "../canonical/nd30/companyHeader.ts";
 import { COMPANY_HEADER_HD05_PROFILE_ID } from "../canonical/hd05/companyHeaderHD05.ts";
 import type { SourceBlock, StructuredImport } from "../shared/schemas/document.schema.ts";
 import type { OriginalDocumentSnapshot } from "../utils/draftStore.ts";
+import type { PartitionAiProviderKind } from "../shared/partitionAiProtocol.ts";
+import type { ChatGPTLocalStatus } from "../shared/chatgptPlanProtocol.ts";
+import type { FullDocumentAiCapability, VisualEvidenceManifest } from "../shared/fullDocumentAiProtocol.ts";
+import type { SemanticDecisionStatus } from "../shared/semanticDocument.ts";
+import { FullTextReviewPanel, type FullTextReviewPanelProps } from "./FullTextReviewPanel.tsx";
 import { useAccessibleDialog } from "../utils/useAccessibleDialog.ts";
 import "./ImportStepView.css";
 import {
@@ -79,6 +85,33 @@ interface ImportGroupSummary {
   status: ImportGroupStatus;
 }
 
+export interface SemanticReviewRow {
+  id: string;
+  scope: "body" | "appendix";
+  appendixTitle?: string;
+  label: string;
+  quote: string;
+  anchor: string;
+  status: SemanticDecisionStatus;
+  reason: string;
+  aiLabel?: string;
+  rules: Array<{ ruleId: string; title: string; category: string; sourceReference?: string }>;
+  ruleReason?: string;
+  ruleApplyAvailable: boolean;
+  rulesApplied: boolean;
+  ruleApplyReason?: string;
+}
+
+export interface SourceVisualUiState {
+  status: "idle" | "rendering" | "complete" | "incomplete" | "error" | "unavailable";
+  localEndpointReceived?: boolean;
+  renderId?: string;
+  sourceSha256?: string;
+  sourceGeneration?: number;
+  manifest?: VisualEvidenceManifest;
+  reason?: string;
+}
+
 export interface ImportStepViewProps {
   regime: "state" | "party";
   onRequestRegimeSwitch: (target: "state" | "party") => void;
@@ -94,14 +127,25 @@ export interface ImportStepViewProps {
   structuredImport: StructuredImport | null;
   originalSnapshot: OriginalDocumentSnapshot | null;
   originalAvailable: boolean;
+  sourceVisualState?: SourceVisualUiState;
+  fullDocumentCapability?: FullDocumentAiCapability | null;
+  fullTextReview?: FullTextReviewPanelProps;
+  onRenderSourceVisual?: () => void;
+  semanticReviewRows?: SemanticReviewRow[];
+  semanticDecisionFingerprint?: string;
+  onSemanticDecision?: (unitId: string, decision: "user_confirmed" | "rejected") => void;
+  onApplySemanticRules?: (unitId: string) => void;
   onOpenReviewModal?: () => void;
   onDownloadOriginal?: () => void;
   hasSelectedSource: boolean;
+  partitionAiProvider?: PartitionAiProviderKind;
+  onOpenAppSettings?: () => void;
+  chatGPTStatus?: ChatGPTLocalStatus;
   aiPartitionConsent: boolean;
   onAiPartitionConsentChange: (enabled: boolean) => void;
   isCheckingPartitions: boolean;
   partitionCheckNotice: string;
-  partitionCheckSource: "gemini_ai" | "rule_fallback" | "mixed" | "unverified";
+  partitionCheckSource: "gemini_ai" | "chatgpt_ai" | "rule_fallback" | "mixed" | "unverified";
   partitionProgress: {
     processedChunks: number;
     totalChunks: number;
@@ -139,9 +183,20 @@ export function ImportStepView({
   structuredImport,
   originalSnapshot,
   originalAvailable,
+  sourceVisualState = { status: "idle" },
+  fullDocumentCapability = null,
+  fullTextReview,
+  onRenderSourceVisual = () => {},
+  semanticReviewRows = [],
+  semanticDecisionFingerprint,
+  onSemanticDecision = () => {},
+  onApplySemanticRules = () => {},
   onOpenReviewModal,
   onDownloadOriginal,
   hasSelectedSource,
+  partitionAiProvider = "gemini",
+  onOpenAppSettings = () => {},
+  chatGPTStatus = { enabled: false, reason: "ChatGPT plan local chưa được bật.", session: { status: "disconnected", sharing: false } },
   aiPartitionConsent,
   onAiPartitionConsentChange,
   isCheckingPartitions,
@@ -170,7 +225,39 @@ export function ImportStepView({
   const [draftDocType,setDraftDocType]=useState("");
   const [draftProfile,setDraftProfile]=useState<"company"|"generic">("company");
   const [pendingUpload,setPendingUpload]=useState(false);
+  const [activeSourcePage,setActiveSourcePage]=useState(1);
+  const [sourcePagePreview,setSourcePagePreview]=useState<string | null>(null);
+  const [sourcePagePreviewError,setSourcePagePreviewError]=useState("");
   const diffDialogRef = useAccessibleDialog(showDiffModal, () => setShowDiffModal(false));
+
+  useEffect(()=>setActiveSourcePage(1),[sourceVisualState.renderId]);
+  useEffect(()=>{
+    const manifest=sourceVisualState.manifest;
+    const renderId=sourceVisualState.renderId;
+    if(sourceVisualState.status!=="complete"||!manifest?.complete||!renderId){setSourcePagePreview(null);setSourcePagePreviewError("");return;}
+    const controller=new AbortController();
+    let objectUrl:string|undefined;
+    setSourcePagePreview(null);setSourcePagePreviewError("");
+    void (async()=>{
+      try{
+        const page=manifest.pages[activeSourcePage-1];
+        if(!page||page.page!==activeSourcePage)throw new Error("page_manifest_missing");
+        const response=await fetch(`/api/ai/source-visual/${encodeURIComponent(renderId)}/page/${activeSourcePage}`,{signal:controller.signal,cache:"no-store"});
+        if(!response.ok||response.headers.get("X-Source-SHA256")!==sourceVisualState.sourceSha256||
+          response.headers.get("X-Source-Generation")!==String(sourceVisualState.sourceGeneration))throw new Error("source_page_identity_mismatch");
+        const bytes=new Uint8Array(await response.arrayBuffer());
+        const digest=await globalThis.crypto.subtle.digest("SHA-256",bytes);
+        const pageSha=[...new Uint8Array(digest)].map(value=>value.toString(16).padStart(2,"0")).join("");
+        if(pageSha!==page.sha256)throw new Error("source_page_hash_mismatch");
+        if(controller.signal.aborted)return;
+        objectUrl=URL.createObjectURL(new Blob([bytes],{type:"image/png"}));
+        setSourcePagePreview(objectUrl);
+      }catch(error){
+        if(!controller.signal.aborted)setSourcePagePreviewError(error instanceof Error?error.message:"Không tải được trang nguồn local.");
+      }
+    })();
+    return()=>{controller.abort();if(objectUrl)URL.revokeObjectURL(objectUrl);};
+  },[sourceVisualState.status,sourceVisualState.manifest,sourceVisualState.renderId,sourceVisualState.sourceSha256,sourceVisualState.sourceGeneration,activeSourcePage]);
 
   useEffect(()=>{
     if(pendingUpload&&sourceOrigin==="uploaded_file"&&!isUploading&&uploadedFileName){
@@ -210,6 +297,10 @@ export function ImportStepView({
   const hasImportedFile = Boolean(uploadedFileName || blocksCount > 0);
   const hasUploadedSource = sourceOrigin === "uploaded_file" && hasImportedFile;
   const detection = structuredImport?.regimeDetection ?? null;
+  const sourceTypeEvidence = detection?.documentType ?? null;
+  const sourceEvidenceSuggestsMinutes = Boolean(sourceTypeEvidence &&
+    (/^\s*biên\s*bản\b|^\s*bien\s*ban\b/iu.test(sourceTypeEvidence.value) ||
+      /^\s*biên\s*bản\b|^\s*bien\s*ban\b/iu.test(sourceTypeEvidence.exactQuote)));
   const appliedTemplate = findAppliedTemplate(templates, originalSnapshot);
   const appliedTemplateRegime = appliedTemplate?.type ?? null;
 
@@ -292,7 +383,7 @@ export function ImportStepView({
   ];
   const identifiedGroupsCount = importGroups.filter((group) => group.status === "identified" || (group.status === "needs-review" && group.value !== "Cần đối chiếu nguồn")).length;
   const groupsNeedingReview = importGroups.filter((group) => group.status === "needs-review").length;
-  const aiSourceLabel = partitionCheckSource === "gemini_ai" ? "AI đã kiểm tra" : partitionCheckSource === "mixed" ? "AI và quy tắc nội bộ" : partitionCheckSource === "rule_fallback" ? "Quy tắc nội bộ" : "Chưa kiểm tra";
+  const aiSourceLabel = partitionCheckSource === "gemini_ai" ? "Gemini đã rà soát · chờ duyệt" : partitionCheckSource === "chatgpt_ai" ? "ChatGPT plan đã rà soát · chờ duyệt" : partitionCheckSource === "mixed" ? "AI và quy tắc · chờ duyệt" : partitionCheckSource === "rule_fallback" ? "Quy tắc nội bộ" : "Chưa kiểm tra";
   const canOpenSourceReview = hasSelectedSource && Boolean(onOpenReviewModal);
   const flowSourceReady=flow==="upload"?sourceOrigin==="uploaded_file":flow==="create"?sourceOrigin==="system_template":false;
   const continueDisabled = !flowSourceReady||(!canContinue && !canOpenSourceReview);
@@ -509,6 +600,7 @@ export function ImportStepView({
           )}
         </div>
         {choosingNew&&<p className="df-import-stage-description">Chọn một loại để DocForm hiển thị các mẫu phù hợp với hệ thể thức đã chọn.</p>}
+        {!choosingNew&&!doc.documentType&&<p className="df-import-stage-description" role="status">Chưa nhận diện được loại văn bản từ nguồn. Chọn một thẻ bên dưới để mở bước tóm tắt; nội dung tệp gốc vẫn được giữ để đối chiếu.</p>}
 
         <div className="df-import-type-grid grid grid-cols-2 sm:grid-cols-4 gap-2">
           {docTypes.map((t) => {
@@ -623,6 +715,63 @@ export function ImportStepView({
         </div>}
       </section>}
 
+      {flow==="upload"&&phase==="metadata"&&<section className="df-import-card mt-3 border border-[#CFD8EA] bg-white rounded-2xl p-3.5 shadow-2xs" data-testid="semantic-review-panel" aria-labelledby="semantic-review-heading">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div><h2 id="semantic-review-heading" className="text-sm font-bold text-[#17233D]">Đọc nguồn và đối chiếu ngữ nghĩa</h2>
+            <p className="mt-1 text-xs text-[#52607A]">Tách biệt đọc tại máy, gửi tệp cho nhà cung cấp, đọc cấu trúc và xem từng trang. Hiện kết nối ChatGPT plan chưa hỗ trợ đọc tệp nguyên bản.</p>
+          </div>
+          <button type="button" onClick={onRenderSourceVisual} disabled={sourceVisualState.status==="rendering"||!originalSnapshot?.sourceHash||originalSnapshot.fileType!=="docx"}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-[#6255E8] px-3 py-2 text-xs font-semibold text-[#5145C0] disabled:opacity-50"
+            aria-label="Dựng và kiểm tra tất cả trang từ DOCX gốc trên máy này">
+            <Eye size={15}/>{sourceVisualState.status==="rendering"?"Đang dựng đủ trang…":"Dựng trang trên máy này"}
+          </button>
+        </div>
+        <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5" data-testid="local-source-visual-status">
+            <strong className="text-[#17233D]">Local</strong>
+            <p className="mt-1">Tệp gốc: {originalAvailable?"đã lưu, có thể tải lại":"chưa xác nhận còn trong kho"}. SHA: <code>{originalSnapshot?.sourceHash?.slice(0,16)??"chưa có"}</code></p>
+            {sourceVisualState.manifest&&<p className="mt-1" role="status">Local endpoint nhận byte gốc đã băm: {sourceVisualState.localEndpointReceived?"có":"chưa"}. Trang đã dựng: {sourceVisualState.manifest.pages.length}/{sourceVisualState.manifest.pageCount} · {sourceVisualState.manifest.complete?"đủ trang, từng ảnh đã băm":"chưa đủ trang"} · {sourceVisualState.manifest.rendererName} {sourceVisualState.manifest.rendererVersion??""} · SHA nguồn khớp {sourceVisualState.sourceSha256===originalSnapshot?.sourceHash?"có":"không"}.</p>}
+            {sourceVisualState.reason&&<p className="mt-1 text-amber-800" role="status">{sourceVisualState.reason}</p>}
+            {sourceVisualState.status==="complete"&&sourceVisualState.renderId&&sourceVisualState.manifest&&<div className="mt-2 rounded border border-slate-200 bg-white p-2">
+              <div className="flex items-center justify-between gap-2 text-xs"><div className="flex items-center gap-1"><button type="button" disabled={activeSourcePage<=1} onClick={()=>setActiveSourcePage(page=>Math.max(1,page-1))} aria-label="Trang nguồn trước">‹</button><span>Trang {activeSourcePage}/{sourceVisualState.manifest.pageCount}</span><button type="button" disabled={activeSourcePage>=sourceVisualState.manifest.pageCount} onClick={()=>setActiveSourcePage(page=>Math.min(sourceVisualState.manifest?.pageCount??1,page+1))} aria-label="Trang nguồn tiếp">›</button></div><a href={`/api/ai/source-visual/${encodeURIComponent(sourceVisualState.renderId)}/source.pdf`} target="_blank" rel="noreferrer" className="font-semibold text-[#5145C0] underline">Mở PDF local</a></div>
+              {sourcePagePreview?<img src={sourcePagePreview} alt={`Trang ${activeSourcePage} dựng cục bộ từ DOCX gốc`} className="mt-2 mx-auto max-h-[68vh] max-w-full object-contain border border-slate-200"/>:sourcePagePreviewError?<p role="alert" className="mt-2 text-[11px] text-rose-800">Không hiển thị trang: {sourcePagePreviewError}</p>:<p className="mt-2 text-[11px] text-slate-600" role="status">Đang tải và kiểm tra hash trang…</p>}
+              <p className="mt-1 text-[10px] text-slate-500">Bản dựng chỉ lưu tạm trong máy chủ local 10 phút; không chuyển trang sang nhà cung cấp AI.</p>
+            </div>}
+          </div>
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-2.5" data-testid="provider-capability-status">
+            <strong className="text-[#17233D]">Năng lực nhà cung cấp AI</strong>
+            {fullDocumentCapability?<>
+              <p className="mt-1"><strong>ChatGPT plan / OAuth</strong> · kết nối: {fullDocumentCapability.providers["chatgpt-plan"].session?.status??fullDocumentCapability.session?.status??"chưa rõ"}; văn bản: {fullDocumentCapability.providers["chatgpt-plan"].textInput.status}; manifest đầy đủ: {fullDocumentCapability.providers["chatgpt-plan"].fullTextManifest.status}.</p>
+              <ul className="mt-1 list-disc pl-4">{Object.entries(fullDocumentCapability.providers["chatgpt-plan"].features).map(([key,value])=><li key={`chatgpt-${key}`}><code>{key}</code>: <strong>{value.status}</strong> — {value.reason}</li>)}</ul>
+              <p className="mt-2"><strong>Gemini API hiện có</strong> · khóa máy chủ: {fullDocumentCapability.providers.gemini.configured?"đã cấu hình":"chưa phát hiện"}; văn bản: {fullDocumentCapability.providers.gemini.textInput.status}; manifest đầy đủ: {fullDocumentCapability.providers.gemini.fullTextManifest.status}; tier: {fullDocumentCapability.providers.gemini.dataUseTier?.tier??"chưa xác minh"}.</p>
+              <ul className="mt-1 list-disc pl-4">{Object.entries(fullDocumentCapability.providers.gemini.features).map(([key,value])=><li key={`gemini-${key}`}><code>{key}</code>: <strong>{value.status}</strong> — {value.reason}</li>)}</ul>
+              <p className="mt-1">{fullDocumentCapability.providers["chatgpt-plan"].oauthFileInputProbeReason}</p>
+            </>:<p className="mt-1">NOT_VERIFIED: chưa lấy được trạng thái khả năng từ máy chủ local.</p>}
+            <p className="mt-1 font-semibold">Không gửi tệp, PDF hoặc ảnh sang AI. Văn bản tách khối không được tính là đã gửi nguyên tệp.</p>
+          </div>
+        </div>
+        {fullTextReview && <FullTextReviewPanel {...fullTextReview} />}
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-xs font-bold text-[#17233D]">Đơn vị Body và phụ lục · {semanticReviewRows.filter(row=>row.status==="user_confirmed"||row.status==="auto_confirmed").length} đã duyệt · {semanticReviewRows.filter(row=>row.status==="needs_review"||row.status==="unsupported").length} chờ người dùng</h3>
+          {semanticDecisionFingerprint&&<code className="text-[10px] text-slate-500">revision {semanticDecisionFingerprint.slice(0,12)}</code>}
+        </div>
+        <div className="mt-2 max-h-80 overflow-y-auto space-y-2" aria-label="Các đơn vị ngữ nghĩa cần rà soát">
+          {semanticReviewRows.length===0?<p className="rounded-lg bg-slate-50 p-2 text-xs text-slate-600">Chưa có khối Body/phụ lục đủ chứng cứ để phân loại.</p>:semanticReviewRows.map(row=><article key={row.id} className="rounded-lg border border-slate-200 p-2.5" data-semantic-unit-id={row.id}>
+            <div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-xs text-[#17233D]">{row.scope==="body"?"Body":`Phụ lục · ${row.appendixTitle??"chưa rõ cha"}`} · {row.label}</strong><span className="text-[10px] font-semibold text-amber-800">{row.status==="user_confirmed"?"Đã xác nhận":row.status==="auto_confirmed"?"Khớp tự động":row.status==="rejected"?"Đã từ chối":row.status==="unsupported"?"Chưa hỗ trợ":"Chờ duyệt"}</span></div>
+            <blockquote className="mt-1 border-l-2 border-slate-300 pl-2 text-xs text-[#3B4663] whitespace-pre-wrap">{row.quote||"(ô nguồn không có chữ)"}</blockquote>
+            <p className="mt-1 text-[10px] text-slate-500">Nguồn: {row.anchor} · AI text: {row.aiLabel??"chưa có quan sát đã căn chỉnh"}. {row.reason}</p>
+            <p className="mt-1 text-[10px] text-slate-600">Quy tắc đề xuất: {row.rules.length?row.rules.map(rule=>`${rule.title} [${rule.ruleId}; ${rule.category}; ${rule.sourceReference??"chưa gắn căn cứ"}]`).join(" · "):row.ruleReason??"Chưa có quy tắc phù hợp."} {row.rulesApplied?"Đã áp dụng vào đoạn soạn.":"Chưa áp dụng định dạng."}</p>
+            {row.rules.length>0&&(row.status==="user_confirmed"||row.status==="auto_confirmed")&&(row.rulesApplied
+              ?<p className="mt-1 text-[10px] font-semibold text-emerald-800" role="status">Đã áp dụng quy tắc vào đúng đoạn Body. Bản xuất sẽ dùng các giá trị này.</p>
+              :row.ruleApplyAvailable
+                ?<button type="button" onClick={()=>onApplySemanticRules(row.id)} className="mt-2 rounded border border-[#6255E8] bg-[#F6F5FF] px-2 py-1 text-[11px] font-semibold text-[#5145C0]">Áp dụng quy tắc vào đoạn soạn</button>
+                :<p className="mt-1 text-[10px] text-amber-800">Chưa thể áp dụng: {row.ruleApplyReason??"neo nguồn chưa đủ chính xác để sửa một đoạn riêng lẻ."}</p>)}
+            {row.rules.length>0&&row.status!=="user_confirmed"&&row.status!=="auto_confirmed"&&<p className="mt-1 text-[10px] text-slate-500">Xác nhận nhãn này trước khi áp dụng định dạng.</p>}
+            {(row.status==="needs_review"||row.status==="unsupported")&&<div className="mt-2 flex gap-2"><button type="button" onClick={()=>onSemanticDecision(row.id,"user_confirmed")} className="rounded border border-emerald-700 px-2 py-1 text-[11px] font-semibold text-emerald-800">Xác nhận nhãn</button><button type="button" onClick={()=>onSemanticDecision(row.id,"rejected")} className="rounded border border-slate-400 px-2 py-1 text-[11px] text-slate-700">Từ chối nhãn</button></div>}
+          </article>)}
+        </div>
+      </section>}
+
       {/* 4. Nguồn tài liệu: tệp hoặc mẫu */}
       {((flow==="upload"&&phase==="upload")||(flow==="create"&&phase==="template"))&&<section id="df-step1-source" className="df-import-source-grid grid grid-cols-1 gap-3" aria-label="Chọn nguồn văn bản">
         {flow==="upload"&&<>
@@ -640,24 +789,38 @@ export function ImportStepView({
           <details className="df-import-ai-options" data-testid="ai-partition-consent-panel">
             <summary>Tùy chọn kiểm tra phân vùng bằng AI <span>{aiPartitionConsent?"Đang bật":"Mặc định tắt"}</span></summary>
             <div>
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
+              <div className="text-xs">
+                <span className="text-slate-600">Nhà cung cấp mặc định: </span>
+                <strong className="text-[#17233D]">{partitionAiProvider === "chatgpt" ? "ChatGPT plan · local" : "Gemini · API máy chủ local"}</strong>
+                {partitionAiProvider === "chatgpt" && <span className={`ml-2 ${chatGPTStatus.enabled && chatGPTStatus.session.status === "connected" && chatGPTStatus.session.sharing ? "text-emerald-700" : "text-amber-800"}`} role="status">
+                  {chatGPTStatus.enabled && chatGPTStatus.session.status === "connected" && chatGPTStatus.session.sharing ? "Đã kết nối" : "Chưa sẵn sàng"}
+                </span>}
+              </div>
+              <button type="button" data-testid="open-app-ai-settings" onClick={onOpenAppSettings} className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-700 hover:bg-violet-100">
+                Cài đặt chung
+              </button>
+            </div>
+            <p className="ml-5 text-[10.5px] text-slate-600">Nhà cung cấp này cũng dùng cho rà soát tài liệu và tinh chỉnh đoạn ở Bước 2. Mỗi thao tác chỉ gửi nội dung khi bạn nhấn nút tương ứng.</p>
             <label className="flex items-start gap-2 text-xs font-semibold text-[#17233D] cursor-pointer">
               <input
                 type="checkbox"
                 data-testid="ai-partition-consent"
                 checked={aiPartitionConsent}
                 onChange={event => onAiPartitionConsentChange(event.currentTarget.checked)}
+                disabled={partitionAiProvider === "chatgpt" && (!chatGPTStatus.enabled || chatGPTStatus.session.status !== "connected" || !chatGPTStatus.session.sharing)}
                 className="mt-0.5 accent-[#6255E8]"
                 aria-describedby="ai-partition-consent-details"
               />
-              <span>Cho phép AI kiểm tra phân vùng nguồn</span>
+              <span>{partitionAiProvider === "chatgpt" ? "Cho phép gửi nguồn cho ChatGPT plan" : "Cho phép gửi nguồn cho Gemini"}</span>
             </label>
             <p id="ai-partition-consent-details" className="mt-1 pl-5 text-[10.5px] leading-relaxed text-[#52607A]">
-              Khi bật, toàn bộ văn bản khối và chữ trong các ô bảng cùng ID/tọa độ nguồn được gửi qua máy chủ đến Gemini. Không gửi tệp, tên tệp, HTML/XML hoặc role parser. Gợi ý không tự áp dụng; phân vùng quy tắc vẫn chạy độc lập. Mặc định tắt sau khi tải lại trang.
+              Khi bật, toàn bộ văn bản khối và chữ trong các ô bảng cùng ID/tọa độ nguồn được gửi qua máy chủ local đến {partitionAiProvider === "chatgpt" ? "OpenAI bằng ChatGPT plan đã cấp quyền" : "Gemini"}. Không gửi tệp, tên tệp, HTML/XML hoặc role parser. Gợi ý không tự áp dụng; phân vùng quy tắc vẫn chạy độc lập. Mặc định tắt sau khi tải lại trang; mỗi tệp nguồn cần được bật cho phép riêng.
             </p>
             {uploadedFileName && partitionCheckNotice && (
               <div className="mt-1.5 pl-5 text-[10.5px]" role="status" data-testid="ai-partition-status">
-                <span className={`font-semibold ${partitionCheckSource === "gemini_ai" || partitionCheckSource === "mixed" ? "text-emerald-700" : "text-amber-700"}`}>
-                  {isCheckingPartitions ? "Đang kiểm tra" : partitionCheckSource === "gemini_ai" ? "AI đã kiểm tra" : partitionCheckSource === "mixed" ? "AI và quy tắc" : partitionCheckSource === "rule_fallback" ? "Chỉ quy tắc nội bộ" : "Chưa kiểm tra"}
+                <span className={`font-semibold ${partitionCheckSource === "gemini_ai" || partitionCheckSource === "chatgpt_ai" || partitionCheckSource === "mixed" ? "text-emerald-700" : "text-amber-700"}`}>
+                  {isCheckingPartitions ? "Đang rà soát" : aiSourceLabel === "Chưa kiểm tra" ? "Chưa kiểm tra" : partitionCheckSource === "rule_fallback" ? "Chỉ quy tắc nội bộ" : aiSourceLabel}
                 </span>
                 <span className="text-[#52607A]"> · {partitionCheckNotice}</span>
                 {isCheckingPartitions && partitionProgress && (
@@ -1021,7 +1184,11 @@ export function ImportStepView({
         <span className="df-import-action-hint">{phase==="regime"?`Đang chọn: ${draftRegime==="party"?"Văn bản Đảng · Hướng dẫn 05":"Văn bản hành chính · Nghị định 30"}`:phase==="doctype"?draftDocType?`Đã chọn: ${draftDocType}`:"Chọn một loại văn bản để tiếp tục":phase==="template"?`Thể thức ${draftRegime==="party"?"Đảng":"hành chính"} · ${draftDocType}`:phase==="upload"?"Tệp DOCX hoặc TXT · dữ liệu nguồn được giữ để đối chiếu":""}</span>
         {phase==="upload"&&<button type="button" className="df-import-forward" disabled={!hasUploadedSource||isUploading} onClick={()=>setPhase("recognition")}>Xem kết quả nhận diện <ArrowRight size={16}/></button>}
         {phase==="recognition"&&<button type="button" className="df-import-forward" onClick={()=>setPhase("metadata")}>Xác nhận thông tin <ArrowRight size={16}/></button>}
-        {phase==="metadata"&&<button type="button" className="df-import-forward" disabled={!doc.documentType} onClick={()=>setPhase("ready")}>Xem tóm tắt <ArrowRight size={16}/></button>}
+        {phase==="metadata"&&!doc.documentType&&<div id="doctype-required-reason" role="status" aria-live="polite" className="w-full rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
+          Chưa thể xem tóm tắt: hãy xác nhận loại văn bản để chọn đúng quy tắc và mẫu.
+          {sourceEvidenceSuggestsMinutes&&sourceTypeEvidence&&<div className="mt-1 flex flex-wrap items-center gap-2"><span>Gợi ý từ nguồn: <strong>Biên bản</strong> — “{sourceTypeEvidence.exactQuote}” (khối {sourceTypeEvidence.sourceBlockId}, vị trí {sourceTypeEvidence.blockIndex+1}).</span><button type="button" onClick={()=>onFieldChange("documentType","BIÊN BẢN")} className="rounded border border-amber-800 px-2 py-1 font-semibold">Xác nhận “Biên bản”</button></div>}
+        </div>}
+        {phase==="metadata"&&<button type="button" className="df-import-forward" disabled={!doc.documentType} aria-describedby={!doc.documentType?"doctype-required-reason":undefined} onClick={()=>setPhase("ready")}>Xem tóm tắt <ArrowRight size={16}/></button>}
         {phase==="regime"&&<button type="button" className="df-import-forward" onClick={()=>setPhase("doctype")}>Chọn loại văn bản <ArrowRight size={16}/></button>}
         {phase==="doctype"&&<button type="button" className="df-import-forward" disabled={!draftDocType} onClick={()=>setPhase("template")}>Chọn mẫu <ArrowRight size={16}/></button>}
         {phase==="ready"&&<button type="button" data-action="wizard-next" className="df-import-forward" disabled={continueDisabled} onClick={handleContinue}>{canContinue&&flowSourceReady?"Sang Bước 2: Soạn & kiểm tra":canOpenSourceReview&&flowSourceReady?"Duyệt nguồn trước":"Chọn nguồn trước khi tiếp tục"} <ArrowRight size={16}/></button>}

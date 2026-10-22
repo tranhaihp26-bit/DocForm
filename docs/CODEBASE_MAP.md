@@ -41,6 +41,12 @@ Mọi đường dẫn trong tài liệu này đều là đường dẫn tương 
 - `test/gemini-live-smoke.test.ts` (kiểm tra kết nối Gemini nếu có API key).
 - Kiểm tra cổng cục bộ: `fetch('http://localhost:5050/')`.
 
+### Sign in with ChatGPT cho ứng dụng local
+- [`../src/server/windowsDpapi.ts`](../src/server/windowsDpapi.ts), [`../src/shared/chatgptPlanProtocol.ts`](../src/shared/chatgptPlanProtocol.ts) và SDK vendored dưới `../vendor/openai/sign-in-with-chatgpt-devkit/` chứa ranh giới lưu credential an toàn và trạng thái không có token.
+- Bật bằng `DOCFORM_SIWC_ENABLED=true` trên Windows/Node.js 22+; khi cờ local được bật, máy chủ bind `127.0.0.1`, không bật trên Cloud Run. UI Bước 1 dùng endpoint `/api/ai/chatgpt/*` để kết nối/ngắt kết nối và chọn provider cho rà soát phân vùng, rà soát tài liệu và tinh chỉnh đoạn.
+- Rà soát phân vùng gửi văn bản khối và ô bảng đã chuẩn hóa sau khi người dùng bật cho phép cho từng tệp. Rà soát tài liệu và tinh chỉnh đoạn có thao tác gửi riêng cùng thông báo nơi nhận. Kết quả mang nguồn `chatgpt_ai` và vẫn phải được người dùng duyệt. ONLYOFFICE plugin chưa được tích hợp.
+- Trạng thái: đã nối mã và schema; đăng nhập OAuth, refresh token và nghiệm thu native chưa được xác minh. Chi tiết cấu hình/giới hạn ở [`SIWC_LOCAL.md`](SIWC_LOCAL.md).
+
 ---
 
 ## 2. Tải & Parse DOCX (Bảng Biểu, Ô Gộp, Ngắt Trang, Chữ Ký)
@@ -120,7 +126,7 @@ StructuredImport
 
 ### Trạng thái thực tế: 🟢 Đã triển khai và kiểm chứng
 - **Đã kiểm chứng:** Quy tắc "One Block - One Owner" bảo đảm không nhân bản khối. Đặc biệt, nếu tài liệu nguồn không chứa khối chữ ký thì mảng `signatures` để trống, không tự động lấy các hàng trong bảng phân công để điền chữ ký giả.
-- **Giới hạn:** Với các văn bản phi chuẩn có tiêu đề nằm lẫn trong bảng không viền (borderless table), phân đoạn có thể gom toàn bộ bảng vào `header` hoặc `body` và cần người dùng điều chỉnh tại Bước 3.
+- **Giới hạn:** Với các văn bản phi chuẩn có tiêu đề nằm lẫn trong bảng không viền (borderless table), phân đoạn có thể gom toàn bộ bảng vào `header` hoặc `body` và cần người dùng điều chỉnh khi đối chiếu phân vùng ở Bước 1.
 
 ### Kiểm thử liên quan:
 - `test/import-segments.test.ts`
@@ -194,11 +200,11 @@ StructuredImport
 
 ### File cần đọc:
 - [`../src/server/reviewProposals.ts`](../src/server/reviewProposals.ts) — Bộ sinh đề xuất quy tắc ngoại tuyến (`generateRuleBasedProposals`) và chuẩn hóa regex tiếng Việt (`createVietnameseWordRegex`).
-- [`../server.ts`](../server.ts) — Endpoint `/api/ai/review-document` và `/api/ai/format-document`.
+- [`../server.ts`](../server.ts) — Endpoint `/api/ai/review-document`, `/api/ai/refine-text` và `/api/ai/format-document`; [`../src/server/chatgptPlanProvider.ts`](../src/server/chatgptPlanProvider.ts) kiểm tra phiên, quyền chia sẻ và model khả dụng trước khi gửi tới ChatGPT.
 
 ### Luồng dữ liệu & Cơ chế bảo vệ:
 1. Khi người dùng bấm "Rà soát đề xuất", hệ thống gửi cấu trúc tệp kèm `rawText` và `blocks`.
-2. Nếu không có kết nối internet hoặc không có `GEMINI_API_KEY`, hệ thống chuyển sang chế độ **Rule Fallback ngoại tuyến**:
+2. Chế độ Gemini dùng **Rule Fallback ngoại tuyến** khi không có `GEMINI_API_KEY`; chế độ ChatGPT yêu cầu phiên đã kết nối và quyền chia sẻ, trả lỗi nếu không khả dụng và không âm thầm gửi sang Gemini:
    - Sử dụng từ điển lỗi chính tả tiếng Việt hành chính với regex Unicode lookaround (`(?<=^|[^\p{L}\d])phrase(?=[^\p{L}\d]|$)`).
    - Kiểm tra định dạng ngày tháng, số hiệu, trích yếu theo loại văn bản.
 3. Mọi đề xuất phát sinh đều mang `targetBlockId` và chuỗi gốc `original`.
@@ -213,25 +219,22 @@ StructuredImport
 
 ---
 
-## 7. Giao Diện 4 Bước, Soạn Thảo A4, So Sánh Diff
+## 7. Giao Diện 3 Bước Hiện Hành
 
 ### File cần đọc:
-- [`../src/App.tsx`](../src/App.tsx) — Điều phối toàn bộ trạng thái ứng dụng, stepper 4 bước, auto-save, phím tắt (Ctrl+S, Ctrl+E).
-- [`../src/components/OfficeWorkerViews.tsx`](../src/components/OfficeWorkerViews.tsx) — Chứa các màn hình con:
-  - `Step1View`: Chọn hệ quy chuẩn và loại văn bản.
-  - `Step2View`: Tải file Word/TXT, chọn mẫu, xem bảng tóm tắt cấu trúc.
-  - `Step4View`: Xem văn bản đề xuất, văn bản gốc, hoặc so sánh Diff (`visualDiff.inlineHtml`); xuất Word/PDF.
-  - `SafeRegimeModal`: Hộp thoại xác nhận chuyển đổi hệ thể thức an toàn.
-  - `AdvancedDrawer`: Ngăn kéo chứa Pilot test fixtures, OOXML inspector, rule catalogs.
-- [`../src/components/ND30Editor.tsx`](../src/components/ND30Editor.tsx) — Trình soạn thảo văn bản TipTap tích hợp bảng biểu và thanh công cụ chuẩn thể thức.
-- [`../src/utils/diffUtils.ts`](../src/utils/diffUtils.ts) — Thuật toán so sánh từng từ (`computeVisualDiff`) trả về `inlineHtml` và `stats` (`addedCount`, `deletedCount`, `unchangedCount`).
+- [`../src/App.tsx`](../src/App.tsx) — Điều phối `currentStep: 1 | 2 | 3`, trạng thái bản nháp và ứng viên xuất.
+- [`../src/components/ImportStepView.tsx`](../src/components/ImportStepView.tsx) — Bước 1: chọn nguồn, tải DOCX/TXT hoặc mẫu, đối chiếu và duyệt phân vùng nguồn.
+- [`../src/components/WorkspaceEditor.tsx`](../src/components/WorkspaceEditor.tsx) — Bước 2: sửa các nhóm thể thức, thân bài và phụ lục; dùng [`../src/components/ND30Editor.tsx`](../src/components/ND30Editor.tsx) cho canvas soạn thảo.
+- [`../src/components/WorkspaceExport.tsx`](../src/components/WorkspaceExport.tsx) — Bước 3: xem ứng viên DOCX hiện hành, trạng thái đối chiếu, tải xuống và in bản tham khảo.
+- [`../src/components/CandidatePrintView.tsx`](../src/components/CandidatePrintView.tsx) — Dựng vùng in từ byte ứng viên DOCX hiện hành; phân trang trình duyệt chỉ để tham khảo.
+- [`../src/components/OfficeWorkerViews.tsx`](../src/components/OfficeWorkerViews.tsx) — Còn chứa `SafeRegimeModal`, `AdvancedDrawer` đang dùng và `ExportStepView` cũ không được render trong wizard hiện hành.
 
-### Trạng thái khởi tạo và điều hướng 4 bước:
-- Trong [`../src/App.tsx`](../src/App.tsx), `const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1)` khởi tạo mặc định tại **Bước 1 (Chọn chế độ & loại văn bản)** cho phiên làm việc mới.
-- Sau khi chọn chế độ/loại ở Bước 1 → chuyển sang Bước 2 (Tải file / chọn mẫu); khi xác nhận nạp file hoặc áp dụng mẫu chuẩn ở Bước 2 → chuyển sang **Bước 3 (Studio Soạn thảo & Rà soát)**; tiếp tục sang **Bước 4 (So sánh Diff & Xuất bản)**. Thanh Stepper trên cùng cho phép chuyển trực tiếp tới bất kỳ bước nào.
+### Trạng thái khởi tạo và điều hướng:
+- `currentStep` khởi tạo ở **Bước 1** và chỉ nhận `1 | 2 | 3`. Điều hướng được chặn theo nguồn đã chọn, phân vùng đã duyệt và khả năng tạo ứng viên.
+- Luồng hiện hành: **Bước 1 Tải & nhận diện → Bước 2 Soạn & kiểm tra → Bước 3 Xem & xuất**. Bước 3 sử dụng `WorkspaceExport`, không sử dụng `ExportStepView` cũ.
 
-### Trạng thái thực tế: 🟢 Đã triển khai và kiểm chứng
-- Giao diện 4 bước hoạt động xuyên suốt. Cột trái ở Bước 3 hiển thị 9 nhóm thành phần chính kèm trạng thái nhận diện và cuộn đến vị trí tương ứng trên mặt giấy A4 khi nhấp chuột; cột phải hỗ trợ lọc lỗi theo nhóm thành phần đang chọn.
+### Trạng thái thực tế:
+- Mã đã triển khai wizard 3 bước. Bước 2 hiển thị các nhóm thể thức và canvas soạn thảo; Bước 3 xem ứng viên từ byte DOCX, tải xuống hoặc in tham khảo. Cần kiểm chứng riêng khả năng thao tác chuột, bàn phím, cuộn và hiển thị ở các viewport mục tiêu.
 
 ---
 
@@ -243,6 +246,7 @@ StructuredImport
 
 ### Cơ chế hoạt động:
 1. **Tự động lưu (Debounced Auto-save):** Sau mỗi thao tác chỉnh sửa 1.000ms, toàn bộ `doc`, `standardType` và danh sách `versions` được ghi vào IndexedDB. Nếu IndexedDB không khả dụng hoặc lỗi ghi, `saveDraft()` ném lỗi (reject) để giao diện hiển thị trạng thái `saveError` trung thực thay vì báo "Đã lưu tự động" giả.
+   Bản nháp được lưu dưới dạng `DocumentState`, không qua `DocumentFormatSchema.parse`; thiếu người ký không buộc phải điền tên hoặc chức vụ giả để lưu. Schema chuẩn hóa ở middleware AI là hợp đồng dữ liệu khác với điều kiện lưu nháp.
 2. **Khôi phục khi tải lại:** Khi mở ứng dụng, `loadDraft()` nạp bản nháp gần nhất và làm sạch chữ ký mẫu cũ nếu phát hiện bản nháp từ phiên bản trước.
 3. **Chuyển hệ an toàn (`SafeRegimeModal`):**
    - Tạo bản sao lưu phiên bản hiện tại vào `versions` trước khi chuyển đổi.
@@ -268,7 +272,8 @@ StructuredImport
 
 | Môi trường xem | Cơ chế hiển thị | Giới hạn đã biết so với Microsoft Word thật |
 |---|---|---|
-| **Canvas soạn thảo A4 (Bước 3)** | CSS Flexbox/Grid HTML (Times New Roman, 794px width) | Chỉ mô phỏng gần đúng bố cục trang A4. Các bảng dài sẽ chảy liên tục trên màn hình chứ chưa ngắt trang vật lý từng tờ 297mm như Word. |
+| **Canvas soạn thảo (Bước 2)** | HTML/CSS và trình soạn thảo | Là vùng sửa nội dung, không xác nhận phân trang vật lý trong Word. |
+| **Bản xem ứng viên (Bước 3)** | `docx-preview` dựng từ byte DOCX ứng viên hiện hành | Ngắt trang và Shape có thể khác Microsoft Word; cần đối chiếu tệp DOCX trong Word trước khi phát hành. |
 | **Xem trước Word thật (`docx-preview`)** | Render file `.docx` sang HTML canvas/SVG trên trình duyệt | `docx-preview` chưa hỗ trợ đầy đủ độ thụt lề âm (negative table indent) của OOXML; mã nguồn phải bù trừ thụt lề bằng CSS margin. Các nét vẽ DrawingML phức tạp có thể bị giản lược. |
 | **Tệp Microsoft Word xuất ra (`.docx`)** | OOXML nén chuẩn Microsoft Office | Ghi đầy đủ thuộc tính `w:cantSplit`, `w:tblHeader`, `w:gridSpan` và DrawingML/VML shape lines vào `word/document.xml`. Bố cục ngắt trang thực tế khi in vẫn phụ thuộc vào engine dàn trang của Microsoft Word nên cần kiểm tra trực quan đối với tài liệu nhiều trang. |
 
@@ -292,7 +297,7 @@ StructuredImport
 
 | File kiểm thử | Đối tượng kiểm tra | Lệnh chạy |
 |---|---|---|
-| `test/office-worker-redesign.test.ts` | Luồng 4 bước, cách ly 2 hệ, bảng biểu, regex, văn bản không chữ ký | `npx tsx test/office-worker-redesign.test.ts` |
+| `test/office-worker-redesign.test.ts` | Bộ hồi quy lịch sử của luồng 4 bước; không thay thế xác nhận wizard 3 bước hiện tại | `npx tsx test/office-worker-redesign.test.ts` |
 | `test/header-dual-regime.test.ts` | Kiểm định hình học phần đầu NĐ 30 và HD 05 (Generic & Hoa Tiêu MB) | `npx tsx test/header-dual-regime.test.ts` |
 | `test/nd30-compliance.test.ts` | 32 chỉ tiêu tuân thủ thể thức hành chính bắt buộc | `npm test` |
 | `test/import-segments.test.ts` | Độ chính xác của phân đoạn cấu trúc tài liệu | `npm run test:import:segments` |
@@ -349,8 +354,8 @@ Khi gặp các sự cố cụ thể, agent hãy tra cứu nhanh điểm bắt đ
 - **Điểm kiểm tra:** Kiểm tra giới hạn độ sâu đệ quy (`currentDepth >= 2`), điều kiện bài toán con bắt buộc phải thu nhỏ (`isIdenticalProblem` / `cA.length * cB.length >= midM * midN`), tối ưu cắt tỉa tiền tố/hậu tố chung ở cả cấp khối và cấp token. Khi chạm giới hạn tài nguyên, xuất toàn bộ phần thay đổi dưới dạng xóa/thêm kèm cờ `isPartial=true` và giải thích lý do `limitReason`, tuyệt đối không gán nhãn "unchanged" (0 thay đổi) sai lệch.
 - **Bài test kiểm chứng:** `npx tsx test/office-worker-redesign.test.ts` (Test 17) hoặc `npx tsx test/repro-diff-stack.test.ts`.
 
-### 9. Lỗi truyền snapshot gốc & tính trung thực của nhãn kiểm định tại Bước 4:
-- **Nơi bắt đầu:** [`src/App.tsx`](../src/App.tsx) tại khu vực dựng `<Step4View>` và [`src/components/OfficeWorkerViews.tsx`](../src/components/OfficeWorkerViews.tsx) tại `Step4ViewProps` và hàm `Step4View`.
-- **Điểm kiểm tra:** Prop `originalSnapshot` là bắt buộc với kiểu `OriginalDocumentSnapshot | null` (không để tùy chọn `?`). Trạng thái `isStrictlyCompliant` chỉ được bật khi toàn bộ rule kiểm định thực sự thỏa mãn (`FAIL === 0 && actionableCount === 0 && NOT_EVALUATED === 0 && NEEDS_REVIEW === 0 && PASS > 0`) và đã đo lường bằng chứng OOXML từ chính bản thảo hiện tại. Nhãn nút xuất Word phản ánh đúng mức độ bằng chứng ("Bản Thảo (Đã kiểm tra một phần)" thay vì ngộ nhận "Đạt Chuẩn").
-- **Bài test kiểm chứng:** `npx tsx test/office-worker-redesign.test.ts` (Test 14, 18, 19).
+### 9. Tính hiện hành của ứng viên tại Bước 3:
+- **Nơi bắt đầu:** [`src/App.tsx`](../src/App.tsx) tại `prepareCandidate`, `exportToDocx`, `handlePrintCandidate`; [`src/utils/exportCandidate.ts`](../src/utils/exportCandidate.ts) tại `exportCandidateKey` và `isCurrent`; [`src/components/WorkspaceExport.tsx`](../src/components/WorkspaceExport.tsx) tại bảng trạng thái ứng viên.
+- **Điểm kiểm tra:** Bản xem, tệp tải và bản in đều dùng ứng viên DOCX hiện hành có cùng byte, SHA-256 và phiên bản. `candidate.safe` và `candidate.downloadable` có ý nghĩa khác nhau; khi có cảnh báo, giao diện phải nêu rõ việc người dùng cần đối chiếu trong Word. Không dùng nhãn của `ExportStepView` cũ làm bằng chứng cho Bước 3 đang chạy.
+- **Giới hạn:** Các bài test giao diện 4 bước cũ chỉ là hồi quy lịch sử; cần xác nhận riêng luồng Bước 3 hiện hành và bố cục trong Microsoft Word.
 

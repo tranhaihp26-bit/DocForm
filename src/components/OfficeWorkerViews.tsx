@@ -605,17 +605,9 @@ export function ExportStepView({
             )}
           </div>
 
-          {/* Footer xem trước: Phân trang */}
-          <div className="px-4 py-2 border-t border-[#CFD8EA] bg-white flex items-center justify-between text-xs text-[#52607A] shrink-0">
-            <span>Trang 1 / 2</span>
-            <div className="flex items-center gap-1">
-              <button type="button" className="p-1 rounded border border-[#CFD8EA] hover:bg-slate-50 cursor-pointer">
-                <ChevronLeft className="w-3.5 h-3.5" />
-              </button>
-              <button type="button" className="p-1 rounded border border-[#CFD8EA] hover:bg-slate-50 cursor-pointer">
-                <ChevronRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
+          {/* Legacy preview cannot measure page count in Word. */}
+          <div className="px-4 py-2 border-t border-[#CFD8EA] bg-white text-xs text-[#52607A] shrink-0">
+            <span>Bản xem tham khảo; kiểm tra số trang trong Word.</span>
           </div>
         </div>
 

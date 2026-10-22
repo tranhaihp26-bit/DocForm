@@ -4,10 +4,13 @@ import {CandidateDocumentPreview} from './A4DocumentPreview.tsx';
 import {describeExportBlocker} from '../utils/workspaceExportMessages.ts';
 import {COMPANY_HEADER_PROFILE_ID} from '../canonical/nd30/companyHeader.ts';
 import {COMPANY_HEADER_HD05_PROFILE_ID} from '../canonical/hd05/companyHeaderHD05.ts';
+import type {ND30ComplianceReport} from '../shared/schemas/document.schema.ts';
 import './WorkspaceExport.css';
 
 type WorkspaceExportProps={
  candidate:ExportCandidate|null;
+ complianceReport:ND30ComplianceReport|null;
+ complianceRevision:number|null;
  pending:boolean;
  error:string;
  onPrepare:()=>void;
@@ -20,7 +23,7 @@ type WorkspaceExportProps={
  onEditTarget:(targetId?:string)=>void;
 };
 
-export function WorkspaceExport({candidate,pending,error,onPrepare,onDownload,onDownloadOriginal,onPrintCandidate,originalAvailable,onPrev,onReviewSource,onEditTarget}:WorkspaceExportProps){
+export function WorkspaceExport({candidate,complianceReport,complianceRevision,pending,error,onPrepare,onDownload,onDownloadOriginal,onPrintCandidate,originalAvailable,onPrev,onReviewSource,onEditTarget}:WorkspaceExportProps){
  const [toolbarTarget,setToolbarTarget]=useState<HTMLDivElement|null>(null);
  const [contextOpen,setContextOpen]=useState(()=>typeof window==='undefined'||window.innerWidth>1000);
  // ExportCandidate.bytes is a defensive-copy getter. Read it once per immutable
@@ -66,15 +69,23 @@ export function WorkspaceExport({candidate,pending,error,onPrepare,onDownload,on
     <section className="df-step3-context-card df-step3-candidate-status">
      <h2>Trạng thái ứng viên</h2>
      {!candidate?<><p className="df-step3-context-state">{pending?'Đang kiểm tra ứng viên':'Chưa có ứng viên hiện hành'}</p><p>{pending?'Các cổng kiểm tra đang chạy trên bản DOCX được tạo.':'Tạo ứng viên để xem kết quả kiểm tra và bản xem theo trang.'}</p></>:<>
-      <p className={`df-step3-context-state ${candidate.safe?'is-safe':'is-blocked'}`}>{candidate.safe?'Có thể xem và xuất ứng viên hiện hành':candidate.downloadable?'Có thể xuất, cần đối chiếu cảnh báo':'Không tạo được DOCX ứng viên'}</p>
+      <p className={`df-step3-context-state ${candidate.safe?'is-safe':candidate.downloadable?'is-warning':'is-blocked'}`}>{candidate.safe?'Đối chiếu không ghi nhận sai khác trong các cổng hiện có':candidate.downloadable?'Ứng viên có cảnh báo cần đối chiếu':'Không tạo được DOCX ứng viên'}</p>
       <ul className="df-step3-gate-list">
        <li><span>Đối chiếu bảng</span><strong data-gate-state={candidate.tableFidelity.safe?'safe':'blocked'}>{candidate.tableFidelity.safe?'Đã qua':'Cảnh báo'}</strong></li>
        <li><span>Đối chiếu nội dung</span><strong data-gate-state={candidate.contentFidelity.safe?'safe':'blocked'}>{candidate.contentFidelity.safe?'Đã qua':'Cảnh báo'}</strong></li>
        <li><span>Đối chiếu an toàn</span><strong data-gate-state={candidate.exportSafety.decision==='allow'?'safe':'blocked'}>{candidate.exportSafety.decision==='allow'?'Đã qua':'Cảnh báo'}</strong></li>
       </ul>
+      <section className="df-step3-formalities" data-formalities-revision={complianceRevision ?? undefined} aria-labelledby="df-step3-formalities-title">
+       <h3 id="df-step3-formalities-title">Rà soát thể thức</h3>
+       {complianceReport&&complianceRevision===candidate.revision?<>
+        <p className="df-step3-formalities-summary"><strong>{complianceReport.passedChecks}/{complianceReport.totalChecks} mục đạt</strong><span>{complianceReport.issues.length?`${complianceReport.issues.length} mục cần xem lại`:'Không có mục đang cảnh báo'}</span></p>
+        {complianceReport.issues.length>0&&<ul>{complianceReport.issues.map(issue=><li key={issue.id}><strong>{issue.title}</strong></li>)}</ul>}
+        <p className="df-step3-formalities-note">Kết quả rà soát thể thức độc lập với đối chiếu DOCX. Các mục cần xem lại không chặn tải hoặc in.</p>
+       </>:<p role="status">Đang đồng bộ kết quả rà soát với phiên bản bản soạn hiện hành.</p>}
+      </section>
       {candidate&&!candidate.safe&&<section className="df-step3-warning-panel" role="alert" aria-labelledby="df-step3-warning-title">
        <h3 id="df-step3-warning-title">{candidate.downloadable?'Cảnh báo đối chiếu':'Không tạo được DOCX ứng viên'}</h3>
-       <p>{candidate.downloadable?'Bạn vẫn có thể xem, tải hoặc in. Hãy đối chiếu bản xuất với tệp gốc trước khi phát hành.':'Không có DOCX hợp lệ để tải. Hãy tạo lại ứng viên.'}</p>
+       <p>{candidate.downloadable?'Cảnh báo này không chặn tải hoặc in. Hãy đối chiếu các khác biệt với tệp gốc trước khi phát hành.':'Không có DOCX hợp lệ để tải. Hãy tạo lại ứng viên.'}</p>
        {warningReasons.length>0&&<details className="df-step3-warning-details"><summary>{warningReasons.length} nội dung cần kiểm tra</summary><ul>{warningReasons.map((reason,i)=><li key={i}>{reason}</li>)}</ul></details>}
        {actions.length>0&&<nav className="df-step3-blocker-actions" aria-label="Đối chiếu cảnh báo">{actions.map(({action,targetId},i)=><button type="button" key={i} onClick={()=>action==='review_source'?onReviewSource():action==='edit_target'?onEditTarget(targetId):onDownloadOriginal()}>{action==='review_source'?'Đối chiếu nguồn':action==='edit_target'?'Mở vị trí cần sửa':'Tải tệp gốc'}</button>)}</nav>}
       </section>}
@@ -99,7 +110,7 @@ export function WorkspaceExport({candidate,pending,error,onPrepare,onDownload,on
      {candidate?.downloadable?<>
       <button type="button" className="df-step3-download-button" data-candidate-download data-candidate-sha={candidate.sha256} data-candidate-instance={candidate.instanceId} onClick={onDownload}>Tải xuống DOCX</button>
       <button type="button" className="df-step3-print-button" data-candidate-print data-candidate-sha={candidate.sha256} data-candidate-instance={candidate.instanceId} onClick={onPrintCandidate}>In bản xem / Lưu PDF tham khảo</button>
-      <p className="df-step3-export-note">{candidate.safe?'Bản in trình duyệt chỉ mang tính tham khảo. Hãy kiểm tra phân trang trong Word trước khi phát hành.':'Tệp có cảnh báo đối chiếu; bản in trình duyệt chỉ mang tính tham khảo. Hãy kiểm tra trong Word trước khi phát hành.'}</p>
+      <p className="df-step3-export-note">{candidate.safe?'Bản in trình duyệt chỉ mang tính tham khảo. Hãy kiểm tra phân trang trong Word trước khi phát hành.':'Tệp có cảnh báo đối chiếu nhưng vẫn tải/in được; bản in trình duyệt chỉ mang tính tham khảo. Hãy kiểm tra trong Word trước khi phát hành.'}</p>
      </>:<p className="df-step3-export-note">Tạo DOCX ứng viên hợp lệ để tải hoặc in.</p>}
      {originalAvailable&&<button type="button" className="df-step3-original-button" data-original-download onClick={onDownloadOriginal}>Tải tệp gốc nguyên vẹn</button>}
      <button type="button" className="df-step3-back-button" onClick={onPrev}>Quay lại Bước 2</button>

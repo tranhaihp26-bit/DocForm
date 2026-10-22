@@ -12,7 +12,7 @@ import { applyCompanyHD05Profile } from "../src/canonical/hd05/companyHeaderHD05
 import { evaluateDocumentRules, extractOoxmlEvidenceFromXml } from "../src/canonical/ruleEngine.ts";
 
 describe("HD05 Header Table Geometry and Date Wrapping Prevention", () => {
-  it("should generate zero-margin cells (<w:tcMar>) and allocate >= 4865 dxa to right column", async () => {
+  it("should generate zero-margin cells and match the approved 10170-twip HD05 reference geometry", async () => {
     const docData = applyCompanyHD05Profile({
       regime: "party" as const,
       documentType: "BIÊN BẢN HỌP",
@@ -45,9 +45,10 @@ describe("HD05 Header Table Geometry and Date Wrapping Prevention", () => {
     assert.equal(gridCols.length, 2, "Table must have exactly 2 columns");
     const [leftCol, rightCol] = gridCols;
 
-    assert.ok(leftCol >= 4400, `Left column width (${leftCol}) must be at least 4400 dxa to fit subordinate committee`);
-    assert.ok(rightCol >= 4800, `Right column width (${rightCol}) must be at least 4800 dxa to prevent date overflow`);
-    assert.equal(leftCol + rightCol, 9355, "Total header table width must be 9355 twips (165mm standard A4)");
+    assert.equal(leftCol, 5580, "HD05 left column must match the approved Word reference");
+    assert.equal(rightCol, 4590, "HD05 right column must match the approved Word reference");
+    assert.equal(leftCol + rightCol, 10170, "Total header table width must match the approved Word reference");
+    assert.match(tbl, /<w:tblInd[^>]*w:w="-540"/, "Header table must retain the reference indent");
 
     // 3. Verify zero margins in both cells (<w:tcMar>)
     const cells = Array.from(tbl.matchAll(/<w:tc\b[\s\S]*?<\/w:tc>/g)).map(m => m[0]);

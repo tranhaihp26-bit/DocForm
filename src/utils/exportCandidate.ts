@@ -13,7 +13,7 @@ import { hasStampedHoaTieuHeader } from "./hoaTieuHeaderStamp.ts";
 import { COMPANY_HEADER_PROFILE_ID } from "../canonical/nd30/companyHeader.ts";
 import { COMPANY_HEADER_HD05_PROFILE_ID } from "../canonical/hd05/companyHeaderHD05.ts";
 
-export interface ExportCandidateSnapshot extends DocumentComposerSnapshot { workspace?: WorkspaceState; /** Explicit UI override provenance participates in the cache identity. */ docTypeOverride?: unknown }
+export interface ExportCandidateSnapshot extends DocumentComposerSnapshot { workspace?: WorkspaceState; /** Explicit UI override provenance participates in the cache identity. */ docTypeOverride?: unknown; /** Semantic review decisions bind the candidate cache even though they never rewrite source bytes. */ semanticEvidenceFingerprint?: string; /** Exact extracted-text manifest used by the semantic review, when present. */ fullTextManifestSha256?: string; /** Applicability matrix selections are part of candidate identity. */ ruleSelectionFingerprint?: string; /** Current imported-source generation. */ sourceGeneration?: number; /** SHA-bound local visual evidence identity, when a complete rendition exists. */ sourceVisualEvidenceFingerprint?: string }
 export interface ExportCandidate {
   readonly instanceId: string;
   readonly key: string;

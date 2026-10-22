@@ -4,6 +4,7 @@ import { COMPANY_HEADER_PROFILE_ID, LOCKED_COMPANY_FIELDS } from '../canonical/n
 import { COMPANY_HEADER_HD05_PROFILE_ID, LOCKED_COMPANY_HD05_FIELDS } from '../canonical/hd05/companyHeaderHD05.ts';
 import { canEnterWorkspaceStep, freezeWorkspaceValue, type WorkspaceSnapshot } from './workspaceState.ts';
 import {assessWorkspaceNodeCapability,workspaceEditorSafety} from './workspaceCapabilities.ts';
+import {embeddedRecipientsSignatureTable} from '../shared/embeddedSignatureTable.ts';
 export {workspaceEditorSafety} from './workspaceCapabilities.ts';
 
 export type {EditorSafety} from './workspaceCapabilities.ts';
@@ -27,6 +28,7 @@ const groupRoles: Array<SourceRegion[]> = [['header'], ['header'], ['metadata'],
 /** A read-only view over the existing DocumentState, with no duplicate editable document model. */
 export function projectWorkspace(snapshot: WorkspaceSnapshot) {
   const unlocked = canEnterWorkspaceStep(snapshot, 2);
+  const hasEmbeddedSignature = snapshot.reviewBlocks.some(block => block.role === 'body' && embeddedRecipientsSignatureTable(block));
   const lockedFields: ReadonlySet<string> = snapshot.doc.headerProfile === COMPANY_HEADER_PROFILE_ID ? LOCKED_COMPANY_FIELDS
     : snapshot.doc.headerProfile === COMPANY_HEADER_HD05_PROFILE_ID ? LOCKED_COMPANY_HD05_FIELDS : new Set();
   const groups: WorkspaceGroupProjection[] = COMPONENT_GROUPS.filter(g => typeof g.id === 'number').map(meta => {
@@ -39,6 +41,7 @@ export function projectWorkspace(snapshot: WorkspaceSnapshot) {
           : String(snapshot.doc[key] ?? ''), editable: unlocked
         && key !== 'nationalHeader1' && key !== 'nationalHeader2'
         && !lockedFields.has(key)
+        && !(hasEmbeddedSignature && (key === 'signTitle' || key === 'signName' || key === 'recipients'))
         && (key !== 'bodyHtml' || workspaceEditorSafety(snapshot.doc.bodyHtml).editable),
       sourceBlockIds: snapshot.structuredImport?.fields[key]?.sourceBlockIds ?? [],
     }));

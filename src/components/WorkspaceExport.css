@@ -36,12 +36,19 @@
 .df-step3-context-card>p{color:#75819a;font-size:12px;line-height:1.5}
 .df-step3-context-state{margin:0 0 9px;color:#67758e;font-weight:700}
 .df-step3-context-state.is-safe{color:#16815d}
+.df-step3-context-state.is-warning{color:#a85b14}
 .df-step3-context-state.is-blocked{color:#a85b14}
 .df-step3-gate-list{display:grid;gap:10px;margin:12px 0;padding:0;list-style:none}
 .df-step3-gate-list li{display:flex;align-items:center;justify-content:space-between;gap:10px;color:#687790;font-size:11px}
 .df-step3-gate-list strong{font-size:11px;font-weight:700}
 .df-step3-gate-list strong[data-gate-state=safe]{color:#16815d}
 .df-step3-gate-list strong[data-gate-state=blocked]{color:#a85b14}
+.df-step3-formalities{margin-top:12px;padding:12px;border:1px solid #dce5f4;border-radius:10px;background:#f8faff}
+.df-step3-formalities h3{font-size:12px;font-weight:750}
+.df-step3-formalities-summary{display:flex;justify-content:space-between;gap:8px;margin:8px 0;color:#596984;font-size:11px}
+.df-step3-formalities-summary strong{color:#263552}
+.df-step3-formalities ul{display:grid;gap:5px;margin:8px 0;padding-left:17px;color:#8b4b18;font-size:11px;line-height:1.4}
+.df-step3-formalities-note,.df-step3-formalities>p[role=status]{margin:7px 0 0;color:#71809a;font-size:10px;line-height:1.45}
 .df-step3-context-card .df-step3-candidate-inventory{margin:12px 0 0;padding-top:10px;border-top:1px solid #edf0f6;color:#78849b;font-size:11px}
 .df-step3-warning-panel{margin-top:12px;border:1px solid #f0d9bd;border-radius:10px;background:#fffaf3;padding:12px;color:#8b4b18}
 .df-step3-warning-panel h3{font-size:12px;font-weight:750}

@@ -10,6 +10,7 @@ import type {
   PartitionProposal,
 } from "./schemas/document.schema.ts";
 import { toPartitionAiBlock } from "./partitionAiProtocol.ts";
+import { embeddedRecipientsSignatureTable } from "./embeddedSignatureTable.ts";
 
 export const VALID_SOURCE_REGIONS: readonly SourceRegion[] = [
   "header",
@@ -137,6 +138,11 @@ export function validateProposalAgainstSource(
 
   const sourceBlock = blocksById.get(sourceBlockId)!;
   const currentRole = sourceBlock.role || "unclassified";
+
+  // The cited cell is evidence, not the target of a role mutation. A mixed
+  // recipients/signature table cannot safely be moved to either single role.
+  if (embeddedRecipientsSignatureTable(sourceBlock) &&
+      (suggestedRole === "signature" || suggestedRole === "recipients")) return null;
 
   // Validate suggestedRole is one of the 8 valid SourceRegion values
   if (!VALID_SOURCE_REGIONS.includes(suggestedRole as SourceRegion)) {
@@ -336,6 +342,9 @@ export function checkProposalValidityBeforeApply(
       valid: false,
       reason: `Khối #${proposal.sourceBlockId} không còn tồn tại trong tài liệu`
     };
+  }
+  if (embeddedRecipientsSignatureTable(block) && (proposal.suggestedRole === 'signature' || proposal.suggestedRole === 'recipients')) {
+    return { valid: false, reason: 'Bảng Nơi nhận và chữ ký phải giữ nguyên một bảng trong thân văn bản' };
   }
 
   // 3. Vai trò đã thay đổi so với khi tạo đề xuất

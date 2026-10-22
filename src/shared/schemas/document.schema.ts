@@ -327,7 +327,7 @@ export interface PartitionProposal {
   confidence: "high" | "medium" | "low";
   status: "pending" | "accepted" | "rejected" | "skipped";
   regime: "administrative" | "party";
-  source?: "gemini_ai" | "rule_fallback";
+  source?: "gemini_ai" | "chatgpt_ai" | "rule_fallback";
   componentGroupIndex?: number; // 1 to 9
   requiresUserVerification?: boolean;
 }
@@ -338,7 +338,7 @@ export interface PartitionCheckResult {
   reviewedBlocksCount: number;
   unreviewedBlocksCount: number;
   proposals: PartitionProposal[];
-  source: "gemini_ai" | "rule_fallback" | "mixed" | "unverified";
+  source: "gemini_ai" | "chatgpt_ai" | "rule_fallback" | "mixed" | "unverified";
   model?: string;
   isFallback: boolean;
   notice?: string;
@@ -857,14 +857,14 @@ export interface ReviewProposal {
   suggested: string;
   reason: string;
   confidence: "high" | "medium" | "low";
-  source?: "gemini_ai" | "rule_fallback";
+  source?: "gemini_ai" | "chatgpt_ai" | "rule_fallback";
   label?: string;
   title?: string;
 }
 
 export interface DocumentReviewResult {
   success: boolean;
-  source: "gemini_ai" | "rule_fallback";
+  source: "gemini_ai" | "chatgpt_ai" | "rule_fallback";
   model?: string;
   isFallback: boolean;
   proposals: ReviewProposal[];

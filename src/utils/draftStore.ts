@@ -7,6 +7,7 @@
 import type { DocumentState } from "../App.tsx";
 import type { SourceBlock, StructuredImport } from "../shared/schemas/document.schema.ts";
 import type { WorkspaceState } from "./workspaceState.ts";
+import type { PersistedFullTextSemanticReview } from "./fullTextReviewPersistence.ts";
 
 export interface OriginalDocumentSnapshot {
   sourceType: "uploaded_file" | "system_template";
@@ -62,6 +63,10 @@ export interface DraftRecord {
    * quyết định duyệt không "rơi" sang nguồn khác và vẫn sống qua reload.
    */
   importReviewApprovedSourceHash?: string | null;
+  /** User semantic decisions only; source text and AI payloads are never stored here. */
+  semanticDecisions?: Record<string, { contextKey: string; status: "user_confirmed" | "rejected"; evidenceFingerprint?: string }>;
+  /** Source-bound semantic observations and coverage only; no text manifest, request payload or provider credential. */
+  fullTextSemanticReview?: PersistedFullTextSemanticReview;
   versions: Array<{
     id: string;
     timestamp: string;

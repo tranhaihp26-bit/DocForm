@@ -7,6 +7,9 @@ import { syncTableModelFromHtml, reconcileRunsWithNewText, replaceSimpleTableCel
 import { COMPANY_HEADER_PROFILE_ID, LOCKED_COMPANY_FIELDS, applyCompanyProfile } from '../canonical/nd30/companyHeader.ts';
 import { COMPANY_HEADER_HD05_PROFILE_ID, LOCKED_COMPANY_HD05_FIELDS, applyCompanyHD05Profile } from '../canonical/hd05/companyHeaderHD05.ts';
 import { canonicalWorkspaceValue, freezeWorkspaceValue, hasWorkspaceApproval, makePartition, workspaceInvariantErrors, workingDocumentFingerprint, type CellRoleMapping, type EditEvent, type EditableNode, type WorkspaceSnapshot } from './workspaceState.ts';
+import { embeddedRecipientsSignatureTable } from '../shared/embeddedSignatureTable.ts';
+import { applySemanticRuleFormatting, resolveSemanticRuleFormatting, type SemanticRuleId } from './semanticRuleFormatting.ts';
+import type { SemanticDecision } from '../shared/semanticDocument.ts';
 
 export type WorkspaceError = 'stale_revision' | 'pending_partition' | 'approval_required' | 'invalid_transaction' | 'readonly_content' | 'confirmation_required' | 'rebase_conflict' | 'not_found';
 export type WorkspaceResult = { ok: true; snapshot: WorkspaceSnapshot } | { ok: false; error: WorkspaceError; details: string[] };
@@ -19,6 +22,7 @@ export type WorkspaceAction =
   | { type: 'editBody'; html: string }
   | { type: 'editAppendix'; id: string; html: string }
   | { type: 'editNode'; id:string; html:string }
+  | { type: 'applySemanticParagraphRules'; sourceBlockId:string; expectedText:string; paragraphIndex:number; ruleIds:SemanticRuleId[]; regime:'state'|'party'; profile:string; decision?:SemanticDecision }
   | { type: 'registerTemplateTables'; templateId:string; models:TableModel[] }
   | { type: 'renameAppendix'; id: string; title: string }
   | { type: 'addAppendix'; appendix: AppendixDocument; index?: number }
@@ -78,6 +82,7 @@ export function transactWorkspace(input: WorkspaceSnapshot, expectedRevision: nu
   if (!hasWorkspaceApproval(input)) return fail('approval_required');
   const errors = workspaceInvariantErrors(input); if (errors.length) return fail('invalid_transaction', ...errors);
   const s = structuredClone(input), w = s.workspace;
+  const embeddedSignatureFieldsLocked = s.reviewBlocks.some(block => block.role === 'body' && !!embeddedRecipientsSignatureTable(block));
   let event: PendingEvent;
   const app = 'id' in action ? s.doc.appendices?.find(a => a.id === action.id) : undefined;
   switch (action.type) {
@@ -103,6 +108,7 @@ export function transactWorkspace(input: WorkspaceSnapshot, expectedRevision: nu
       const allowed = ['orgHeader1','orgHeader2','nationalHeader1','nationalHeader2','locationAndDate','documentType','referenceNumber','subject','signTitle','signName','recipients','draftNote'];
       if (!allowed.includes(action.field)) return fail('invalid_transaction', 'field_requires_typed_action');
       if (action.field === 'nationalHeader1' || action.field === 'nationalHeader2') return fail('readonly_content', 'fixed_regime_heading');
+      if (embeddedSignatureFieldsLocked && ['signTitle', 'signName', 'recipients'].includes(action.field)) return fail('readonly_content', 'embedded_signature_table_field');
       if(s.doc.headerProfile===COMPANY_HEADER_PROFILE_ID&&LOCKED_COMPANY_FIELDS.has(action.field)||s.doc.headerProfile===COMPANY_HEADER_HD05_PROFILE_ID&&LOCKED_COMPANY_HD05_FIELDS.has(action.field))return fail('readonly_content','profile_locked_field');
       (s.doc as any)[action.field] = action.value;
       event = { action: 'edit', kind: 'field', targetId: action.field, sourceRefs: s.structuredImport?.fields[action.field]?.sourceBlockIds ?? [] }; break;
@@ -111,6 +117,7 @@ export function transactWorkspace(input: WorkspaceSnapshot, expectedRevision: nu
       const entries = Object.entries(action.fields) as Array<[keyof DocumentState, string]>;
       const allowed = new Set(['orgHeader1','orgHeader2','locationAndDate','documentType','referenceNumber','subject','signTitle','signName','recipients','draftNote']);
       if (!entries.length || entries.some(([field]) => !allowed.has(field))) return fail('invalid_transaction', 'field_requires_typed_action');
+      if (embeddedSignatureFieldsLocked && entries.some(([field]) => ['signTitle', 'signName', 'recipients'].includes(field))) return fail('readonly_content', 'embedded_signature_table_field');
       if (entries.some(([field]) => s.doc.headerProfile === COMPANY_HEADER_PROFILE_ID && LOCKED_COMPANY_FIELDS.has(field)
         || s.doc.headerProfile === COMPANY_HEADER_HD05_PROFILE_ID && LOCKED_COMPANY_HD05_FIELDS.has(field))) {
         return fail('readonly_content', 'profile_locked_field');
@@ -141,6 +148,39 @@ export function transactWorkspace(input: WorkspaceSnapshot, expectedRevision: nu
       if(tableIds(node.html).length||tableIds(action.html).length||readonlyReasons(s,action.html).length)return fail('readonly_content','node_must_not_contain_table_or_media');
       node.html=action.html;syncDocumentNodes(s);
       event={action:'edit',kind:node.container==='body'?'node':'appendix',targetId:node.editableNodeId,sourceRefs:[...node.lineage]};break;
+    }
+    case 'applySemanticParagraphRules': {
+      if (action.regime !== s.standardType || action.profile !== (s.doc.headerProfile ?? 'generic')) return fail('invalid_transaction', 'semantic_rule_context_mismatch');
+      if (!s.doc.documentType.trim() || action.paragraphIndex !== 0 || /[\r\n]/.test(action.expectedText)) return fail('invalid_transaction', 'semantic_paragraph_anchor_unsupported');
+      const source = w.source?.blocks.find(block => block.id === action.sourceBlockId);
+      const role = w.partition.roles.find(item => item.sourceBlockId === action.sourceBlockId)?.role;
+      if (!source || source.kind !== 'paragraph' || role !== 'body') return fail('invalid_transaction', 'semantic_source_block_not_body_paragraph');
+      const decision = action.decision;
+      const expectedUnitId = `semantic.v1.body.body.${action.sourceBlockId}.p${action.paragraphIndex}`;
+      const isApproved = (decision?.status === 'user_confirmed' && decision.decidedBy === 'user') ||
+        (decision?.status === 'auto_confirmed' && decision.decidedBy === 'policy');
+      if (!w.source || !decision || decision.unitId !== expectedUnitId || !isApproved ||
+          decision.sourceSha256 !== w.source.blobHash || decision.sourceGeneration !== w.source.generation ||
+          decision.partitionFingerprint !== w.partition.fingerprint || decision.workingRevision !== w.workingRevision || !decision.evidenceFingerprint) {
+        return fail('approval_required', 'semantic_decision_not_currently_approved');
+      }
+      if (source.text.split(/\r?\n/u).length !== 1 || source.text.trim().replace(/[\t ]+/g, ' ') !== action.expectedText.trim().replace(/[\t ]+/g, ' ')) return fail('invalid_transaction', 'semantic_source_quote_mismatch');
+      const matchingNodes = w.nodes.filter(node => node.container === 'body' && node.lineage.includes(action.sourceBlockId));
+      if (matchingNodes.length !== 1 || matchingNodes[0].lineage.length !== 1) return fail('invalid_transaction', 'semantic_node_anchor_ambiguous');
+      const node = matchingNodes[0];
+      const capability = assessWorkspaceNodeCapability(s, node);
+      if (!capability.editable || tableIds(node.html).length || readonlyReasons(s, node.html).length) return fail('readonly_content', ...capability.reasons, 'semantic_node_not_safely_editable');
+      if (/<p\b[^>]*style\s*=\s*(["'])[^"']*text-align\s*:\s*(?:center|right)/i.test(node.html) || /^\s*[-—–_.\s]{3,}$/u.test(action.expectedText) || /^(?:điều\s+\d+|chương\s+|mục\s+|khoản\s+|điểm\s+[a-zđ])/iu.test(action.expectedText.trim())) return fail('invalid_transaction', 'semantic_paragraph_not_eligible_body');
+      let formatting;
+      try { formatting = resolveSemanticRuleFormatting(action.regime, action.profile, action.ruleIds); }
+      catch (error) { return fail('invalid_transaction', error instanceof Error ? error.message : 'semantic_rule_set_invalid'); }
+      const applied = applySemanticRuleFormatting(node.html, action.expectedText, formatting);
+      if (!applied.ok) return fail('invalid_transaction', applied.reason);
+      if (applied.html === node.html) return fail('invalid_transaction', 'semantic_rule_already_applied');
+      node.html = applied.html;
+      syncDocumentNodes(s);
+      event = { action: 'edit', kind: 'node', targetId: node.editableNodeId, sourceRefs: [action.sourceBlockId] };
+      break;
     }
     case 'registerTemplateTables': {
       if(w.source||!action.templateId||!action.models.length||s.doc.importedTables)return fail('invalid_transaction','template_table_bootstrap_context_invalid');

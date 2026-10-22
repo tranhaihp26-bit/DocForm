@@ -17,6 +17,7 @@
 
 import { AlignmentType } from "docx";
 import type { TableModel, TableCellRun, TableCellModel, TableRowModel } from "../shared/tableModel.ts";
+import { classifyTableMarkup, type TableFormatScope } from "../server/tableRoleClassifier.ts";
 
 export type ColumnSemanticType = 
   | "stt"          // Số thứ tự (STT, TT, No, No.)
@@ -92,17 +93,17 @@ export function calculateTableColumnProportions(headers: string[]): number[] {
     if (type === "stt") return 0;
     switch (type) {
       case "unit":
-        return 9; // ĐVT ~9%
+        return 14; // ĐVT cần đủ chỗ cho tiêu đề và tên đơn vị
       case "quantity":
-        return 12; // Số lượng ~12%
+        return 18; // Số lượng / kinh phí
       case "time":
-        return 16; // Thời gian ~16%
+        return 24; // Tránh tách ngày, tháng, năm thành nhiều dòng vụn
       case "department":
-        return 24; // Đơn vị ~24%
+        return 22; // Đơn vị chủ trì / phối hợp
       case "note":
-        return 14; // Ghi chú ~14%
+        return 20; // Ghi chú và kết quả
       case "content":
-        return 50; // Nội dung chính ~50%
+        return 36; // Nội dung chính; nhường bề rộng cho các cột nghiệp vụ khác
       case "general":
       default:
         // Nếu cột đầu tiên không nhận diện được loại nhưng colCount > 2
@@ -159,6 +160,46 @@ export function calculateTableColumnWidthsTwip(headers: string[], totalWidthDxa:
   return widthsTwip;
 }
 
+function equalColumnProportions(columnCount: number): number[] {
+  if (columnCount <= 0) return [];
+  const base = Math.floor(100 / columnCount);
+  return Array.from({ length: columnCount }, (_value, index) => index === columnCount - 1
+    ? 100 - base * (columnCount - 1)
+    : base);
+}
+
+/** Bảng không có header vẫn có thể có cột STT; suy luận theo toàn bộ dữ liệu. */
+export function calculateUnheadedColumnProportions(rows: string[][]): number[] {
+  const columnCount = rows.reduce((max, row) => Math.max(max, row.length), 0);
+  if (columnCount <= 0) return [];
+  if (columnCount === 1) return [100];
+
+  const hasOrdinalFirstColumn = rows.length > 1 && rows.every(row =>
+    /^\s*\d{1,4}[.)]?\s*$/.test(row[0] || "")
+  );
+  if (!hasOrdinalFirstColumn) return equalColumnProportions(columnCount);
+
+  const firstColumn = 8;
+  const remaining = 100 - firstColumn;
+  const base = Math.floor(remaining / (columnCount - 1));
+  return Array.from({ length: columnCount }, (_value, index) => index === 0
+    ? firstColumn
+    : index === columnCount - 1
+      ? remaining - base * (columnCount - 2)
+      : base);
+}
+
+export function calculateUnheadedColumnWidthsTwip(rows: string[][], totalWidthDxa: number = 9355): number[] {
+  const proportions = calculateUnheadedColumnProportions(rows);
+  const widths = proportions.map(pct => Math.round((pct / 100) * totalWidthDxa));
+  const difference = totalWidthDxa - widths.reduce((sum, width) => sum + width, 0);
+  if (widths.length && difference !== 0) {
+    const widestIndex = widths.indexOf(Math.max(...widths));
+    widths[widestIndex] += difference;
+  }
+  return widths;
+}
+
 /**
  * Trả về kiểu căn lề DOCX (AlignmentType) phù hợp theo loại cột
  */
@@ -206,103 +247,152 @@ export function getColumnCssAlignment(type: ColumnSemanticType, isHeader: boolea
   }
 }
 
-/**
- * Tối ưu hóa chuỗi HTML chứa bảng:
- * 1. Chèn thẻ <colgroup> với độ rộng % chuẩn cho từng cột
- * 2. Thiết lập table-layout: fixed và width: 100%
- * 3. Chuẩn hóa padding, viền, cỡ chữ trong ô
- * 4. Căn lề chuẩn cho cột STT (căn giữa) và cột Nội dung (căn đều)
- */
-export function optimizeTableHtml(tableHtml: string): string {
+/** Preset uses controlled table-level and cell styles while keeping inline text markup. */
+export interface TableFormatOptions {
+  scope?: TableFormatScope;
+  regime?: "administrative" | "party";
+  fontSizePt?: number;
+}
+
+function mergeMarkupStyle(attributes: string, updates: Record<string, string>): string {
+  const styleMatch = attributes.match(/\bstyle\s*=\s*(["'])([\s\S]*?)\1/i);
+  const styles = new Map<string, string>();
+  for (const declaration of (styleMatch?.[2] || "").split(";")) {
+    const separator = declaration.indexOf(":");
+    if (separator < 0) continue;
+    const property = declaration.slice(0, separator).trim().toLowerCase();
+    const value = declaration.slice(separator + 1).trim();
+    if (property && value) styles.set(property, value);
+  }
+  for (const [property, value] of Object.entries(updates)) styles.set(property, value);
+  const mergedStyle = Array.from(styles.entries()).map(([property, value]) => `${property}: ${value}`).join("; ");
+  const withoutStyle = attributes.replace(/\s*style\s*=\s*(["'])[\s\S]*?\1/i, "");
+  return `${withoutStyle} style="${mergedStyle}"`;
+}
+
+function extractTableTextRows(markup: string): string[][] {
+  const rowMatches = markup.match(/<tr\b[^>]*>[\s\S]*?<\/tr\s*>/gi) || [];
+  return rowMatches.map(row => Array.from(row.matchAll(/<(th|td)\b[^>]*>([\s\S]*?)<\/\1\s*>/gi), match =>
+    decodeHtmlEntities((match[2] || "").replace(/<br\s*\/?\s*>/gi, " ").replace(/<[^>]*>/g, " ")).replace(/\s+/g, " ").trim()
+  ));
+}
+
+function formatContentTableMarkup(innerHtml: string, headers: string[], hasHeaderRow: boolean, fontSizePt: number): string {
+  let rowIndex = 0;
+  return innerHtml
+    .replace(/<colgroup\b[^>]*>[\s\S]*?<\/colgroup\s*>/gi, "")
+    .replace(/<tr\b([^>]*)>([\s\S]*?)<\/tr\s*>/gi, (_row, rowAttrs, rowHtml) => {
+      const currentRow = rowIndex++;
+      let colIndex = 0;
+      const formattedCells = rowHtml.replace(/<(th|td)\b([^>]*)>([\s\S]*?)<\/\1\s*>/gi, (
+        _cell: string,
+        tagName: string,
+        cellAttrs: string,
+        cellHtml: string
+      ) => {
+        const currentColumn = colIndex++;
+        const isHeader = tagName.toLowerCase() === "th" || (currentRow === 0 && hasHeaderRow);
+        const type = hasHeaderRow ? detectColumnSemanticType(headers[currentColumn] || "") : "general";
+        const cellUpdates: Record<string, string> = {
+          border: "0.5pt solid #000000",
+          padding: "1mm 1.75mm",
+          "text-align": getColumnCssAlignment(type, isHeader),
+          "vertical-align": isHeader ? "middle" : "top",
+          "font-size": `${fontSizePt}pt`,
+          "line-height": "1.25",
+        };
+        if (isHeader) cellUpdates["font-weight"] = "bold";
+        return `<${tagName}${mergeMarkupStyle(cellAttrs, cellUpdates)}>${cellHtml}</${tagName}>`;
+      });
+      return `<tr${rowAttrs}>${formattedCells}</tr>`;
+    });
+}
+
+function inferUnheadedColumnType(rows: string[][], columnIndex: number): ColumnSemanticType {
+  if (columnIndex === 0 && rows.length > 1 && rows.every(row => /^\s*\d{1,4}[.)]?\s*$/.test(row[0] || ""))) {
+    return "stt";
+  }
+  return "general";
+}
+
+/** Format only confidently identified, editable content tables in Body/appendix regions. */
+export function optimizeTableHtml(tableHtml: string, options: TableFormatOptions = {}): string {
+  const scope = options.scope || "body";
+  const regime = options.regime || "administrative";
+  const fontSizePt = options.fontSizePt || 13;
   if (typeof window === "undefined" || typeof window.DOMParser === "undefined") {
-    // Regex-based fallback cho Node.js / Server-side
-    return tableHtml.replace(/<table([^>]*)>([\s\S]*?)<\/table>/gi, (_match, tableAttrs, tableInner) => {
-      // Bảng nhập ở chế độ preserve không được tự ý tối ưu hóa hay đổi style
-      if (/data-source-table-id|data-preserve=["']true["']/i.test(tableAttrs)) {
-        return _match;
-      }
+    return tableHtml.replace(/<table\b([^>]*)>([\s\S]*?)<\/table\s*>/gi, (_match, tableAttrs, tableInner) => {
+      const markup = `<table${tableAttrs}>${tableInner}</table>`;
+      const decision = classifyTableMarkup(markup, scope, regime);
+      if (!decision.canAutoFormat) return _match;
 
-      // Tìm các thẻ th trong hàng đầu tiên
-      const thMatches = tableInner.match(/<th[^>]*>([\s\S]*?)<\/th>/gi) || [];
-      const headers = thMatches.map((th: string) => th.replace(/<[^>]*>/g, "").trim());
-      
-      if (headers.length === 0) {
-        return `<table style="width: 100%; border-collapse: collapse; table-layout: fixed; margin: 12px 0;"${tableAttrs}>${tableInner}</table>`;
-      }
-
-      const proportions = calculateTableColumnProportions(headers);
-      const colgroupHtml = `<colgroup>${proportions.map(p => `<col style="width: ${p}%;">`).join("")}</colgroup>`;
-
-      // Gán style chuẩn cho table
-      const cleanTableAttrs = tableAttrs.replace(/style="[^"]*"/gi, "");
-      return `<table style="width: 100%; border-collapse: collapse; table-layout: fixed; margin: 14px 0; font-size: 12pt;" ${cleanTableAttrs}>${colgroupHtml}${tableInner}</table>`;
+      const rows = extractTableTextRows(tableInner);
+      const proportions = decision.hasHeaderRow
+        ? calculateTableColumnProportions(decision.headers)
+        : calculateUnheadedColumnProportions(rows);
+      const colgroupHtml = `<colgroup>${proportions.map(pct => `<col style="width: ${pct}%;">`).join("")}</colgroup>`;
+      const formattedInner = formatContentTableMarkup(tableInner, decision.headers, decision.hasHeaderRow, fontSizePt);
+      const attrs = mergeMarkupStyle(tableAttrs, {
+        width: "100%",
+        "border-collapse": "collapse",
+        "table-layout": "fixed",
+        margin: "14px 0",
+        "font-size": `${fontSizePt}pt`,
+      }).replace(/\sdata-docform-content-table\s*=\s*(["'])[^"']*\1/gi, "")
+        .replace(/\sdata-docform-table-scope\s*=\s*(["'])[^"']*\1/gi, "");
+      return `<table${attrs} data-docform-content-table="true" data-docform-table-scope="${scope}">${colgroupHtml}${formattedInner}</table>`;
     });
   }
 
-  // DOMParser-based implementation trong Browser
   try {
     const parser = new DOMParser();
     const doc = parser.parseFromString(`<div>${tableHtml}</div>`, "text/html");
     const tables = doc.querySelectorAll("table");
-
     tables.forEach((table) => {
-      // Bảng nhập ở chế độ preserve không được tự ý tối ưu hóa hay đổi style
-      if (table.hasAttribute("data-source-table-id") || table.getAttribute("data-preserve") === "true") {
-        return;
-      }
+      if (table.parentElement?.closest("table")) return;
+      const decision = classifyTableMarkup(table.outerHTML, scope, regime);
+      if (!decision.canAutoFormat) return;
+      table.setAttribute("data-docform-content-table", "true");
+      table.setAttribute("data-docform-table-scope", scope);
       table.style.width = "100%";
       table.style.borderCollapse = "collapse";
       table.style.tableLayout = "fixed";
       table.style.marginTop = "14px";
       table.style.marginBottom = "14px";
-      table.style.fontSize = "12pt";
+      table.style.fontSize = `${fontSizePt}pt`;
       table.style.lineHeight = "1.25";
 
-      // Đọc header cells
-      const firstRow = table.querySelector("tr");
-      if (!firstRow) return;
-
-      const headerCells = Array.from(firstRow.querySelectorAll("th, td"));
-      const headers = headerCells.map(c => c.textContent?.trim() || "");
-      if (headers.length === 0) return;
-
-      const types = headers.map(h => detectColumnSemanticType(h));
-      const proportions = calculateTableColumnProportions(headers);
-
-      // Thêm hoặc cập nhật <colgroup>
-      let colgroup = table.querySelector("colgroup");
+      const rows = Array.from(table.querySelectorAll("tr"));
+      const rowTexts = rows.map(row => Array.from(row.querySelectorAll(":scope > th, :scope > td"), cell => cell.textContent?.trim() || ""));
+      const proportions = decision.hasHeaderRow
+        ? calculateTableColumnProportions(decision.headers)
+        : calculateUnheadedColumnProportions(rowTexts);
+      let colgroup = table.querySelector(":scope > colgroup");
       if (!colgroup) {
         colgroup = doc.createElement("colgroup");
         table.insertBefore(colgroup, table.firstChild);
       }
       colgroup.innerHTML = proportions.map(pct => `<col style="width: ${pct}%;">`).join("");
 
-      // Định dạng từng hàng và ô
-      const rows = Array.from(table.querySelectorAll("tr"));
-      rows.forEach((row, rowIdx) => {
-        const cells = Array.from(row.querySelectorAll("th, td"));
-        const isHeaderRow = rowIdx === 0 && (row.querySelector("th") !== null || row.parentElement?.tagName.toLowerCase() === "thead");
-
-        cells.forEach((cell, colIdx) => {
-          const type = types[colIdx] || "general";
+      rows.forEach((row, rowIndex) => {
+        const cells = Array.from(row.querySelectorAll(":scope > th, :scope > td")) as HTMLElement[];
+        const isHeaderRow = rowIndex === 0 && decision.hasHeaderRow;
+        cells.forEach((cell, colIndex) => {
           const isHeader = cell.tagName.toLowerCase() === "th" || isHeaderRow;
-          
-          cell.setAttribute("style", `
-            border: 1px solid #000000;
-            padding: ${isHeader ? "6px 8px" : "5px 8px"};
-            text-align: ${getColumnCssAlignment(type, isHeader)};
-            font-weight: ${isHeader ? "bold" : "normal"};
-            background-color: ${isHeader ? "#f8fafc" : "transparent"};
-            vertical-align: ${isHeader ? "middle" : "top"};
-            font-size: 12pt;
-            line-height: 1.25;
-            word-wrap: break-word;
-            overflow-wrap: break-word;
-          `.replace(/\s+/g, " ").trim());
+          const columnType = decision.hasHeaderRow
+            ? detectColumnSemanticType(decision.headers[colIndex] || "")
+            : inferUnheadedColumnType(rowTexts, colIndex);
+          cell.style.border = "0.5pt solid #000000";
+          cell.style.padding = "1mm 1.75mm";
+          cell.style.textAlign = getColumnCssAlignment(columnType, isHeader);
+          if (isHeader) cell.style.fontWeight = "bold";
+          cell.style.verticalAlign = isHeader ? "middle" : "top";
+          cell.style.fontSize = `${fontSizePt}pt`;
+          cell.style.lineHeight = "1.25";
+          cell.style.overflowWrap = "break-word";
         });
       });
     });
-
     return doc.body.firstElementChild?.innerHTML || tableHtml;
   } catch (err) {
     console.warn("Error optimizing table HTML:", err);
@@ -320,7 +410,7 @@ export function optimizeTableHtml(tableHtml: string): string {
  */
 export function formatND30BodyHtml(rawHtml: string, regime: "administrative" | "party" = "administrative"): string {
   if (!rawHtml || !rawHtml.trim()) return rawHtml;
-  return optimizeTableHtml(rawHtml);
+  return optimizeTableHtml(rawHtml, { scope: "body", regime });
 }
 
 export interface CellEditDiff {

@@ -2,6 +2,8 @@ import type { SourceBlock, SourceRegion } from "./schemas/document.schema.ts";
 
 export const PARTITION_AI_SCHEMA_VERSION = 1 as const;
 
+export type PartitionAiProviderKind = "gemini" | "chatgpt";
+
 export type PartitionAiRegime = "administrative" | "party";
 
 export interface PartitionAiCell {
@@ -22,6 +24,8 @@ export interface PartitionAiBlock {
 export interface PartitionAiRequest {
   schemaVersion: typeof PARTITION_AI_SCHEMA_VERSION;
   consent: true;
+  /** Explicit provider selection; an omitted value remains Gemini for older clients. */
+  provider?: PartitionAiProviderKind;
   requestId: string;
   regime: PartitionAiRegime;
   sourceGeneration: number;
@@ -51,6 +55,7 @@ export interface PartitionAiChunkResult {
 
 export interface PartitionAiResponse {
   schemaVersion: typeof PARTITION_AI_SCHEMA_VERSION;
+  provider?: PartitionAiProviderKind;
   requestId: string;
   requestFingerprint: string;
   regime: PartitionAiRegime;
@@ -106,7 +111,7 @@ export function toPartitionAiBlocks(blocks: SourceBlock[]): PartitionAiBlock[] {
   return blocks.map(toPartitionAiBlock);
 }
 
-const TOP_LEVEL_KEYS = new Set(["schemaVersion", "consent", "requestId", "regime", "sourceGeneration", "partitionRevision", "blocks"]);
+const TOP_LEVEL_KEYS = new Set(["schemaVersion", "consent", "provider", "requestId", "regime", "sourceGeneration", "partitionRevision", "blocks"]);
 const BLOCK_KEYS = new Set(["id", "index", "kind", "text", "cells"]);
 const CELL_KEYS = new Set(["cellId", "rowIndex", "colIndex", "text"]);
 const PROPOSAL_KEYS = new Set(["sourceBlockId", "suggestedRole", "fieldKey", "exactQuote", "cellLocation", "reason", "confidence"]);
@@ -131,6 +136,9 @@ export function validatePartitionAiRequest(value: unknown): PartitionAiRequestVa
     return { valid: false, reason: "Yêu cầu AI có trường ngoài schema hoặc không phải object." };
   }
   if (value.consent !== true) return { valid: false, reason: "Chưa có xác nhận cho phép gửi nguồn lên AI." };
+  if (value.provider !== undefined && value.provider !== "gemini" && value.provider !== "chatgpt") {
+    return { valid: false, reason: "Nhà cung cấp AI không hợp lệ." };
+  }
   if (value.schemaVersion !== PARTITION_AI_SCHEMA_VERSION) return { valid: false, reason: "Phiên bản schema yêu cầu AI không được hỗ trợ." };
   if (value.regime !== "administrative" && value.regime !== "party") return { valid: false, reason: "Hệ thể thức không hợp lệ." };
   if (typeof value.requestId !== "string" || !value.requestId.trim() || value.requestId.length > 128) {
@@ -252,7 +260,7 @@ export function validatePartitionAiResponse(
   request: PartitionAiRequest,
 ): { valid: true; response: PartitionAiResponse } | { valid: false; reason: string } {
   const responseKeys = new Set([
-    "schemaVersion", "requestId", "requestFingerprint", "regime", "sourceGeneration",
+    "schemaVersion", "provider", "requestId", "requestFingerprint", "regime", "sourceGeneration",
     "partitionRevision", "totalBlocks", "aiReviewedBlockIds", "failedBlockIds", "chunks", "model",
   ]);
   const chunkKeys = new Set(["chunkIndex", "status", "blockIds", "proposals", "error"]);
@@ -260,6 +268,9 @@ export function validatePartitionAiResponse(
       value.schemaVersion !== PARTITION_AI_SCHEMA_VERSION || value.requestId !== request.requestId ||
       value.regime !== request.regime || value.sourceGeneration !== request.sourceGeneration ||
       value.partitionRevision !== request.partitionRevision || value.totalBlocks !== request.blocks.length ||
+      (value.provider !== undefined && value.provider !== "gemini" && value.provider !== "chatgpt") ||
+      (request.provider === "chatgpt" && value.provider !== "chatgpt") ||
+      (value.provider !== undefined && value.provider !== (request.provider ?? "gemini")) ||
       typeof value.requestFingerprint !== "string" || !/^[a-f0-9]{16}$/.test(value.requestFingerprint) ||
       !Array.isArray(value.aiReviewedBlockIds) || !Array.isArray(value.failedBlockIds) ||
       !Array.isArray(value.chunks) || (value.model !== undefined && typeof value.model !== "string")) {
@@ -330,6 +341,7 @@ export function validatePartitionAiResponse(
     valid: true,
     response: {
       schemaVersion: PARTITION_AI_SCHEMA_VERSION,
+      ...(value.provider ? { provider: value.provider as PartitionAiProviderKind } : {}),
       requestId: request.requestId,
       requestFingerprint: value.requestFingerprint,
       regime: request.regime,

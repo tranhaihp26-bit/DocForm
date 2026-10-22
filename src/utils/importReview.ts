@@ -13,6 +13,7 @@ import {
   formatReferenceNumber
 } from "../server/structuralSegmenter.ts";
 import { extractStandaloneLocationDate } from "../shared/locationDate.ts";
+import { embeddedRecipientsSignatureTable } from "../shared/embeddedSignatureTable.ts";
 
 export interface ReconstructedDocumentState {
   fields: {
@@ -350,10 +351,14 @@ export function reconstructFromReviewedBlocks(
           continue;
         }
         const upper = line.toUpperCase();
-        const matchedDocType = DOC_TYPE_KEYWORDS.find(kw => upper === kw || upper.startsWith(kw + " ") || upper.startsWith(kw + ":"));
+        const isDraftTitle = /^DỰ\s+THẢO\s+/u.test(upper);
+        const titleWithoutDraftMark = upper.replace(/^DỰ\s+THẢO\s+/u, "");
+        const matchedDocType = DOC_TYPE_KEYWORDS.find(kw => titleWithoutDraftMark === kw || (!isDraftTitle && (upper.startsWith(kw + " ") || upper.startsWith(kw + ":"))));
         if (matchedDocType && !documentType) {
           documentType = matchedDocType;
-          const remainder = line.slice(matchedDocType.length).replace(/^[:\s-]+/, "").trim();
+          if (isDraftTitle && !draftNote) draftNote = "DỰ THẢO";
+          const titleLine = isDraftTitle ? line.replace(/^DỰ\s+THẢO\s+/iu, "") : line;
+          const remainder = titleLine.slice(matchedDocType.length).replace(/^[:\s-]+/, "").trim();
           if (remainder && !subject) {
             subject = remainder;
           }
@@ -481,6 +486,17 @@ export function reconstructFromReviewedBlocks(
           }
         }
       }
+    }
+  }
+
+  // Semantic fields may live in two cells of a single physical Body table.
+  // Preserve that table in Body and derive the fields from the current cells.
+  if (!signTitle && !signName && !recipients) {
+    const embedded = bodyBlocks.map(embeddedRecipientsSignatureTable).find(Boolean);
+    if (embedded) {
+      signTitle = embedded.signTitle;
+      signName = embedded.signName;
+      recipients = embedded.recipients;
     }
   }
 

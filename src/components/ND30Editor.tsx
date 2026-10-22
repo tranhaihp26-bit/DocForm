@@ -17,8 +17,10 @@
 import React, { useEffect, useRef, useState } from "react";
 import DOMPurify from "dompurify";
 import { useEditor, EditorContent } from "@tiptap/react";
+import { Extension } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import {workspaceEditorSafety, type EditorSafety} from '../utils/workspaceProjection.ts';
+import { isSemanticFirstLineIndent, isSemanticLineSpacing } from '../utils/semanticRuleFormatting.ts';
 import TextAlign from "@tiptap/extension-text-align";
 import Underline from "@tiptap/extension-underline";
 import { Table, TableRow, TableHeader, TableCell } from "@tiptap/extension-table";
@@ -135,6 +137,35 @@ const PreserveTableCell = TableCell.extend({
         },
       },
     };
+  },
+});
+
+const SemanticParagraphFormatting = Extension.create({
+  name: "docformSemanticParagraphFormatting",
+  addGlobalAttributes() {
+    return [{
+      types: ["paragraph"],
+      attributes: {
+        "data-df-line-spacing": {
+          default: null,
+          parseHTML: (element) => {
+            const value = element.getAttribute("data-df-line-spacing") ?? "";
+            return isSemanticLineSpacing(value) ? value : null;
+          },
+          renderHTML: (attributes) => isSemanticLineSpacing(String(attributes["data-df-line-spacing"] ?? ""))
+            ? { "data-df-line-spacing": attributes["data-df-line-spacing"] } : {},
+        },
+        "data-df-first-line-indent": {
+          default: null,
+          parseHTML: (element) => {
+            const value = element.getAttribute("data-df-first-line-indent") ?? "";
+            return isSemanticFirstLineIndent(value) ? value : null;
+          },
+          renderHTML: (attributes) => isSemanticFirstLineIndent(String(attributes["data-df-first-line-indent"] ?? ""))
+            ? { "data-df-first-line-indent": attributes["data-df-first-line-indent"] } : {},
+        },
+      },
+    }];
   },
 });
 
@@ -702,17 +733,17 @@ function readonlyEditorNotice(reason:string):string{
 }
 
 /** Each canvas stays mounted by ID. Opening the editor never emits normalized HTML. */
-export function WorkspaceCanvasEditor({id,content,safety,onChange,onEditorReady,onActive}:{id:string;content:string;safety:EditorSafety;onChange:(html:string)=>boolean;onEditorReady:(editor:any)=>void;onActive:()=>void}) {
+export function WorkspaceCanvasEditor({ariaLabel,content,safety,onChange,onEditorReady,onActive}:{ariaLabel:string;content:string;safety:EditorSafety;onChange:(html:string)=>boolean;onEditorReady:(editor:any)=>void;onActive:()=>void}) {
   const changeRef=useRef(onChange),activeRef=useRef(onActive),readyRef=useRef(onEditorReady);
   changeRef.current=onChange;activeRef.current=onActive;readyRef.current=onEditorReady;
   const committed=useRef(content);
   const [proof,setProof]=useState<EditorSafety>({editable:false,reasons:['schema_roundtrip_pending']});
   const editor=useEditor({
-    extensions:[StarterKit.configure({underline:false}),Underline,TextAlign.configure({types:['heading','paragraph'],alignments:['left','center','right','justify']})],
+    extensions:[StarterKit.configure({underline:false}),Underline,TextAlign.configure({types:['heading','paragraph'],alignments:['left','center','right','justify']}),SemanticParagraphFormatting],
     parseOptions:{preserveWhitespace:'full'},
     content:safety.editable?DOMPurify.sanitize(content||'<p></p>'):'<p></p>',
     editable:false,
-    editorProps:{attributes:{'aria-label':id==='body'?'Nội dung văn bản':`Nội dung phụ lục ${id}`,class:'df-workspace-prose'}},
+    editorProps:{attributes:{'aria-label':ariaLabel,class:'df-workspace-prose'}},
     onFocus:()=>activeRef.current(),
     onUpdate:({editor})=>{
       if(!editor.isEditable)return;

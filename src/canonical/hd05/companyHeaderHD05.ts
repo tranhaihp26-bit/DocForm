@@ -27,7 +27,9 @@ export const COMPANY_HEADER_HD05_ISSUER_LINES = [
 export const COMPANY_HEADER_HD05_PARENT = COMPANY_HEADER_HD05_PARENT_LINES.join("\n");
 export const COMPANY_HEADER_HD05_ISSUER = COMPANY_HEADER_HD05_ISSUER_LINES.join("\n");
 export const COMPANY_HEADER_HD05_TITLE = "ĐẢNG CỘNG SẢN VIỆT NAM";
-export const COMPANY_HEADER_HD05_DEFAULT_DATE = "Hải Phòng, ngày … tháng … năm 2026";
+// Giá trị có sẵn trong DOCX tham chiếu, chỉ dùng để nhận diện đoạn cần thay khi đóng dấu mẫu.
+// Không dùng chuỗi này làm dữ liệu mặc định trong văn bản xuất.
+export const COMPANY_HEADER_HD05_REFERENCE_DATE = "Hải Phòng, ngày … tháng … năm 2026";
 export const COMPANY_HEADER_HD05_DEFAULT_NUMBER = "Số …-…/ĐU";
 
 // Kích thước đo đạc từ mẫu header-reference.docx: 5580 + 4590 = 10170 twips, thụt lề -540 twips.
@@ -101,7 +103,7 @@ export function createCompanyHeaderHD05Table(
   showNationalHeader = true
 ): Table {
   const cleanRef = (referenceNumber || "").trim();
-  const cleanDate = (locationAndDate || "").trim() || COMPANY_HEADER_HD05_DEFAULT_DATE;
+  const cleanDate = (locationAndDate || "").trim();
 
   // Xử lý các dòng của cơ quan cấp trên
   const org1Lines = (customOrgHeader1 && customOrgHeader1.trim() && !customOrgHeader1.includes("[Cơ quan"))
@@ -193,9 +195,9 @@ export function applyCompanyHD05Profile<T extends object>(
     fontSize: 14,
     referenceNumber: typeof (input as any).referenceNumber === "string"
       ? (input as any).referenceNumber : COMPANY_HEADER_HD05_DEFAULT_NUMBER,
-    locationAndDate: typeof (input as any).locationAndDate === "string" &&
-      (input as any).locationAndDate.trim() && !(input as any).locationAndDate.includes("[Địa danh]")
-      ? (input as any).locationAndDate : COMPANY_HEADER_HD05_DEFAULT_DATE,
+    locationAndDate: typeof (input as any).locationAndDate === "string"
+      ? (input as any).locationAndDate
+      : "",
   };
 }
 

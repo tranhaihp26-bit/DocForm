@@ -9,6 +9,7 @@ import {
   type PartitionAiResponse,
 } from "../shared/partitionAiProtocol.ts";
 import { buildPartitionAiPrompt } from "./aiPartitionReview.ts";
+import { runBoundedTasks } from "./aiTextChunkRunner.ts";
 
 export interface PartitionAiProviderResult {
   text: string;
@@ -33,8 +34,11 @@ function chunk<T>(items: T[], size: number): T[][] {
 }
 
 function fingerprint(request: PartitionAiRequest): string {
+  const fingerprintInput = request.provider && request.provider !== "gemini"
+    ? { provider: request.provider, regime: request.regime, blocks: request.blocks }
+    : { regime: request.regime, blocks: request.blocks };
   return crypto.createHash("sha256")
-    .update(JSON.stringify({ regime: request.regime, blocks: request.blocks }))
+    .update(JSON.stringify(fingerprintInput))
     .digest("hex")
     .slice(0, 16);
 }
@@ -153,40 +157,32 @@ export async function runPartitionAiService(
 
   const request = validation.request;
   const grouped = chunk(request.blocks, options.chunkSize ?? 25);
-  const chunks: Array<{ result: PartitionAiChunkResult; model?: string } | undefined> = new Array(grouped.length);
-  let nextIndex = 0;
   const concurrency = Math.max(1, Math.min(4, Math.floor(options.concurrency ?? 2)));
+  const chunks = await runBoundedTasks(
+    grouped,
+    (chunkBlocks, index, total) => processChunk(
+      chunkBlocks, index, total, request, provider,
+      Math.max(1000, options.timeoutMs ?? 30000), options.signal,
+    ),
+    {
+      concurrency,
+      signal: options.signal,
+      onResult: entry => options.onChunkResult?.(entry.result),
+    },
+  );
 
-  const worker = async () => {
-    while (true) {
-      if (options.signal?.aborted) return;
-      const index = nextIndex++;
-      if (index >= grouped.length) return;
-      chunks[index] = await processChunk(
-        grouped[index], index, grouped.length, request, provider,
-        Math.max(1000, options.timeoutMs ?? 30000), options.signal,
-      );
-      try {
-        options.onChunkResult?.(chunks[index]!.result);
-      } catch {
-        // Progress delivery must never turn a valid chunk into an AI failure.
-      }
-    }
-  };
-  await Promise.all(Array.from({ length: Math.min(concurrency, grouped.length) }, () => worker()));
-  if (options.signal?.aborted) throw new Error("Partition AI request was cancelled.");
-
-  const chunkResults = chunks.map(entry => entry!.result);
+  const chunkResults = chunks.map(entry => entry.result);
   const aiReviewedBlockIds = chunkResults
     .filter(result => result.status === "completed")
     .flatMap(result => result.blockIds);
   const failedBlockIds = chunkResults
     .filter(result => result.status !== "completed")
     .flatMap(result => result.blockIds);
-  const model = chunks.map(entry => entry?.model).find(Boolean);
+  const model = chunks.map(entry => entry.model).find(Boolean);
 
   return {
     schemaVersion: PARTITION_AI_SCHEMA_VERSION,
+    provider: request.provider ?? "gemini",
     requestId: request.requestId,
     requestFingerprint: fingerprint(request),
     regime: request.regime,

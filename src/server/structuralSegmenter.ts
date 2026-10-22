@@ -13,6 +13,7 @@ import type {
 } from "../shared/schemas/document.schema.ts";
 import { classifyTable, type TableClassificationResult, type TableOwner, type TableRole } from "./tableRoleClassifier.ts";
 import { isSeparatorParagraph } from "../shared/separator.ts";
+import { embeddedRecipientsSignatureTable } from "../shared/embeddedSignatureTable.ts";
 export { classifyTable, type TableClassificationResult, type TableOwner, type TableRole };
 export { isSeparatorParagraph };
 
@@ -47,9 +48,11 @@ function isUpperDominantText(text: string, threshold = 0.8): boolean {
 function matchDocumentTypeTitle(rawText: string): string | null {
   const trimmed = rawText.trim();
   if (!trimmed) return null;
-  const upper = trimmed.toUpperCase();
+  const draftTitle = /^DỰ\s+THẢO\s+/u.test(trimmed.toUpperCase());
+  const upper = trimmed.toUpperCase().replace(/^DỰ\s+THẢO\s+/u, "");
   for (const kw of DOC_TYPE_KEYWORDS) {
     if (upper === kw) return kw;
+    if (draftTitle) continue;
     if ((upper.startsWith(kw + " ") || upper.startsWith(kw + ":")) && trimmed.length <= 120 && isUpperDominantText(trimmed)) {
       return kw;
     }
@@ -694,8 +697,10 @@ export function segmentSourceBlocks(
     if (keyword) {
       docTypeIndex = i;
       b.role = "metadata";
+      const isDraftTitle = /^DỰ\s+THẢO\s+/u.test(text);
+      if (isDraftTitle && !draftNote) draftNote = "DỰ THẢO";
       fields.documentType = {
-        value: text,
+        value: isDraftTitle ? keyword : text,
         confidence: "high",
         status: "extracted",
         sourceBlockIds: [b.id],
@@ -836,6 +841,7 @@ export function segmentSourceBlocks(
   for (let i = bodyEndExclusive - 1; i >= nextStartIndex; i--) {
     const b = blocks[i];
     if (b.kind === "table" && b.tableShape && b.tableShape.columns >= 2) {
+      if (embeddedRecipientsSignatureTable(b)) continue;
       // 1. Guard against data tables and task schedules: NEVER classify as signature
       if (isActionPlanOrDataTable(b)) {
         continue;
@@ -1102,6 +1108,24 @@ export function segmentSourceBlocks(
   // If a signature block was identified, body ends before signature block!
   if (sigFoundIndex !== -1) {
     bodyEndExclusive = sigFoundIndex;
+  }
+
+  // A recipients/signer pair can share one physical table. Keep that table in
+  // Body for exact OOXML roundtrip, but record both semantic fields with their
+  // original cell coordinates. Moving the whole table to signature loses the
+  // independent recipients owner and is not supported by candidate export.
+  if (sigFoundIndex === -1 && !fields.signTitle.value && !fields.signName.value && !fields.recipients.value) {
+    const embeddedBlock = blocks.slice(Math.max(nextStartIndex, bodyEndExclusive - 5), bodyEndExclusive)
+      .reverse().find(block => embeddedRecipientsSignatureTable(block));
+    const embedded = embeddedBlock && embeddedRecipientsSignatureTable(embeddedBlock);
+    if (embeddedBlock && embedded) {
+      fields.recipients = { value: embedded.recipients, confidence: "high", status: "extracted",
+        sourceBlockIds: [embeddedBlock.id], sourceCell: { rowIndex: 0, colIndex: 0 }, exactQuote: embedded.recipients };
+      fields.signTitle = { value: embedded.signTitle, confidence: "high", status: "extracted",
+        sourceBlockIds: [embeddedBlock.id], sourceCell: { rowIndex: 0, colIndex: 1 }, exactQuote: embedded.signTitle };
+      fields.signName = { value: embedded.signName, confidence: "high", status: "extracted",
+        sourceBlockIds: [embeddedBlock.id], sourceCell: { rowIndex: 0, colIndex: 1 }, exactQuote: embedded.signName };
+    }
   }
 
   // =========================================================================

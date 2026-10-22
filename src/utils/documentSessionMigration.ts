@@ -46,6 +46,7 @@ import {
   buildSummaryFromRecord,
   hasPreservableV3Content,
 } from "./documentSessionTypes.ts";
+import { isPersistedFullTextSemanticReviewValid } from "./fullTextReviewPersistence.ts";
 import type { DocumentState } from "../shared/schemas/document.schema.ts";
 import {
   memoryFallbackSessionIndex,
@@ -275,6 +276,17 @@ function buildRecordFromLegacy(
     ...(legacy.currentStep !== undefined ? { currentStep: legacy.currentStep } : {}),
     ...(legacy.sourceOrigin !== undefined ? { sourceOrigin: legacy.sourceOrigin } : {}),
     ...(legacy.docTypeOverride !== undefined ? { docTypeOverride: structuredClone(legacy.docTypeOverride) } : {}),
+    ...(legacy.semanticDecisions && typeof legacy.semanticDecisions === "object" && !Array.isArray(legacy.semanticDecisions)
+      ? { semanticDecisions: Object.fromEntries(Object.entries(legacy.semanticDecisions).filter(([unitId, decision]) =>
+          Boolean(unitId) && decision && typeof decision.contextKey === "string" &&
+          (decision.status === "user_confirmed" || decision.status === "rejected") &&
+          (decision.evidenceFingerprint === undefined || typeof decision.evidenceFingerprint === "string" && decision.evidenceFingerprint.length <= 200_000))
+          .map(([unitId, decision]) => [unitId, { contextKey: decision.contextKey, status: decision.status,
+            ...(typeof decision.evidenceFingerprint === "string" ? { evidenceFingerprint: decision.evidenceFingerprint } : {}) }])) }
+      : {}),
+    ...(isPersistedFullTextSemanticReviewValid(legacy.fullTextSemanticReview)
+      ? { fullTextSemanticReview: structuredClone(legacy.fullTextSemanticReview) }
+      : {}),
     // Retain the historical hint for audit only. Workspace approval is never created from it.
     ...(legacy.importReviewApprovedSourceHash !== undefined
       ? { importReviewApprovedSourceHash: legacy.importReviewApprovedSourceHash }

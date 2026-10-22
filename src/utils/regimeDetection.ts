@@ -123,6 +123,10 @@ export function isPartyOrgHeaderLine(line: string): boolean {
   const trimmed = line.trim();
   if (!trimmed || trimmed.length > 140) return false;
   if (!PARTY_ORG_PREFIX_REGEX.test(trimmed)) return false;
+  // "BAN CHẤP HÀNH" and "BAN THƯỜNG VỤ" also name governing bodies of
+  // associations. They are party evidence only with an explicit party organ.
+  if (/^BAN\s+(?:CHẤP\s+HÀNH|THƯỜNG\s+VỤ)(?![\p{L}\p{N}])/iu.test(trimmed)
+    && !/(?:ĐẢNG|CHI\s+BỘ|(?:TỈNH|THÀNH|HUYỆN|QUẬN|THỊ)\s+ỦY)/iu.test(trimmed)) return false;
   if (/[.;:,]\s*$/u.test(trimmed)) return false;
   if (/^(?:[-+*•]|\d+[.)])\s+/u.test(trimmed)) return false;
   return isUpperDominant(trimmed);
@@ -131,9 +135,15 @@ export function isPartyOrgHeaderLine(line: string): boolean {
 function matchDocumentTypeLine(line: string): string | null {
   const trimmed = line.trim();
   if (!trimmed) return null;
-  const upper = trimmed.toUpperCase();
+  // A draft mark can be printed on the same title line ("DỰ THẢO BIÊN BẢN").
+  // Keep the original line as evidence, but compare the title without that mark.
+  const draftTitle = /^DỰ\s+THẢO\s+/u.test(trimmed.toUpperCase());
+  const upper = trimmed.toUpperCase().replace(/^DỰ\s+THẢO\s+/u, "");
   for (const keyword of DOCUMENT_TYPE_KEYWORDS) {
     if (upper === keyword) return keyword;
+    // A combined draft heading is accepted only when it names the type alone;
+    // any trailing title text must remain in the source, not be discarded.
+    if (draftTitle) continue;
     if (upper.startsWith(keyword + ":") || upper.startsWith(keyword + " ")) {
       // Only a short, uppercase-dominant heading counts; body prose is rejected.
       if (trimmed.length <= 120 && isUpperDominant(trimmed)) return keyword;

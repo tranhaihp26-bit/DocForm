@@ -7,7 +7,7 @@ import {
   X, AlertTriangle, Info, HelpCircle, FilePlus, ChevronRight, ChevronLeft,
   ExternalLink, Copy, Bookmark, Building2, MapPin, Tag, ZoomIn, ZoomOut,
   Maximize2, Minimize2, PanelLeftClose, PanelLeft, PanelRightClose, PanelRight,
-  Sliders, RefreshCw, Layers, CheckSquare, FlaskConical, Play, Search, CheckCheck,
+  Sliders, Settings2, RefreshCw, Layers, CheckSquare, FlaskConical, Play, Search, CheckCheck,
   AlignLeft, AlignCenter, AlignRight, AlignJustify
 } from "lucide-react";
 import jsPDF from "jspdf";
@@ -94,14 +94,17 @@ import { checkProposalValidityBeforeApply } from "./shared/partitionValidation.t
 import { validateProposalAgainstSource } from "./shared/partitionValidation.ts";
 import { applyPartitionProposalBatch } from "./shared/partitionApply.ts";
 import { analyzePartitionFallback } from "./shared/partitionFallback.ts";
+import { embeddedRecipientsSignatureTable } from "./shared/embeddedSignatureTable.ts";
 import {
   PARTITION_AI_SCHEMA_VERSION,
   toPartitionAiBlocks,
   validatePartitionAiRequest,
   validatePartitionAiResponse,
+  type PartitionAiProviderKind,
   type PartitionAiRequest,
   type PartitionAiResponse,
 } from "./shared/partitionAiProtocol.ts";
+import type { ChatGPTLocalStatus } from "./shared/chatgptPlanProtocol.ts";
 import { formatStandardDate, extractLocation } from "./server/middleware/compliance.middleware.ts";
 import { detectDocumentType } from "./server/parser.ts";
 import { COMPANY_HEADER_PROFILE_ID, COMPANY_HEADER_PARENT_LINES, applyCompanyProfile, LOCKED_COMPANY_FIELDS } from "./canonical/nd30/companyHeader.ts";
@@ -128,7 +131,6 @@ import {
   SafeRegimeModal,
   RegimeConfirmModal,
   AdvancedDrawer,
-  ExportStepView,
 } from "./components/OfficeWorkerViews.tsx";
 import {WorkspaceEditor} from './components/WorkspaceEditor.tsx';
 import {WorkspaceExport} from './components/WorkspaceExport.tsx';
@@ -138,8 +140,31 @@ import {prepareTemplateTables} from './utils/templateWorkspace.ts';
 import {restoreWorkspaceVersion} from './utils/workspacePersistence.ts';
 import {createExportCandidateManager,exportCandidateKey,type ExportCandidate} from './utils/exportCandidate.ts';
 import {createWorkspaceAiTarget,receiveWorkspaceAiResult,applyWorkspaceAiResult,type WorkspaceAiTarget} from './utils/workspaceAiTarget.ts';
-import { ImportStepView } from "./components/ImportStepView.tsx";
+import { ImportStepView, type SemanticReviewRow, type SourceVisualUiState } from "./components/ImportStepView.tsx";
+import type { FullTextManifestUiStatus, FullTextReviewUiStatus } from "./components/FullTextReviewPanel.tsx";
+import { classifyLocalSemantics } from "./utils/localSemanticObservations.ts";
+import { applyUserSemanticDecision, createFullTextSemanticState, createSemanticState, isPersistedUserSemanticDecisionCurrent, semanticApprovalContextKey } from "./utils/semanticState.ts";
+import { selectRulesForUnit } from "./canonical/semanticRuleSelector.ts";
+import { applySemanticRuleFormatting, readSemanticParagraphFormatting, resolveSemanticRuleFormatting, type SemanticRuleId } from "./utils/semanticRuleFormatting.ts";
+import { assessWorkspaceNodeCapability } from "./utils/workspaceCapabilities.ts";
+import type { FullDocumentAiCapability, VisualEvidenceManifest } from "./shared/fullDocumentAiProtocol.ts";
+import type { SemanticDecisionStatus } from "./shared/semanticDocument.ts";
 import { useAccessibleDialog } from "./utils/useAccessibleDialog.ts";
+import { loadAiApplicationSettings, saveAiDefaultProvider } from "./utils/aiAppSettings.ts";
+import { AppSettingsDrawer } from "./components/AppSettingsDrawer.tsx";
+import { buildFullTextManifest } from "./utils/fullTextManifest.ts";
+import {
+  buildFullTextReviewRequest,
+  createFullTextConsent,
+  isFullTextConsentCurrent,
+  isFullTextReviewContextCurrent,
+  readFullTextReviewStream,
+  type FullTextReviewSemanticContext,
+  type FullTextReviewServerResponse,
+} from "./utils/fullTextReviewClient.ts";
+import type { FullTextReviewConsent, FullTextReviewCoverage, FullTextChunkResult } from "./shared/fullDocumentTextProtocol.ts";
+import { isPersistedFullTextSemanticReviewValid, type PersistedFullTextSemanticReview } from "./utils/fullTextReviewPersistence.ts";
+import { alignFullTextAiResults } from "./utils/semanticAlignment.ts";
 import {
   deriveSourceMismatch,
   docTypeDecisionCovers,
@@ -370,14 +395,14 @@ const TEMPLATES: TemplatePreset[] = [
 ];
 
 /**
- * Tạo khóa định danh phiên bản bản thảo (Draft Revision Key).
- * Kết hợp chế độ, hồ sơ header, các trường thể thức và nội dung để bảo đảm
- * bằng chứng OOXML bất đồng bộ chỉ được chấp nhận khi vẫn khớp chính xác với bản thảo hiện thời.
+ * Khóa trường bản thảo cho các bộ kiểm tra hồi quy cũ. Bằng chứng OOXML trong
+ * luồng xuất hiện hành dùng exportCandidateKey của toàn bộ snapshot.
  */
 export function computeDraftRevisionKey(doc: Partial<DocumentFormatType> | DocumentState, regime: string): string {
   const parts = [
     regime,
     doc.headerProfile || "generic",
+    String(doc.omitNationalHeader === true),
     doc.documentType || "",
     doc.referenceNumber || "",
     doc.locationAndDate || "",
@@ -392,6 +417,7 @@ export function computeDraftRevisionKey(doc: Partial<DocumentFormatType> | Docum
     doc.signName || "",
     doc.recipients || "",
     doc.bodyHtml || "",
+    canonicalWorkspaceValue(doc.importedTables ?? {}),
     (doc as any).fontFamily || "Times New Roman",
     String((doc as any).fontSize || 13),
     (doc.appendices || []).map((a: any, idx: number) => `${idx}:${a.id || ""}:${a.title || ""}:${a.html || ""}:${a.referenceText || ""}:${JSON.stringify(a.tables || [])}`).join(";"),
@@ -573,7 +599,7 @@ export default function App() {
   const [partitionProposals, setPartitionProposals] = useState<PartitionProposal[]>([]);
   const [verifiedPartitionProposalIds, setVerifiedPartitionProposalIds] = useState<Set<string>>(new Set());
   const [partitionCheckNotice, setPartitionCheckNotice] = useState<string>("");
-  const [partitionCheckSource, setPartitionCheckSource] = useState<"gemini_ai" | "rule_fallback" | "mixed" | "unverified">("unverified");
+  const [partitionCheckSource, setPartitionCheckSource] = useState<"gemini_ai" | "chatgpt_ai" | "rule_fallback" | "mixed" | "unverified">("unverified");
   const [partitionCoverage, setPartitionCoverage] = useState<PartitionCheckResult["coverage"] | null>(null);
   const [partitionProgress, setPartitionProgress] = useState<{
     processedChunks: number;
@@ -582,6 +608,17 @@ export default function App() {
   } | null>(null);
   const [aiPartitionConsent, setAiPartitionConsent] = useState(false);
   const aiPartitionConsentRef = useRef(false);
+  const [aiApplicationSettings, setAiApplicationSettings] = useState(loadAiApplicationSettings);
+  const partitionAiProvider = aiApplicationSettings.defaultProvider;
+  const partitionAiProviderRef = useRef<PartitionAiProviderKind>(partitionAiProvider);
+  partitionAiProviderRef.current = partitionAiProvider;
+  const [chatGPTStatus, setChatGPTStatus] = useState<ChatGPTLocalStatus>({
+    enabled: false,
+    reason: "Đang kiểm tra khả năng dùng ChatGPT plan local.",
+    session: { status: "disconnected", sharing: false },
+  });
+  const [isChatGPTActionPending, setIsChatGPTActionPending] = useState(false);
+  const chatGPTConnectAbortRef = useRef<AbortController | null>(null);
   const partitionRunKeyRef = useRef("");
   const [partitionHistory, setPartitionHistory] = useState<SourceBlock[][]>([]);
   const [userModifiedBlockIds, setUserModifiedBlockIds] = useState<string[]>([]);
@@ -590,6 +627,94 @@ export default function App() {
   standardTypeRef.current = standardType;
   const userInteractedRef = useRef<boolean>(false);
   const draftHydratedRef = useRef<boolean>(false);
+
+  const refreshChatGPTStatus = useCallback(async () => {
+    try {
+      const response = await fetch("/api/ai/chatgpt/status", { cache: "no-store" });
+      if (!response.ok) throw new Error("Status request failed");
+      const payload = await response.json() as ChatGPTLocalStatus;
+      if (typeof payload?.enabled !== "boolean" || !payload.session) throw new Error("Invalid ChatGPT status");
+      setChatGPTStatus(payload);
+    } catch {
+      setChatGPTStatus({
+        enabled: false,
+        reason: "Không liên hệ được máy chủ DocForm local để kiểm tra ChatGPT.",
+        session: { status: "disconnected", sharing: false },
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshChatGPTStatus();
+    if (!isChatGPTActionPending) return;
+    const timer = window.setInterval(() => void refreshChatGPTStatus(), 1200);
+    return () => window.clearInterval(timer);
+  }, [isChatGPTActionPending, refreshChatGPTStatus]);
+
+  const handleChatGPTConnect = async () => {
+    if (!chatGPTStatus.enabled || isChatGPTActionPending) return;
+    const abortController = new AbortController();
+    chatGPTConnectAbortRef.current = abortController;
+    setIsChatGPTActionPending(true);
+    try {
+      const response = await fetch("/api/ai/chatgpt/connect", { method: "POST", signal: abortController.signal });
+      const payload = await response.json() as { error?: string; session?: ChatGPTLocalStatus["session"] };
+      if (payload.session) setChatGPTStatus(current => ({ ...current, enabled: true, session: payload.session! }));
+      if (!response.ok) showToast(payload.error || "Không thể kết nối ChatGPT.", "error");
+      else if (payload.session?.status === "connected" && payload.session.sharing) showToast("Đã kết nối ChatGPT plan.", "success");
+      else showToast("Đăng nhập đã hoàn tất nhưng chưa bật quyền chia sẻ ChatGPT.", "info");
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") showToast("Đã hủy kết nối ChatGPT.", "info");
+      else showToast("Không hoàn tất được kết nối ChatGPT. Hãy kiểm tra trình duyệt đăng nhập.", "error");
+    } finally {
+      if (chatGPTConnectAbortRef.current === abortController) chatGPTConnectAbortRef.current = null;
+      await refreshChatGPTStatus();
+      setIsChatGPTActionPending(false);
+    }
+  };
+
+  const handleChatGPTConnectCancel = () => {
+    chatGPTConnectAbortRef.current?.abort();
+  };
+
+  const handleChatGPTDisconnect = async () => {
+    if (isChatGPTActionPending) return;
+    setIsChatGPTActionPending(true);
+    try {
+      const response = await fetch("/api/ai/chatgpt/disconnect", { method: "POST" });
+      const payload = await response.json() as { error?: string; session?: ChatGPTLocalStatus["session"] };
+      if (payload.session) setChatGPTStatus(current => ({ ...current, session: payload.session! }));
+      if (payload.error || !response.ok) showToast(payload.error || "Không thể ngắt kết nối ChatGPT.", "error");
+      else showToast("Đã xóa phiên ChatGPT khỏi máy này.", "success");
+    } catch {
+      showToast("Không thể ngắt kết nối ChatGPT trên máy này.", "error");
+    } finally {
+      await refreshChatGPTStatus();
+      setIsChatGPTActionPending(false);
+    }
+  };
+
+  const handlePartitionAiProviderChange = (provider: PartitionAiProviderKind) => {
+    if (provider === partitionAiProviderRef.current) return;
+    sessionGateRef.current.cancelKind("partition");
+    sessionGateRef.current.cancelKind("review");
+    partitionRunKeyRef.current = "";
+    setIsCheckingPartitions(false);
+    setIsReviewingProposals(false);
+    setPartitionProgress(null);
+    aiPartitionConsentRef.current = false;
+    setAiPartitionConsent(false);
+    const preferencePersisted = saveAiDefaultProvider(provider);
+    setAiApplicationSettings({
+      defaultProvider: provider,
+      preferencePersisted,
+      storageAvailable: preferencePersisted,
+    });
+    if (!preferencePersisted) showToast("Không thể lưu lựa chọn AI trong trình duyệt này; cài đặt chỉ áp dụng trong phiên hiện tại.", "error");
+    setPartitionCheckSource("unverified");
+    setPartitionCoverage(null);
+    setPartitionCheckNotice("Đã đổi nhà cung cấp AI. Hãy xác nhận lại phạm vi gửi nguồn trước khi rà soát.");
+  };
 
   const markUserInteraction = () => {
     userInteractedRef.current = true;
@@ -639,6 +764,11 @@ export default function App() {
   },[originalSnapshot?.sourceType,originalSnapshot?.sourceHash]);
 
   const handleUpdateBlockRole = (blockId: string, newRole: SourceRegion) => {
+    const currentBlock = (workspaceSnapshotRef.current.workspace.staged?.reviewBlocks ?? workspaceSnapshotRef.current.reviewBlocks).find(block => block.id === blockId);
+    if (currentBlock && embeddedRecipientsSignatureTable(currentBlock) && (newRole === 'signature' || newRole === 'recipients')) {
+      setErrorMsg('Bảng Nơi nhận và chữ ký cần giữ nguyên trong thân văn bản để bảo toàn hai ô khi xuất DOCX.');
+      return;
+    }
     if(workspaceSnapshotRef.current.workspace.partition.approval||workspaceSnapshotRef.current.workspace.staged){
       const original=workspaceSnapshotRef.current;
       const base=original.workspace.staged?cancelWorkspacePartition(original):{ok:true as const,snapshot:original};
@@ -680,13 +810,19 @@ export default function App() {
     revision: number,
   ) => {
     if (!aiPartitionConsentRef.current || sourceBlocks.length === 0) return null;
-    const runKey = `${generation}:${regime}:${revision}`;
+    const provider = partitionAiProviderRef.current;
+    if (provider === "chatgpt" && (!chatGPTStatus.enabled || chatGPTStatus.session.status !== "connected" || !chatGPTStatus.session.sharing)) {
+      setPartitionCheckNotice("Hãy kết nối ChatGPT plan và bật quyền chia sẻ trước khi gửi nguồn.");
+      return null;
+    }
+    const runKey = `${generation}:${regime}:${revision}:${provider}`;
     if (partitionRunKeyRef.current === runKey) return null;
 
     const token = sessionGateRef.current.begin("partition", runKey);
     const request: PartitionAiRequest = {
       schemaVersion: PARTITION_AI_SCHEMA_VERSION,
       consent: true,
+      provider,
       requestId: `partition-${generation}-${revision}-${token.requestId}`,
       regime,
       sourceGeneration: generation,
@@ -768,6 +904,7 @@ export default function App() {
               sourceGenerationRef.current === request.sourceGeneration &&
               partitionRevisionRef.current === request.partitionRevision &&
               standardTypeRef.current === (request.regime === "party" ? "party" : "state") &&
+              partitionAiProviderRef.current === (request.provider ?? "gemini") &&
               aiPartitionConsentRef.current;
             if (isCurrentRequest) {
               setPartitionProgress({
@@ -834,6 +971,7 @@ export default function App() {
       sourceGenerationRef.current === call.request.sourceGeneration &&
       partitionRevisionRef.current === call.request.partitionRevision &&
       standardTypeRef.current === (call.request.regime === "party" ? "party" : "state") &&
+      partitionAiProviderRef.current === (call.request.provider ?? "gemini") &&
       aiPartitionConsentRef.current;
     if (!current) return;
 
@@ -880,7 +1018,7 @@ export default function App() {
         }, activeBlocks, modifiedBlockIds, call.request.regime);
         if (validated) aiProposals.push({
           ...validated,
-          source: "gemini_ai",
+          source: call.request.provider === "chatgpt" ? "chatgpt_ai" : "gemini_ai",
           sourceGeneration: call.request.sourceGeneration,
           partitionRevision: call.request.partitionRevision,
         });
@@ -895,7 +1033,8 @@ export default function App() {
     const failedIds = new Set(response.failedBlockIds);
     const unreviewedIds = allIds.filter(id => failedIds.has(id) || !requestIds.has(id));
     const hasAiCoverage = response.aiReviewedBlockIds.length > 0;
-    setPartitionCheckSource(hasAiCoverage ? (ruleProposals.length > 0 ? "mixed" : "gemini_ai") : "rule_fallback");
+    const aiSource = call.request.provider === "chatgpt" ? "chatgpt_ai" : "gemini_ai";
+    setPartitionCheckSource(hasAiCoverage ? (ruleProposals.length > 0 ? "mixed" : aiSource) : "rule_fallback");
     setPartitionProposals(mergedProposals);
     setVerifiedPartitionProposalIds(new Set());
     setPartitionCoverage({
@@ -910,7 +1049,7 @@ export default function App() {
       })),
     });
     const failedCount = response.failedBlockIds.length + allIds.filter(id => !requestIds.has(id)).length;
-    const aiSummary = `AI đã kiểm tra ${response.aiReviewedBlockIds.length}/${call.request.blocks.length} khối`;
+    const aiSummary = `AI đã rà soát ${response.aiReviewedBlockIds.length}/${call.request.blocks.length} khối; đề xuất cần duyệt`;
     const fallbackSummary = `quy tắc nội bộ đã rà soát ${allIds.length}/${allIds.length} khối`;
     const errorSummary = failedCount > 0 ? `; ${failedCount} khối chưa được AI kiểm tra` : "";
     setPartitionCheckNotice(`${aiSummary}; ${fallbackSummary}${errorSummary}. Đề xuất chưa được tự áp dụng.`);
@@ -930,6 +1069,7 @@ export default function App() {
           setIsCheckingPartitions(false);
           setPartitionProgress(null);
         }
+        if (call.request.provider === "chatgpt") void refreshChatGPTStatus();
       });
   };
 
@@ -946,6 +1086,13 @@ export default function App() {
   };
 
   const handleAiPartitionConsentChange = (enabled: boolean) => {
+    if (enabled && partitionAiProviderRef.current === "chatgpt" &&
+        (!chatGPTStatus.enabled || chatGPTStatus.session.status !== "connected" || !chatGPTStatus.session.sharing)) {
+      aiPartitionConsentRef.current = false;
+      setAiPartitionConsent(false);
+      setPartitionCheckNotice("Hãy kết nối ChatGPT plan và bật quyền chia sẻ trước khi cho phép gửi nguồn.");
+      return;
+    }
     aiPartitionConsentRef.current = enabled;
     setAiPartitionConsent(enabled);
     if (!enabled) {
@@ -1058,6 +1205,69 @@ export default function App() {
   // Proposal Batch Validity Context (Chặng 1 S01)
   const [sourceGeneration, setSourceGeneration] = useState<number>(1);
   const sourceGenerationRef = useRef<number>(1);
+  const originalSnapshotRef = useRef(originalSnapshot);
+  originalSnapshotRef.current = originalSnapshot;
+  const sourceVisualAbortRef = useRef<AbortController | null>(null);
+  const [sourceVisualState, setSourceVisualState] = useState<SourceVisualUiState>({ status: "idle" });
+  const [fullDocumentCapability, setFullDocumentCapability] = useState<FullDocumentAiCapability | null>(null);
+  const [fullTextManifestStatus, setFullTextManifestStatus] = useState<FullTextManifestUiStatus>("idle");
+  const [fullTextManifest, setFullTextManifest] = useState<Awaited<ReturnType<typeof buildFullTextManifest>> | null>(null);
+  const [fullTextManifestError, setFullTextManifestError] = useState("");
+  const [fullTextConsent, setFullTextConsent] = useState<FullTextReviewConsent | null>(null);
+  const [fullTextReviewEvidence, setFullTextReviewEvidence] = useState<PersistedFullTextSemanticReview | null>(null);
+  const [fullTextReviewRun, setFullTextReviewRun] = useState<{
+    reviewStatus: FullTextReviewUiStatus;
+    reviewProvider?: "gemini" | "chatgpt";
+    chunks: FullTextChunkResult[];
+    coverage?: FullTextReviewCoverage;
+    response: FullTextReviewServerResponse | null;
+    context?: FullTextReviewSemanticContext;
+    reviewError?: string;
+  }>({ reviewStatus: "idle", chunks: [], response: null });
+  const fullTextReviewAbortRef = useRef<AbortController | null>(null);
+  const fullTextRequestIdRef = useRef<string | null>(null);
+  const fullTextSemanticContextKeyRef = useRef("");
+  const [userSemanticDecisions, setUserSemanticDecisions] = useState<Record<string, { contextKey: string; status: "user_confirmed" | "rejected"; evidenceFingerprint?: string }>>({});
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch("/api/ai/full-document-capability", { signal: controller.signal, cache: "no-store" })
+      .then(async response => response.ok ? response.json() as Promise<FullDocumentAiCapability> : null)
+      .then(capability => { if (!controller.signal.aborted) setFullDocumentCapability(capability); })
+      .catch(() => { if (!controller.signal.aborted) setFullDocumentCapability(null); });
+    return () => controller.abort();
+  }, [chatGPTStatus.session.status, chatGPTStatus.session.sharing]);
+  useEffect(() => {
+    sourceVisualAbortRef.current?.abort();
+    setSourceVisualState({ status: originalSnapshot?.fileType === "docx" ? "idle" : "unavailable",
+      ...(originalSnapshot?.fileType === "docx" ? {} : { reason: "Dựng trang hiện chỉ nhận tệp DOCX gốc." }) });
+    return () => sourceVisualAbortRef.current?.abort();
+  }, [originalSnapshot?.sourceHash, originalSnapshot?.fileType, sourceGeneration]);
+  useEffect(() => {
+    fullTextReviewAbortRef.current?.abort();
+    fullTextReviewAbortRef.current = null;
+    fullTextRequestIdRef.current = null;
+    setFullTextConsent(null);
+    setFullTextManifest(null);
+    setFullTextManifestStatus("idle");
+    setFullTextManifestError("");
+    setFullTextReviewRun({ reviewStatus: "idle", chunks: [], response: null });
+    const sourceSha256 = originalSnapshot?.sourceHash?.toLowerCase() ?? "";
+    setFullTextReviewEvidence(current => current && current.sourceSha256 === sourceSha256 && current.sourceGeneration === sourceGeneration ? current : null);
+  }, [originalSnapshot?.sourceHash, sourceGeneration]);
+  const previousFullTextProviderRef = useRef(partitionAiProvider);
+  useEffect(() => {
+    if (previousFullTextProviderRef.current === partitionAiProvider) return;
+    previousFullTextProviderRef.current = partitionAiProvider;
+    fullTextReviewAbortRef.current?.abort();
+    fullTextReviewAbortRef.current = null;
+    fullTextRequestIdRef.current = null;
+    setFullTextConsent(null);
+    setFullTextReviewRun(current => ({
+      reviewStatus: current.reviewStatus === "reviewing" ? "cancelled" : "idle",
+      chunks: [], response: null,
+      ...(current.reviewStatus === "reviewing" ? { reviewError: "Đã hủy vì nhà cung cấp mặc định thay đổi; hãy kiểm tra lại consent." } : {}),
+    }));
+  }, [partitionAiProvider]);
   const [partitionRevision, setPartitionRevision] = useState<number>(1);
   const partitionRevisionRef = useRef<number>(1);
   const [reviewProposalBatchContext, setReviewProposalBatchContext] = useState<ReviewProposalBatchContext | null>(null);
@@ -1102,10 +1312,11 @@ export default function App() {
   }, [reviewProposalBatchContext, sourceGeneration, standardType, partitionRevision, getCurrentPartitionFingerprint]);
 
   const visibleReviewProposals = useMemo(() => {
-    return isReviewProposalsBatchValid ? reviewProposals : [];
+    return isReviewProposalsBatchValid ? reviewProposals.filter(proposal => !proposal.id.startsWith("prop-unsigned-")) : [];
   }, [isReviewProposalsBatchValid, reviewProposals]);
 
   const partitionReviewBlocks=workspace?.staged?.reviewBlocks??reviewBlocks;
+  const embeddedSignatureTables=partitionReviewBlocks.filter(block => block.role === "body" && embeddedRecipientsSignatureTable(block));
   const liveReconstructed = useMemo(() => {
     const blocksToUse = reviewBlocks.length > 0 ? reviewBlocks : (structuredImport?.blocks || uploadedBlocks);
     return reconstructFromReviewedBlocks(
@@ -1130,6 +1341,7 @@ export default function App() {
   // Compliance Inspection Modal state
   const [showComplianceModal, setShowComplianceModal] = useState(false);
   const [complianceReport, setComplianceReport] = useState<ND30ComplianceReport | null>(null);
+  const [complianceRevision, setComplianceRevision] = useState<number | null>(null);
 
   // AI Proposal Review Modal state
   const [aiProposal, setAiProposal] = useState<DocumentState | null>(null);
@@ -1146,7 +1358,7 @@ export default function App() {
     originalHtml: string;
     refinedHtml: string;
     label: string;
-    source: "gemini_ai" | "rule_fallback";
+    source: "gemini_ai" | "chatgpt_ai" | "rule_fallback";
     isFallback: boolean;
     notice?: string;
     /** S1-F01: ngữ cảnh nguồn của đề xuất, dùng để chặn đề xuất cũ. */
@@ -1184,6 +1396,7 @@ export default function App() {
     filename: string;
   } | null>(null);
   const [showAdvancedDrawer, setShowAdvancedDrawer] = useState(false);
+  const [showAppSettings, setShowAppSettings] = useState(false);
   const [step4ViewMode, setStep4ViewMode] = useState<"proposed" | "original" | "diff">("proposed");
   const [activeGroupFilter, setActiveGroupFilter] = useState<ComponentGroupId | "all">("all");
   const [ooxmlEvidence, setOoxmlEvidence] = useState<Record<string, any> | undefined>(undefined);
@@ -1198,13 +1411,420 @@ export default function App() {
   const [doc, setDoc] = useState<DocumentState>(applyCompanyProfile(TEMPLATES[0].defaultData));
 
   const workspaceSnapshot=useMemo<WorkspaceSnapshot>(()=>workspace?{doc,standardType,reviewBlocks,structuredImport,workspace}:createWorkspaceSnapshot({doc,standardType,reviewBlocks,structuredImport},sourceOrigin==='uploaded_file'?{blobHash:originalSnapshot?.sourceHash||'legacy-unverified',generation:sourceGeneration,blocks:uploadedBlocks.length?uploadedBlocks:reviewBlocks}:undefined),[doc,standardType,reviewBlocks,structuredImport,workspace,sourceOrigin,originalSnapshot,sourceGeneration,uploadedBlocks]);
+  const semanticContext = useMemo(() => ({
+    sourceSha256: originalSnapshot?.sourceHash ?? workspaceSnapshot.workspace.source?.blobHash ?? "",
+    sourceGeneration,
+    partitionFingerprint: workspaceSnapshot.workspace.partition.fingerprint,
+    workingRevision: workspaceSnapshot.workspace.workingRevision,
+  }), [originalSnapshot?.sourceHash, sourceGeneration, workspaceSnapshot.workspace.partition.fingerprint, workspaceSnapshot.workspace.workingRevision]);
+  const semanticContextKey = useMemo(() => semanticApprovalContextKey({
+    sourceSha256: semanticContext.sourceSha256, sourceGeneration: semanticContext.sourceGeneration,
+    partitionFingerprint: semanticContext.partitionFingerprint, regime: workspaceSnapshot.standardType,
+    documentType: workspaceSnapshot.doc.documentType,
+  }), [semanticContext.sourceSha256, semanticContext.sourceGeneration, semanticContext.partitionFingerprint,
+    workspaceSnapshot.standardType, workspaceSnapshot.doc.documentType]);
+  useEffect(() => {
+    const previousKey = fullTextSemanticContextKeyRef.current;
+    fullTextSemanticContextKeyRef.current = semanticContextKey;
+    if (!previousKey || previousKey === semanticContextKey) return;
+    fullTextReviewAbortRef.current?.abort();
+    fullTextReviewAbortRef.current = null;
+    fullTextRequestIdRef.current = null;
+    setFullTextConsent(null);
+    setFullTextReviewRun(current => ({
+      reviewStatus: current.reviewStatus === "reviewing" ? "cancelled" : "idle",
+      chunks: [], response: null,
+      ...(current.reviewStatus === "reviewing" ? { reviewError: "Đã hủy vì nguồn hoặc cách phân vùng/loại văn bản thay đổi." } : {}),
+    }));
+    const expectedSha = semanticContext.sourceSha256.toLowerCase();
+    const expectedGeneration = semanticContext.sourceGeneration;
+    const expectedPartition = semanticContext.partitionFingerprint;
+    const expectedRegime = workspaceSnapshot.standardType;
+    const expectedDocumentType = workspaceSnapshot.doc.documentType;
+    setFullTextReviewEvidence(current => current && current.sourceSha256 === expectedSha &&
+      current.sourceGeneration === expectedGeneration && current.partitionFingerprint === expectedPartition &&
+      current.regime === expectedRegime && current.documentType === expectedDocumentType ? current : null);
+  }, [semanticContextKey, semanticContext.sourceSha256, semanticContext.sourceGeneration,
+    semanticContext.partitionFingerprint, workspaceSnapshot.standardType, workspaceSnapshot.doc.documentType]);
+  const localSemanticObservations = useMemo(() => {
+    const roleById = new Map(workspaceSnapshot.workspace.partition.roles.map(item => [item.sourceBlockId, item.role]));
+    const sourceBlocks = (workspaceSnapshot.workspace.source?.blocks ?? workspaceSnapshot.reviewBlocks)
+      .map(block => ({ ...block, role: roleById.get(block.id) ?? block.role }));
+    return classifyLocalSemantics({ ...semanticContext, blocks: sourceBlocks,
+      bodySourceBlockIds: workspaceSnapshot.structuredImport?.body.sourceBlockIds,
+      appendices: workspaceSnapshot.structuredImport?.appendices ?? workspaceSnapshot.doc.appendices,
+      cellRoles: workspaceSnapshot.workspace.staged?.partition.cells ?? workspaceSnapshot.workspace.partition.cells,
+      regime: workspaceSnapshot.standardType, documentType: workspaceSnapshot.doc.documentType });
+  }, [semanticContext, workspaceSnapshot.workspace.source, workspaceSnapshot.workspace.partition.roles,
+    workspaceSnapshot.workspace.partition.cells, workspaceSnapshot.workspace.staged,
+    workspaceSnapshot.reviewBlocks, workspaceSnapshot.structuredImport, workspaceSnapshot.doc.appendices,
+    workspaceSnapshot.doc.documentType, workspaceSnapshot.standardType]);
+  const matchingFullTextReview = useMemo(() => {
+    const review = fullTextReviewEvidence;
+    return review && review.sourceSha256 === semanticContext.sourceSha256.toLowerCase() &&
+      review.sourceGeneration === semanticContext.sourceGeneration &&
+      review.partitionFingerprint === semanticContext.partitionFingerprint &&
+      review.regime === workspaceSnapshot.standardType && review.documentType === workspaceSnapshot.doc.documentType
+      ? review : null;
+  }, [fullTextReviewEvidence, semanticContext.sourceSha256, semanticContext.sourceGeneration,
+    semanticContext.partitionFingerprint, workspaceSnapshot.standardType, workspaceSnapshot.doc.documentType]);
+  const semanticBaseState = useMemo(() => matchingFullTextReview
+    ? createFullTextSemanticState(localSemanticObservations, matchingFullTextReview.observations, matchingFullTextReview.coverage, semanticContext)
+    : createSemanticState(localSemanticObservations, [], semanticContext),
+  [localSemanticObservations, semanticContext, matchingFullTextReview]);
+  const semanticState = useMemo(() => {
+    let state = semanticBaseState;
+    for (const [unitId, decision] of Object.entries(userSemanticDecisions).sort(([a], [b]) => a.localeCompare(b))) {
+      if (!isPersistedUserSemanticDecisionCurrent(decision, semanticBaseState, semanticContextKey, unitId)) continue;
+      try { state = applyUserSemanticDecision(state, unitId, decision.status, state.revision.fingerprint); } catch { /* stale approvals stay closed */ }
+    }
+    return state;
+  }, [semanticBaseState, userSemanticDecisions, semanticContextKey]);
+  const semanticReviewRows = useMemo<SemanticReviewRow[]>(() => semanticState.observations.map(observation => {
+    const unit = observation.unit;
+    const decision = semanticState.decisions[unit.id];
+    const fullTextAiCandidates = (semanticState.fullTextAiObservations ?? []).filter(item =>
+      (item.localUnitId === unit.id || (!item.localUnitId && item.sourceBlockId === unit.anchor.blockId && item.quote === unit.quote &&
+        (!item.cellId || item.cellId === unit.anchor.cellId) && (item.rowIndex === undefined || item.rowIndex === unit.anchor.rowIndex) &&
+        (item.cellIndex === undefined || item.cellIndex === unit.anchor.colIndex))) &&
+      item.sourceSha256 === semanticContext.sourceSha256 && item.sourceGeneration === semanticContext.sourceGeneration);
+    const aiLabel = fullTextAiCandidates.length === 1 ? fullTextAiCandidates[0].label : undefined;
+    const selections = selectRulesForUnit(unit, { ...semanticContext, regime: workspaceSnapshot.standardType,
+      documentType: workspaceSnapshot.doc.documentType, profile: workspaceSnapshot.doc.headerProfile ?? "generic", decision });
+    const appendix = unit.appendixId
+      ? (workspaceSnapshot.structuredImport?.appendices ?? workspaceSnapshot.doc.appendices ?? []).find(item => item.id === unit.appendixId)
+      : undefined;
+    const anchor = [`${unit.anchor.blockId} · khối ${unit.anchor.blockIndex + 1}`,
+      unit.anchor.cellId ? `bảng ${unit.anchor.tableId}, ô ${unit.anchor.cellId} (${unit.anchor.rowIndex}, ${unit.anchor.colIndex})` : "",
+      unit.anchor.paragraphIndex !== undefined ? `đoạn ${unit.anchor.paragraphIndex + 1}, ký tự ${unit.anchor.charStart}-${unit.anchor.charEnd}` : ""].filter(Boolean).join("; ");
+    const executableRules = selections.filter(item => item.executable && item.ruleId);
+    const ruleIds = executableRules.map(item => item.ruleId!) as SemanticRuleId[];
+    const targetNodes = workspaceSnapshot.workspace.nodes.filter(node => node.container === "body" && node.lineage.includes(unit.anchor.blockId));
+    const targetNode = targetNodes.length === 1 ? targetNodes[0] : undefined;
+    const sourceBlock = workspaceSnapshot.workspace.source?.blocks.find(block => block.id === unit.anchor.blockId);
+    const sourceRole = workspaceSnapshot.workspace.partition.roles.find(item => item.sourceBlockId === unit.anchor.blockId)?.role;
+    let rulesApplied = false;
+    let ruleApplyAvailable = false;
+    let ruleApplyReason: string | undefined;
+    if (ruleIds.length) {
+      try {
+        const formatting = resolveSemanticRuleFormatting(workspaceSnapshot.standardType, workspaceSnapshot.doc.headerProfile ?? "generic", ruleIds);
+        const actual = targetNode ? readSemanticParagraphFormatting(targetNode.html) : {};
+        rulesApplied = Object.entries(formatting).every(([key, value]) => actual[key as keyof typeof formatting] === value);
+        if (decision?.status === "user_confirmed" || decision?.status === "auto_confirmed") {
+          if (unit.scope !== "body" || !["body_paragraph", "narrative"].includes(unit.label) || unit.anchor.paragraphIndex !== 0 || /[\r\n]/.test(unit.quote)) {
+            ruleApplyReason = "Chỉ đoạn Body một dòng được phân loại là narrative/body_paragraph mới có thể áp dụng rule này.";
+          } else if (!sourceBlock || sourceBlock.kind !== "paragraph" || sourceRole !== "body") {
+            ruleApplyReason = "Không xác minh được khối nguồn là đoạn Body.";
+          } else if (sourceBlock.text.split(/\r?\n/u).length !== 1) {
+            ruleApplyReason = "Khối nguồn có nhiều dòng; không thể neo rule vào riêng một đoạn.";
+          } else if (!targetNode || targetNode.lineage.length !== 1) {
+            ruleApplyReason = "Neo nguồn không trỏ duy nhất tới một đoạn soạn độc lập.";
+          } else if (!assessWorkspaceNodeCapability(workspaceSnapshot, targetNode).editable) {
+            ruleApplyReason = "Đoạn soạn có cấu trúc chưa được hỗ trợ; giữ nguyên để rà soát.";
+          } else if (/<p\b[^>]*style\s*=\s*(["'])[^"']*text-align\s*:\s*(?:center|right)/i.test(targetNode.html) || /^\s*[-—–_.\s]{3,}$/u.test(unit.quote) || /^(?:điều\s+\d+|chương\s+|mục\s+|khoản\s+|điểm\s+[a-zđ])/iu.test(unit.quote.trim())) {
+            ruleApplyReason = "Đoạn đang căn giữa/phải, là dấu phân cách hoặc khớp tiêu đề; không áp rule thân bài.";
+          } else {
+            const preview = applySemanticRuleFormatting(targetNode.html, unit.quote, formatting);
+            if (rulesApplied) ruleApplyReason = "Quy tắc đã được áp dụng.";
+            else if (!preview.ok) ruleApplyReason = `Đoạn soạn chưa khớp trích dẫn nguồn (${preview.reason}).`;
+            else ruleApplyAvailable = true;
+          }
+        } else {
+          ruleApplyReason = "Cần xác nhận nhãn trước khi áp dụng định dạng.";
+        }
+      } catch (error) {
+        ruleApplyReason = error instanceof Error ? error.message : "Không giải được giá trị quy tắc.";
+      }
+    }
+    return { id: unit.id, scope: unit.scope, ...(appendix ? { appendixTitle: appendix.title } : {}),
+      label: unit.label, quote: unit.quote, anchor, status: decision?.status ?? "needs_review", reason: decision?.reason ?? "Chưa có quyết định hiện hành.",
+      ...(aiLabel ? { aiLabel } : {}),
+      rules: executableRules.map(item => ({ ruleId: item.ruleId!, title: item.title, category: item.category, sourceReference: item.sourceReference })),
+      ruleReason: selections.find(item => !item.executable)?.reason, ruleApplyAvailable, rulesApplied, ruleApplyReason };
+  }), [semanticState, semanticContext, workspaceSnapshot.standardType, workspaceSnapshot.doc.documentType,
+    workspaceSnapshot.doc.headerProfile, workspaceSnapshot.structuredImport?.appendices, workspaceSnapshot.doc.appendices]);
+  useEffect(() => {
+    setUserSemanticDecisions(current => Object.fromEntries(Object.entries(current).filter(([, value]) => value.contextKey === semanticContextKey)));
+  }, [semanticContextKey]);
+  const handleSemanticDecision = useCallback((unitId: string, status: "user_confirmed" | "rejected") => {
+    try {
+      applyUserSemanticDecision(semanticState, unitId, status, semanticState.revision.fingerprint);
+      const evidenceFingerprint = semanticBaseState.decisions[unitId]?.evidenceFingerprint;
+      if (!evidenceFingerprint) throw new Error("Không tìm thấy dấu vết ngữ nghĩa hiện hành để lưu quyết định.");
+      setUserSemanticDecisions(current => ({ ...current, [unitId]: { contextKey: semanticContextKey, evidenceFingerprint, status } }));
+    } catch (error) {
+      setErrorMsg(error instanceof Error ? error.message : "Quyết định ngữ nghĩa đã cũ; hãy rà soát lại nguồn.");
+    }
+  }, [semanticState, semanticBaseState, semanticContextKey]);
+  const renderSourceDocxPagesLocally = useCallback(async () => {
+    const snapshot = originalSnapshotRef.current;
+    if (snapshot?.sourceType !== "uploaded_file" || snapshot.fileType !== "docx" || !snapshot.sourceHash) {
+      setSourceVisualState({ status: "unavailable", reason: "Chỉ dựng trang từ DOCX gốc đang được lưu local." });
+      return;
+    }
+    sourceVisualAbortRef.current?.abort();
+    const controller = new AbortController();
+    sourceVisualAbortRef.current = controller;
+    const expectedSha256 = snapshot.sourceHash.toLowerCase();
+    const generation = sourceGenerationRef.current;
+    setSourceVisualState({ status: "rendering", sourceSha256: expectedSha256, sourceGeneration: generation });
+    try {
+      const handle = await loadSourceBlob(expectedSha256);
+      if (!handle || handle.fileType !== "docx" || handle.hash.toLowerCase() !== expectedSha256) {
+        setSourceVisualState({ status: "error", sourceSha256: expectedSha256, sourceGeneration: generation,
+          reason: "Không tìm thấy byte DOCX gốc có cùng SHA trong kho local." });
+        return;
+      }
+      const bytes = new Uint8Array(handle.bytes.slice(0));
+      const digest = await globalThis.crypto.subtle.digest("SHA-256", bytes);
+      const actualSha256 = [...new Uint8Array(digest)].map(value => value.toString(16).padStart(2, "0")).join("");
+      if (actualSha256 !== expectedSha256) {
+        setSourceVisualState({ status: "error", sourceSha256: actualSha256, sourceGeneration: generation,
+          reason: "SHA-256 cục bộ không khớp với tệp gốc đã ghi nhận." });
+        return;
+      }
+      const response = await fetch("/api/ai/render-source-docx", {
+        method: "POST", signal: controller.signal,
+        headers: { "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          "X-Source-SHA256": expectedSha256, "X-Source-Generation": String(generation) },
+        body: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer,
+      });
+      const payload = await response.json() as { error?: string; localEndpointReceived?: boolean; sourceSha256?: string;
+        sourceGeneration?: number; renderId?: string; manifest?: VisualEvidenceManifest };
+      const current = originalSnapshotRef.current;
+      if (controller.signal.aborted || sourceGenerationRef.current !== generation || current?.sourceHash?.toLowerCase() !== expectedSha256) return;
+      if (!response.ok || !payload.manifest) {
+        setSourceVisualState({ status: "error", sourceSha256: expectedSha256, sourceGeneration: generation,
+          reason: payload.error ?? `Không dựng được trang (${response.status}).` });
+        return;
+      }
+      const manifest = payload.manifest;
+      const orderedComplete = manifest.complete && manifest.sourceSha256 === expectedSha256 && payload.sourceSha256 === expectedSha256 &&
+        payload.sourceGeneration === generation && typeof payload.renderId === "string" && manifest.pageCount > 0 && manifest.pages.length === manifest.pageCount &&
+        manifest.pages.every((page, index) => page.page === index + 1 && /^[a-f0-9]{64}$/i.test(page.sha256));
+      setSourceVisualState({ status: orderedComplete ? "complete" : "incomplete", sourceSha256: expectedSha256,
+        sourceGeneration: generation, localEndpointReceived: payload.localEndpointReceived === true,
+        ...(orderedComplete && payload.renderId ? { renderId: payload.renderId } : {}), manifest,
+        ...(orderedComplete ? {} : { reason: manifest.failureCode ?? "Số trang hoặc hash trang không khớp với manifest." }) });
+    } catch (error) {
+      if (controller.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) return;
+      setSourceVisualState({ status: "error", sourceSha256: expectedSha256, sourceGeneration: generation,
+        reason: "Không thể hoàn tất dựng trang cục bộ; kiểm tra máy chủ local và Word/Poppler." });
+    }
+  }, []);
   const workspaceSnapshotRef=useRef(workspaceSnapshot);workspaceSnapshotRef.current=workspaceSnapshot;
+  const fullTextProvider = partitionAiProvider === "chatgpt" ? "chatgpt" : "gemini";
+  const fullTextProviderCapability = fullDocumentCapability?.providers[fullTextProvider === "chatgpt" ? "chatgpt-plan" : "gemini"];
+  const fullTextProviderReady = fullTextProvider === "gemini"
+    ? Boolean(fullTextProviderCapability?.configured && fullTextProviderCapability.textInput.status === "SUPPORTED_BY_ADAPTER" &&
+      fullTextProviderCapability.fullTextManifest.status === "SUPPORTED_BY_ADAPTER")
+    : Boolean(chatGPTStatus.enabled && chatGPTStatus.session.status === "connected" && chatGPTStatus.session.sharing &&
+      fullTextProviderCapability?.modelAvailable && fullTextProviderCapability.textInput.status === "SUPPORTED_BY_ADAPTER" &&
+      fullTextProviderCapability.fullTextManifest.status === "SUPPORTED_BY_ADAPTER");
+  const fullTextProviderReadinessReason = fullTextProviderReady ? ""
+    : fullTextProvider === "gemini"
+      ? (fullTextProviderCapability?.configured ? "Adapter văn bản chưa sẵn sàng trên máy chủ local." : "Gemini API chưa được cấu hình trên máy chủ local.")
+      : chatGPTStatus.reason || (chatGPTStatus.session.status !== "connected" || !chatGPTStatus.session.sharing
+        ? "Cần kết nối ChatGPT plan và bật quyền chia sẻ trong cài đặt chung."
+        : "ChatGPT plan chưa có model khả dụng qua adapter hiện tại.");
+  const fullTextProviderTierNotice = fullTextProvider === "gemini"
+    ? (fullTextProviderCapability?.dataUseTier?.reason ?? "Tier và điều khoản dữ liệu Gemini chưa xác minh.")
+    : "Kết nối ChatGPT plan local; gói, chính sách lưu giữ và việc sử dụng dữ liệu của tài khoản chưa được DocForm xác minh.";
+  const fullTextConsentChecked = Boolean(fullTextManifest && isFullTextConsentCurrent(fullTextConsent, fullTextProvider,
+    originalSnapshot?.sourceHash?.toLowerCase() ?? "", sourceGeneration, fullTextManifest.manifestSha256));
+
+  const prepareFullTextManifest = useCallback(async () => {
+    const snapshot = originalSnapshotRef.current;
+    if (snapshot?.sourceType !== "uploaded_file" || snapshot.fileType !== "docx" || !snapshot.sourceHash) {
+      setFullTextManifestStatus("error");
+      setFullTextManifestError("Rà soát toàn văn hiện yêu cầu DOCX gốc đã lưu trong kho local.");
+      return;
+    }
+    const expectedSha256 = snapshot.sourceHash.toLowerCase();
+    const generation = sourceGenerationRef.current;
+    setFullTextConsent(null);
+    setFullTextManifest(null);
+    setFullTextManifestError("");
+    setFullTextManifestStatus("building");
+    try {
+      const handle = await loadSourceBlob(expectedSha256);
+      if (!handle || handle.fileType !== "docx" || handle.hash.toLowerCase() !== expectedSha256) {
+        throw new Error("Không tìm thấy byte DOCX gốc có cùng SHA trong kho local.");
+      }
+      const manifest = await buildFullTextManifest(new Uint8Array(handle.bytes.slice(0)), expectedSha256, generation);
+      const current = originalSnapshotRef.current;
+      if (sourceGenerationRef.current !== generation || current?.sourceHash?.toLowerCase() !== expectedSha256) return;
+      setFullTextManifest(manifest);
+      setFullTextManifestStatus("ready");
+      setFullTextReviewRun(currentRun => currentRun.response?.manifestSha256 === manifest.manifestSha256
+        ? currentRun : { reviewStatus: "idle", chunks: [], response: null });
+    } catch (error) {
+      const current = originalSnapshotRef.current;
+      if (sourceGenerationRef.current !== generation || current?.sourceHash?.toLowerCase() !== expectedSha256) return;
+      setFullTextManifestStatus("error");
+      setFullTextManifestError(error instanceof Error ? error.message : "Không thể lập danh mục văn bản trích xuất trên máy.");
+    }
+  }, []);
+
+  const handleFullTextConsentChange = useCallback((checked: boolean) => {
+    if (!checked) { setFullTextConsent(null); return; }
+    const manifest = fullTextManifest;
+    const sourceSha256 = originalSnapshotRef.current?.sourceHash?.toLowerCase() ?? "";
+    const generation = sourceGenerationRef.current;
+    if (!manifest || !fullTextProviderReady || manifest.sourceSha256 !== sourceSha256 || manifest.sourceGeneration !== generation) {
+      setFullTextConsent(null);
+      return;
+    }
+    setFullTextConsent(createFullTextConsent(fullTextProvider, sourceSha256, generation, manifest.manifestSha256));
+  }, [fullTextManifest, fullTextProviderReady, fullTextProvider]);
+
+  const runFullTextReview = useCallback(async (retryFailedOnly = false) => {
+    const manifest = fullTextManifest;
+    const snapshot = originalSnapshotRef.current;
+    const provider = fullTextProvider;
+    const sourceSha256 = snapshot?.sourceHash?.toLowerCase() ?? "";
+    const generation = sourceGenerationRef.current;
+    if (!manifest || snapshot?.sourceType !== "uploaded_file" || snapshot.fileType !== "docx" ||
+        manifest.sourceSha256 !== sourceSha256 || manifest.sourceGeneration !== generation || !fullTextProviderReady ||
+        !isFullTextConsentCurrent(fullTextConsent, provider, sourceSha256, generation, manifest.manifestSha256)) {
+      setFullTextReviewRun(current => ({ ...current, reviewStatus: "error", reviewError: "Chưa đủ điều kiện nguồn, provider hoặc consent cho đúng manifest." }));
+      return;
+    }
+    const workspaceAtStart = workspaceSnapshotRef.current;
+    const partitionFingerprint = workspaceAtStart.workspace.partition.fingerprint;
+    const regime = workspaceAtStart.standardType;
+    const documentType = workspaceAtStart.doc.documentType;
+    const reviewContext: FullTextReviewSemanticContext = {
+      provider, sourceSha256, sourceGeneration: generation, manifestSha256: manifest.manifestSha256,
+      partitionFingerprint, regime, documentType,
+    };
+    const contextKeyAtStart = semanticApprovalContextKey({ sourceSha256, sourceGeneration: generation,
+      partitionFingerprint, regime, documentType });
+    const previous = retryFailedOnly && isFullTextReviewContextCurrent(fullTextReviewRun.context, reviewContext)
+      ? fullTextReviewRun.response : null;
+    const reusablePrevious = previous && previous.provider === provider && previous.sourceSha256 === sourceSha256 &&
+      previous.sourceGeneration === generation && previous.manifestSha256 === manifest.manifestSha256 ? previous : null;
+    let request;
+    try {
+      request = buildFullTextReviewRequest(manifest, provider, fullTextConsent, regime === "party" ? "party" : "administrative",
+        documentType, reusablePrevious ?? undefined);
+    } catch (error) {
+      setFullTextReviewRun(current => ({ ...current, reviewStatus: "error", reviewError: error instanceof Error ? error.message : "Yêu cầu rà soát không hợp lệ." }));
+      return;
+    }
+    fullTextReviewAbortRef.current?.abort();
+    const controller = new AbortController();
+    fullTextReviewAbortRef.current = controller;
+    fullTextRequestIdRef.current = request.requestId;
+    setFullTextReviewRun({ reviewStatus: "reviewing", reviewProvider: provider,
+      chunks: [], response: reusablePrevious, context: reviewContext,
+      ...(reusablePrevious ? { coverage: reusablePrevious.coverage } : {}) });
+
+    const isCurrentContext = () => {
+      const currentSource = originalSnapshotRef.current;
+      const currentWorkspace = workspaceSnapshotRef.current;
+      const currentSha = currentSource?.sourceHash?.toLowerCase() ?? currentWorkspace.workspace.source?.blobHash?.toLowerCase() ?? "";
+      const currentContextKey = semanticApprovalContextKey({
+        sourceSha256: currentSha, sourceGeneration: sourceGenerationRef.current,
+        partitionFingerprint: currentWorkspace.workspace.partition.fingerprint,
+        regime: currentWorkspace.standardType, documentType: currentWorkspace.doc.documentType,
+      });
+      return !controller.signal.aborted && fullTextRequestIdRef.current === request.requestId &&
+        currentSha === sourceSha256 && sourceGenerationRef.current === generation &&
+        partitionAiProviderRef.current === partitionAiProvider && currentContextKey === contextKeyAtStart;
+    };
+
+    try {
+      const response = await fetch("/api/ai/review-full-text", {
+        method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(request),
+      });
+      const final = await readFullTextReviewStream(response, request, event => {
+        if (!isCurrentContext()) return;
+        if (event.type === "chunk") setFullTextReviewRun(currentRun => {
+          if (fullTextRequestIdRef.current !== request.requestId) return currentRun;
+          const chunks = new Map(currentRun.chunks.map(chunk => [chunk.chunkId, chunk]));
+          chunks.set(event.chunk.chunkId, event.chunk);
+          return { ...currentRun, chunks: [...chunks.values()] };
+        });
+      }, controller.signal);
+      if (!isCurrentContext()) return;
+      const aligned = alignFullTextAiResults(final.results, manifest.segments, localSemanticObservations, { sourceSha256, sourceGeneration: generation });
+      if (!aligned.valid) throw new Error("Phản hồi AI không thể căn chỉnh vào nguồn hiện tại: " + aligned.reason);
+      const failedFromAlignment = [...aligned.missingSegmentIds].sort();
+      const failedFromCoverage = [...final.coverage.semanticResponse.failedSegmentIds].sort();
+      if (failedFromAlignment.join("|") !== failedFromCoverage.join("|")) throw new Error("Coverage AI không khớp danh sách segment có phản hồi.");
+      if (!isCurrentContext()) return;
+      const nextEvidence: PersistedFullTextSemanticReview = {
+        provider, sourceSha256, sourceGeneration: generation, manifestSha256: manifest.manifestSha256,
+        partitionFingerprint, regime, documentType, observations: aligned.observations, coverage: final.coverage,
+      };
+      setFullTextReviewEvidence(nextEvidence);
+      setFullTextReviewRun({
+        reviewStatus: final.coverage.status === "complete" ? "complete" : "partial",
+        reviewProvider: final.provider, chunks: final.chunks, coverage: final.coverage, response: final,
+        context: reviewContext,
+        ...(final.coverage.status === "partial" ? { reviewError: "Một số phần chưa được trích xuất hoặc chưa có phản hồi; kết quả vẫn cần người dùng rà soát." } : {}),
+      });
+    } catch (error) {
+      if (fullTextRequestIdRef.current !== request.requestId) return;
+      if (controller.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) {
+        setFullTextReviewRun(currentRun => ({ ...currentRun, reviewStatus: "cancelled",
+          reviewError: "Đã hủy yêu cầu. Kết quả trước đó, nếu có, vẫn được giữ nguyên." }));
+      } else {
+        setFullTextReviewRun(currentRun => ({ ...currentRun, reviewStatus: "error",
+          reviewError: error instanceof Error ? error.message : "Không hoàn tất được rà soát toàn văn." }));
+      }
+    } finally {
+      if (fullTextReviewAbortRef.current === controller) fullTextReviewAbortRef.current = null;
+      if (fullTextRequestIdRef.current === request.requestId) fullTextRequestIdRef.current = null;
+    }
+  }, [fullTextManifest, fullTextProvider, fullTextProviderReady, fullTextConsent, fullTextReviewRun.response, fullTextReviewRun.context,
+    partitionAiProvider, localSemanticObservations]);
+
+  const cancelFullTextReview = useCallback(() => {
+    if (!fullTextReviewAbortRef.current) return;
+    fullTextReviewAbortRef.current.abort();
+    setFullTextReviewRun(current => ({ ...current, reviewStatus: "cancelled", reviewError: "Đã hủy theo yêu cầu." }));
+  }, []);
+
+  const currentFullTextRunContext: FullTextReviewSemanticContext | null = fullTextManifest ? {
+    provider: fullTextProvider,
+    sourceSha256: originalSnapshot?.sourceHash?.toLowerCase() ?? "",
+    sourceGeneration,
+    manifestSha256: fullTextManifest.manifestSha256,
+    partitionFingerprint: workspaceSnapshot.workspace.partition.fingerprint,
+    regime: standardType,
+    documentType: doc.documentType,
+  } : null;
+  const visibleFullTextReviewRun = currentFullTextRunContext &&
+    isFullTextReviewContextCurrent(fullTextReviewRun.context, currentFullTextRunContext)
+    ? fullTextReviewRun
+    : fullTextReviewRun.context
+      ? { reviewStatus: "idle" as const, chunks: [], response: null }
+      : fullTextReviewRun;
+
   const candidateManager=useRef<ReturnType<typeof createExportCandidateManager>|null>(null);
   if(!candidateManager.current)candidateManager.current=createExportCandidateManager();
   const [candidate,setCandidate]=useState<ExportCandidate|null>(null);
   const [candidatePending,setCandidatePending]=useState(false);
   const [candidateError,setCandidateError]=useState('');
-  const candidateInput={...workspaceSnapshot,uploadedBlocks,docTypeOverride};
+  const sourceVisualEvidenceFingerprint=sourceVisualState.status==="complete"&&sourceVisualState.manifest
+    ?canonicalWorkspaceValue({sourceSha256:sourceVisualState.manifest.sourceSha256,pdfSha256:sourceVisualState.manifest.pdfSha256,
+      pageCount:sourceVisualState.manifest.pageCount,pages:sourceVisualState.manifest.pages,sourceGeneration:sourceVisualState.sourceGeneration})
+    :undefined;
+  const ruleSelectionFingerprint = canonicalWorkspaceValue(semanticReviewRows.map(row => ({
+    id: row.id, label: row.label, status: row.status, ruleIds: row.rules.map(rule => rule.ruleId),
+    sources: row.rules.map(rule => rule.sourceReference),
+    canApply: row.ruleApplyAvailable, reason: row.ruleReason ?? row.ruleApplyReason,
+  })));
+  const buildCandidateInput=(snapshot: WorkspaceSnapshot)=>({...snapshot,uploadedBlocks,docTypeOverride,
+    semanticEvidenceFingerprint:semanticState.revision.fingerprint,
+    ...(matchingFullTextReview ? { fullTextManifestSha256: matchingFullTextReview.manifestSha256 } : {}),
+    ruleSelectionFingerprint, sourceGeneration,
+    sourceVisualEvidenceFingerprint});
+  const candidateInput=buildCandidateInput(workspaceSnapshot);
   const candidateKey=exportCandidateKey(candidateInput);
   const visibleCandidate=candidate&&candidateManager.current.isCurrent(candidate,candidateInput)?candidate:null;
   const invalidateCandidate=()=>{candidateManager.current!.invalidate();setCandidate(null);setCandidateError('');setOoxmlEvidence(undefined);setOoxmlStatus('not_evaluated');};
@@ -1216,6 +1836,23 @@ export default function App() {
     installWorkspace(result.snapshot);markUserInteraction();return true;
   };
   const workspaceAction=(action:WorkspaceAction)=>applyWorkspaceResult(transactWorkspace(workspaceSnapshotRef.current,workspaceSnapshotRef.current.workspace.workingRevision,action));
+  const handleApplySemanticRules=(unitId:string)=>{
+    const observation=semanticState.observations.find(item=>item.unit.id===unitId);
+    const decision=semanticState.decisions[unitId];
+    const current=workspaceSnapshotRef.current;
+    if(!observation||!decision||!semanticReviewRows.find(row=>row.id===unitId)?.ruleApplyAvailable){
+      setErrorMsg("Quy tắc không còn áp dụng được với đoạn nguồn hiện tại; hãy rà soát lại nhãn và nội dung.");return;
+    }
+    const selections=selectRulesForUnit(observation.unit,{...semanticContext,regime:current.standardType,
+      documentType:current.doc.documentType,profile:current.doc.headerProfile??"generic",decision});
+    const ruleIds=selections.filter(item=>item.executable&&item.ruleId).map(item=>item.ruleId!) as SemanticRuleId[];
+    if(!ruleIds.length){setErrorMsg("Không có quy tắc hiện hành được xác nhận cho đơn vị này.");return;}
+    const result=transactWorkspace(current,current.workspace.workingRevision,{type:"applySemanticParagraphRules",
+      sourceBlockId:observation.unit.anchor.blockId,expectedText:observation.unit.quote,
+      paragraphIndex:observation.unit.anchor.paragraphIndex??-1,ruleIds,regime:current.standardType,profile:current.doc.headerProfile??"generic",decision});
+    if(!applyWorkspaceResult(result))return;
+    setSuccessMsg("Đã áp dụng rule vào đúng đoạn Body đã duyệt; các quyết định ngữ nghĩa hiện hành được giữ theo bản soạn mới.");
+  };
   const installPendingPartition=(blocks:SourceBlock[],nextImport:StructuredImport|null,nextDoc?:DocumentState)=>{
     const current=workspaceSnapshotRef.current,source=current.workspace.source;
     const structure=nextImport?{...nextImport,importFidelityManifest:source?.fidelityManifest??nextImport.importFidelityManifest}:null;
@@ -1235,17 +1872,17 @@ export default function App() {
     setErrorMsg('');setShowSideBySideModal(false);
   };
   const prepareCandidate=async()=>{
-    const input={...workspaceSnapshotRef.current,uploadedBlocks,docTypeOverride};
-    if(!canEnterStep(3)){setCandidateError('Cần duyệt phân vùng hợp lệ trước khi tạo ứng viên.');return;}
-    setCandidatePending(true);setCandidateError('');
+    const input=buildCandidateInput(workspaceSnapshotRef.current);
+    if(!canEnterStep(3)){setOoxmlEvidence(undefined);setOoxmlStatus('not_evaluated');setCandidateError('Cần duyệt phân vùng hợp lệ trước khi tạo ứng viên.');return;}
+    setCandidatePending(true);setCandidateError('');setOoxmlEvidence(undefined);setOoxmlStatus('measuring');
     try{
       const next=await candidateManager.current!.prepare(input);
-      if(!next||!candidateManager.current!.isCurrent(next,{...workspaceSnapshotRef.current,uploadedBlocks,docTypeOverride}))return;
+      if(!next||!candidateManager.current!.isCurrent(next,buildCandidateInput(workspaceSnapshotRef.current)))return;
       setCandidate(next);
-      if(next.safe){setOoxmlEvidence({...next.evidence,header_profile:next.formatData.headerProfile,draft_key:computeDraftRevisionKey(input.doc,input.standardType),candidate_fidelity_result:next.tableFidelity,candidate_sha:next.sha256,candidate_instance:next.instanceId});setOoxmlStatus('evaluated_current_draft');}
+      if(next.safe){setOoxmlEvidence({...next.evidence,header_profile:next.formatData.headerProfile,draft_key:next.key,candidate_fidelity_result:next.tableFidelity,candidate_sha:next.sha256,candidate_instance:next.instanceId});setOoxmlStatus('evaluated_current_draft');}
       else {setOoxmlEvidence(undefined);setOoxmlStatus('not_evaluated');}
-    }catch(e){if(exportCandidateKey(input)===exportCandidateKey({...workspaceSnapshotRef.current,uploadedBlocks,docTypeOverride}))setCandidateError(String(e));}
-    finally{if(exportCandidateKey(input)===exportCandidateKey({...workspaceSnapshotRef.current,uploadedBlocks,docTypeOverride}))setCandidatePending(false);}
+    }catch(e){if(exportCandidateKey(input)===exportCandidateKey(buildCandidateInput(workspaceSnapshotRef.current))){setOoxmlEvidence(undefined);setOoxmlStatus('error');setCandidateError(String(e));}}
+    finally{if(exportCandidateKey(input)===exportCandidateKey(buildCandidateInput(workspaceSnapshotRef.current)))setCandidatePending(false);}
   };
   useEffect(()=>{if(currentStep===3)void prepareCandidate();else {setOoxmlEvidence(undefined);setOoxmlStatus('not_evaluated');}},[currentStep,candidateKey]);
 
@@ -1260,8 +1897,7 @@ export default function App() {
     }
   ]);
 
-  const currentDraftKey = computeDraftRevisionKey(doc, standardType);
-  const currentDraftKeyRef = useRef<string>(currentDraftKey);
+  const currentDraftKey = candidateKey;
   /**
    * Chặng 5 — rủi ro do người kiểm độc lập chỉ ra: đề xuất "AI tinh chỉnh"
    * được ràng buộc theo nguồn/thể thức/revision, nhưng **chưa** ràng buộc theo
@@ -1271,7 +1907,6 @@ export default function App() {
    */
   const bodyHtmlRef = useRef<string>(doc.bodyHtml);
   bodyHtmlRef.current = doc.bodyHtml;
-  currentDraftKeyRef.current = currentDraftKey;
 
   // Unified Canonical Rule Engine Evaluation (3 Decoupled Metrics + Live OOXML Evidence)
   const evaluationSummary = React.useMemo(() => {
@@ -1498,6 +2133,17 @@ export default function App() {
         setWorkspace(restoredWorkspace.workspace);
         setDoc(restoredWorkspace.doc);
         setStandardType(restoredStandardType);
+        const restoredGeneration = restoredWorkspace.workspace.source?.generation ?? 1;
+        sourceGenerationRef.current = restoredGeneration;
+        setSourceGeneration(restoredGeneration);
+        const storedSemanticDecisions = savedDraft.semanticDecisions;
+        setUserSemanticDecisions(storedSemanticDecisions && typeof storedSemanticDecisions === "object" && !Array.isArray(storedSemanticDecisions)
+          ? Object.fromEntries(Object.entries(storedSemanticDecisions).filter(([unitId, decision]) =>
+              Boolean(unitId) && decision && typeof decision.contextKey === "string" &&
+              (decision.status === "user_confirmed" || decision.status === "rejected")))
+          : {});
+        setFullTextReviewEvidence(isPersistedFullTextSemanticReviewValid(savedDraft.fullTextSemanticReview)
+          ? structuredClone(savedDraft.fullTextSemanticReview) : null);
         if (savedDraft.versions && savedDraft.versions.length > 0) {
           setVersions(savedDraft.versions);
         }
@@ -1601,6 +2247,8 @@ export default function App() {
     sourceOrigin,
     docTypeOverride,
     importReviewApprovedSourceHash,
+    semanticDecisions:userSemanticDecisions,
+    ...(matchingFullTextReview ? { fullTextSemanticReview: matchingFullTextReview } : {}),
   };
 
   const persistDraftNow = React.useCallback(async (silent = false) => {
@@ -1642,7 +2290,7 @@ export default function App() {
       void persistDraftNow();
     }, 1000);
     return () => clearTimeout(timer);
-  }, [doc, workspace,standardType, versions, originalSnapshot, reviewBlocks, structuredImport, uploadedBlocks, uploadedFileName, uploadedFileType, rawText, sourceOrigin, persistDraftNow]);
+  }, [doc, workspace,standardType, versions, originalSnapshot, reviewBlocks, structuredImport, uploadedBlocks, uploadedFileName, uploadedFileType, rawText, sourceOrigin, userSemanticDecisions, matchingFullTextReview, persistDraftNow]);
 
   useEffect(() => {
     if (!draftHydratedRef.current && !userInteractedRef.current) {
@@ -1650,7 +2298,7 @@ export default function App() {
     }
     void persistDraftNow();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sourceOrigin, standardType, doc.headerProfile, doc.documentType, uploadedFileName, docTypeOverride]);
+  }, [sourceOrigin, standardType, doc.headerProfile, doc.documentType, uploadedFileName, docTypeOverride, userSemanticDecisions]);
 
   // Navigation and active canvas are restored on refresh, but do not change
   // document content. Persist them without flashing the document save status.
@@ -1677,8 +2325,8 @@ export default function App() {
       effectiveRegime
     );
     setComplianceReport(report);
-
-  }, [doc, standardType]);
+    setComplianceRevision(workspaceSnapshot.workspace.workingRevision);
+  }, [doc, standardType, workspaceSnapshot.workspace.workingRevision]);
 
   // 4. Responsive Screen Detection & Adaptive Auto-fit
   const calculateFitZoom = useCallback(() => {
@@ -1874,9 +2522,10 @@ export default function App() {
    */
   const currentSourceHash = originalSnapshot?.sourceHash ?? "";
   const importReviewSatisfied=sourceOrigin!=='uploaded_file'||hasWorkspaceApproval(workspaceSnapshot);
-  const canExportSource=structureReady&&importReviewSatisfied&&(!sourceMismatch.docTypeMismatch||docTypeDecisionValid)&&canEnterWorkspaceStep(workspaceSnapshot,3);
-  const canEnterStep=(step:1|2|3)=>step===1||sourceChosen&&canEnterWorkspaceStep(workspaceSnapshot,step)&&(step!==3||canExportSource);
-  const stepIsComplete=(step:1|2|3)=>step===1?sourceChosen&&canEnterWorkspaceStep(workspaceSnapshot,2):step===2?canExportSource:Boolean(visibleCandidate?.downloadable);
+  const importMetadataReady=sourceOrigin!=='uploaded_file'||Boolean(doc.documentType?.trim());
+  const canExportSource=importMetadataReady&&structureReady&&importReviewSatisfied&&(!sourceMismatch.docTypeMismatch||docTypeDecisionValid)&&canEnterWorkspaceStep(workspaceSnapshot,3);
+  const canEnterStep=(step:1|2|3)=>step===1||sourceChosen&&importMetadataReady&&canEnterWorkspaceStep(workspaceSnapshot,step)&&(step!==3||canExportSource);
+  const stepIsComplete=(step:1|2|3)=>step===1?sourceChosen&&importMetadataReady&&canEnterWorkspaceStep(workspaceSnapshot,2):step===2?canExportSource:Boolean(visibleCandidate?.downloadable);
 
   const sidebarItemsByStep: Record<1 | 2 | 3, Array<{ id: string; label: string; selector?: string }>> = {
     1: [
@@ -2391,6 +3040,9 @@ export default function App() {
 
   const handleFileUpload = async (file: File) => {
     invalidateActiveAiSession();
+    aiPartitionConsentRef.current = false;
+    setAiPartitionConsent(false);
+    setPartitionCheckNotice("Đã chọn tệp nguồn mới. Hãy bật lại xác nhận chia sẻ sau khi tệp được nạp.");
     // A new upload invalidates the pending confirmation of any previous file.
     setPendingImport(null);
     const uploadRegime = standardTypeRef.current;
@@ -2438,6 +3090,11 @@ export default function App() {
 
   const fetchAiReviewProposals = async () => {
     if (!structuredImport && reviewBlocks.length === 0) return;
+    const requestedProvider = partitionAiProviderRef.current;
+    if (requestedProvider === "chatgpt" && (!chatGPTStatus.enabled || chatGPTStatus.session.status !== "connected" || !chatGPTStatus.session.sharing)) {
+      setErrorMsg("Hãy kết nối ChatGPT plan ở Bước 1 trước khi gửi tài liệu để rà soát.");
+      return;
+    }
     const token = sessionGateRef.current.begin("review");
     setIsReviewingProposals(true);
     // Note: Do NOT clear acceptedProposalIds here; preserve existing accepted state until new batch is successfully committed.
@@ -2454,7 +3111,9 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         signal: token.signal,
         body: JSON.stringify({
-          structured: structuredImport,
+          provider: requestedProvider,
+          ...(requestedProvider === "chatgpt" ? { consent: true } : {}),
+          structured: structuredImport ?? { source: { filename: "", type: "txt", blockCount: effectiveBlocks.length }, fields: {}, body: { html: "", sourceBlockIds: [] }, appendices: [], unclassified: [], order: [] },
           standardType: standardType === "party" ? "party" : "administrative",
           rawText,
           blocks: effectiveBlocks,
@@ -2467,6 +3126,7 @@ export default function App() {
       if (!sessionGateRef.current.isCurrent(token)) {
         return;
       }
+      if (partitionAiProviderRef.current !== requestedProvider) return;
       const currentBlocksBeforeJson = reviewBlocks.length > 0 ? reviewBlocks : (structuredImport?.blocks || uploadedBlocks);
       const currentContextBeforeJson: ReviewProposalBatchContext = {
         sourceGeneration: sourceGenerationRef.current,
@@ -2481,6 +3141,7 @@ export default function App() {
       if (!sessionGateRef.current.isCurrent(token)) {
         return;
       }
+      if (partitionAiProviderRef.current !== requestedProvider) return;
       const currentBlocksAfterJson = reviewBlocks.length > 0 ? reviewBlocks : (structuredImport?.blocks || uploadedBlocks);
       const currentContextAfterJson: ReviewProposalBatchContext = {
         sourceGeneration: sourceGenerationRef.current,
@@ -2489,6 +3150,10 @@ export default function App() {
         partitionFingerprint: computePartitionFingerprint(currentBlocksAfterJson),
       };
       if (!isReviewProposalBatchValid(requestContext, currentContextAfterJson)) {
+        return;
+      }
+      if (requestedProvider === "chatgpt" && data.success && data.source !== "chatgpt_ai") {
+        setErrorMsg("Phản hồi rà soát không khớp nhà cung cấp ChatGPT đã chọn.");
         return;
       }
       if (data.success && Array.isArray(data.proposals)) {
@@ -2507,6 +3172,7 @@ export default function App() {
       console.warn("Could not fetch review proposals:", err);
       setErrorMsg("Lỗi kết nối AI rà soát: " + err.message);
     } finally {
+      if (requestedProvider === "chatgpt") void refreshChatGPTStatus();
       if (sessionGateRef.current.isCurrent(token)) {
         setIsReviewingProposals(false);
       }
@@ -2675,6 +3341,11 @@ export default function App() {
   };
 
   const handleAiRefine = async (action: "proofread" | "formalize", nodeId?:string) => {
+    const requestedProvider = partitionAiProviderRef.current;
+    if (requestedProvider === "chatgpt" && (!chatGPTStatus.enabled || chatGPTStatus.session.status !== "connected" || !chatGPTStatus.session.sharing)) {
+      setErrorMsg("Hãy kết nối ChatGPT plan ở Bước 1 trước khi gửi đoạn văn để tinh chỉnh.");
+      return;
+    }
     setIsRefining(true);
     setErrorMsg("");
     // S1-F01: ghi nhận ngữ cảnh nguồn TRƯỚC khi gọi AI để đối chiếu khi
@@ -2687,9 +3358,14 @@ export default function App() {
       const res = await fetch("/api/ai/refine-text", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: requestBodyHtml, action })
+        body: JSON.stringify({ text: requestBodyHtml, action, standardType: standardTypeRef.current === "party" ? "party" : "administrative", provider: requestedProvider, ...(requestedProvider === "chatgpt" ? { consent: true } : {}) })
       });
       const data = await res.json();
+      if (partitionAiProviderRef.current !== requestedProvider) return;
+      if (requestedProvider === "chatgpt" && data.success && data.source !== "chatgpt_ai") {
+        setErrorMsg("Phản hồi tinh chỉnh không khớp nhà cung cấp ChatGPT đã chọn.");
+        return;
+      }
       if (data.success && data.refined) {
         // S1-F01: phản hồi đến muộn sau khi người dùng đã đổi nguồn / đổi hệ
         // / sửa phân vùng thì đề xuất cũ bị loại, không được hiện ra.
@@ -2705,7 +3381,7 @@ export default function App() {
         }
         const received=receiveWorkspaceAiResult(workspaceSnapshotRef.current,aiTarget,data.refined);
         if(received.check.status!=='supported'){setErrorMsg(received.check.status==='stale'?(aiTarget.kind==='node'?'Nội dung thân bài đã thay đổi hoặc đoạn đang chọn đã thay đổi; đề xuất AI cũ không còn hợp lệ.':'Nội dung thân bài đã thay đổi; đề xuất AI cũ không còn hợp lệ.'):'Kết quả AI đổi cấu trúc đoạn hoặc target chưa hỗ trợ; không áp dụng đề xuất này.');return;}
-        const actionLabel = action === 'proofread' ? 'Sửa lỗi chính tả & câu từ' : 'Nâng cấp văn phong hành chính';
+        const actionLabel = action === 'proofread' ? 'Sửa lỗi chính tả & câu từ' : standardTypeRef.current === 'party' ? 'Nâng văn phong văn bản Đảng' : 'Nâng văn phong hành chính';
         setRefineProposal({
           action,
           target: aiTarget,
@@ -2723,6 +3399,7 @@ export default function App() {
     } catch (err: any) {
       setErrorMsg("Không thể kết nối AI tinh chỉnh: " + err.message);
     } finally {
+      if (requestedProvider === "chatgpt") void refreshChatGPTStatus();
       setIsRefining(false);
     }
   };
@@ -2759,11 +3436,9 @@ export default function App() {
 
   const exportToDocx = async () => {
     const current=candidateManager.current!.current;
-    if(!current?.downloadable||!candidateManager.current!.isCurrent(current,{...workspaceSnapshotRef.current,uploadedBlocks,docTypeOverride})||!canEnterStep(3)){setErrorMsg('DOCX ứng viên đã cũ hoặc không tạo được tệp. Hãy tạo lại ứng viên hiện hành ở Bước 3.');return;}
+    if(!current?.downloadable||!candidateManager.current!.isCurrent(current,buildCandidateInput(workspaceSnapshotRef.current))||!canEnterStep(3)){setErrorMsg('DOCX ứng viên đã cũ hoặc không tạo được tệp. Hãy tạo lại ứng viên hiện hành ở Bước 3.');return;}
     downloadDocxUint8Array(current.bytes,'Van_Ban_'+(standardType==='party'?'HD05':'ND30')+'.docx');
   };
-  const exportToPdf=async()=>{setErrorMsg('Lệnh In / Lưu PDF chỉ có ở Bước 3, từ DOCX ứng viên hiện hành.');};
-
   const handleDownloadOriginalFile = async () => {
     if (!originalSnapshot?.sourceHash) {
       setErrorMsg("Không tìm thấy thông tin tệp gốc.");
@@ -2783,11 +3458,11 @@ export default function App() {
 
   const handlePrintCandidate=async()=>{
     const current=visibleCandidate;
-    if(!current?.downloadable||!candidateManager.current?.isCurrent(current,{...workspaceSnapshotRef.current,uploadedBlocks,docTypeOverride})||!canEnterStep(3)){
+    if(!current?.downloadable||!candidateManager.current?.isCurrent(current,buildCandidateInput(workspaceSnapshotRef.current))||!canEnterStep(3)){
       setErrorMsg('Ứng viên DOCX đã cũ hoặc không tạo được tệp; chưa thể in.');return;
     }
     setErrorMsg('');
-    const isCurrent=()=>Boolean(candidateManager.current?.isCurrent(current,{...workspaceSnapshotRef.current,uploadedBlocks,docTypeOverride})&&current.downloadable&&canEnterStep(3));
+    const isCurrent=()=>Boolean(candidateManager.current?.isCurrent(current,buildCandidateInput(workspaceSnapshotRef.current))&&current.downloadable&&canEnterStep(3));
     const result=await printCandidate(current.bytes,current.sha256,current.instanceId,isCurrent);
     if(result==='stale')setErrorMsg('Ứng viên đã thay đổi trong lúc dựng vùng in; hãy tạo và kiểm ứng viên hiện hành trước khi in.');
     else if(result==='render_error')setErrorMsg('Không dựng được vùng in từ DOCX ứng viên; nội dung soạn và nguồn vẫn giữ nguyên.');
@@ -2803,6 +3478,9 @@ export default function App() {
       v
     );
     applyImportSessionState(nextSession);
+    // Historical versions do not carry semantic approvals. Reopening one must
+    // require a fresh decision even if its working revision number is reused.
+    setUserSemanticDecisions({});
     installWorkspace(restored);setCurrentStep(canEnterWorkspaceStep(restored,2)?2:1);
     // Nguồn được khôi phục cùng phiên bản: snapshot gốc quyết định trước (mẫu hay
     // tệp); chỉ khi không có snapshot mới dùng tên tệp. S3-F02: phiên bản mẫu có
@@ -2904,8 +3582,8 @@ export default function App() {
         }
       : {
           label: "BẢN XUẤT DOCX",
-          title: candidatePending ? "Đang tạo bản xem" : visibleCandidate?.downloadable ? "Sẵn sàng tải DOCX" : "Chưa có bản DOCX",
-          detail: candidatePending ? "Đang dựng DOCX từ bản soạn." : visibleCandidate?.downloadable ? visibleCandidate.safe ? "Không có cảnh báo đối chiếu." : "Có cảnh báo cần đối chiếu." : "Chưa tạo được bản xuất từ bản soạn.",
+          title: candidatePending ? "Đang tạo bản xem" : visibleCandidate?.downloadable ? "Có thể tải DOCX" : "Chưa có bản DOCX",
+          detail: candidatePending ? "Đang dựng DOCX từ bản soạn." : visibleCandidate?.downloadable ? visibleCandidate.safe ? "Đối chiếu không ghi nhận cảnh báo." : "Có cảnh báo đối chiếu; tải và in vẫn khả dụng." : "Chưa tạo được bản xuất từ bản soạn.",
           tone: candidatePending ? "neutral" : visibleCandidate?.downloadable && !visibleCandidate.safe ? "review" : visibleCandidate?.downloadable ? "ready" : "neutral",
         };
   const partitionBlocksForProposalReview = reviewBlocks.length > 0 ? reviewBlocks : (structuredImport?.blocks || uploadedBlocks);
@@ -2948,7 +3626,7 @@ export default function App() {
               <span className="truncate">{displayDocumentTitle}</span>
             </div>
 
-            {/* Save Status & Tools on narrow screens (< xl) placed in Row 1 */}
+            {/* Save Status, settings, and tools on narrow screens (< xl) placed in Row 1 */}
             <div className="flex items-center gap-2 xl:hidden ml-auto shrink-0">
               <div
                 className="df-header-save-status flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-50 border border-slate-200 text-[11px] text-[#52607A]"
@@ -2958,6 +3636,16 @@ export default function App() {
                 <span className={`w-2 h-2 rounded-full shrink-0 ${isAutoSaving ? "bg-[#D9822B] animate-ping" : saveError ? "bg-[#DC2626]" : hasPersistedDraft ? "bg-[#15803D]" : "bg-slate-400"}`} />
                 <span className="font-medium" data-save-status={saveStatusLabel}>{saveStatusLabel}</span>
               </div>
+
+              <button
+                type="button"
+                onClick={() => setShowAppSettings(true)}
+                aria-label="Cài đặt chung"
+                className="p-1.5 rounded-xl text-[#52607A] hover:text-[#17233D] hover:bg-slate-100 transition cursor-pointer"
+                title="Cài đặt chung"
+              >
+                <Settings2 className="w-4 h-4" aria-hidden="true" />
+              </button>
 
               <button
                 type="button"
@@ -2979,7 +3667,7 @@ export default function App() {
             </div>
           )}
 
-          {/* Group 3 (Right on wide desktop >= xl): Save Status + Tools */}
+          {/* Group 3 (Right on wide desktop >= xl): Save Status + Settings + Tools */}
           <div className="df-header-actions hidden xl:flex items-center gap-2.5 shrink-0 justify-end">
 
             <div
@@ -2990,6 +3678,17 @@ export default function App() {
               <span className={`w-2 h-2 rounded-full shrink-0 ${isAutoSaving ? "bg-[#D9822B] animate-ping" : saveError ? "bg-[#DC2626]" : hasPersistedDraft ? "bg-[#15803D]" : "bg-slate-400"}`} />
               <span className="font-medium" data-save-status={saveStatusLabel}>{saveStatusLabel}</span>
             </div>
+
+            <button
+              type="button"
+              onClick={() => setShowAppSettings(true)}
+              aria-label="Cài đặt chung"
+              className="min-h-[34px] px-2.5 py-1 rounded-xl text-[#52607A] hover:text-[#17233D] hover:bg-slate-100 border border-slate-200/80 transition cursor-pointer flex items-center gap-1.5 text-xs font-semibold"
+              title="Cài đặt nhà cung cấp AI và tùy chọn ứng dụng"
+            >
+              <Settings2 className="w-3.5 h-3.5" aria-hidden="true" />
+              <span>Cài đặt</span>
+            </button>
 
             <button
               type="button"
@@ -3113,9 +3812,43 @@ export default function App() {
           structuredImport={structuredImport}
           originalSnapshot={originalSnapshot}
           originalAvailable={sourceBlobAvailability==='available'}
+          sourceVisualState={sourceVisualState}
+          fullDocumentCapability={fullDocumentCapability}
+          fullTextReview={{
+            provider: fullTextProvider,
+            providerReady: fullTextProviderReady,
+            providerReadinessReason: fullTextProviderReadinessReason,
+            providerTierNotice: fullTextProviderTierNotice,
+            sourceSha256: originalSnapshot?.sourceHash?.toLowerCase() ?? "",
+            sourceGeneration,
+            sourceIsDocx: originalSnapshot?.sourceType === "uploaded_file" && originalSnapshot.fileType === "docx" && sourceBlobAvailability === "available",
+            manifestStatus: fullTextManifestStatus,
+            manifest: fullTextManifest,
+            manifestError: fullTextManifestError,
+            onPrepareManifest: () => void prepareFullTextManifest(),
+            consentChecked: fullTextConsentChecked,
+            onConsentChange: handleFullTextConsentChange,
+            reviewStatus: visibleFullTextReviewRun.reviewStatus,
+            reviewProvider: visibleFullTextReviewRun.reviewProvider,
+            chunks: visibleFullTextReviewRun.chunks,
+            coverage: visibleFullTextReviewRun.reviewStatus === "reviewing" ? undefined : visibleFullTextReviewRun.coverage,
+            response: visibleFullTextReviewRun.reviewStatus === "reviewing" ? null : visibleFullTextReviewRun.response,
+            reviewError: visibleFullTextReviewRun.reviewError,
+            onStart: () => void runFullTextReview(false),
+            onCancel: cancelFullTextReview,
+            onRetryFailed: () => void runFullTextReview(true),
+          }}
+          onRenderSourceVisual={() => void renderSourceDocxPagesLocally()}
+          semanticReviewRows={semanticReviewRows}
+          semanticDecisionFingerprint={semanticState.revision.fingerprint}
+          onSemanticDecision={handleSemanticDecision}
+          onApplySemanticRules={handleApplySemanticRules}
           onOpenReviewModal={() => {setErrorMsg('');setShowSideBySideModal(true);}}
           onDownloadOriginal={handleDownloadOriginalFile}
           hasSelectedSource={sourceChosen}
+          partitionAiProvider={partitionAiProvider}
+          onOpenAppSettings={() => setShowAppSettings(true)}
+          chatGPTStatus={chatGPTStatus}
           aiPartitionConsent={aiPartitionConsent}
           onAiPartitionConsentChange={handleAiPartitionConsentChange}
           isCheckingPartitions={isCheckingPartitions}
@@ -3130,9 +3863,9 @@ export default function App() {
         />
       )}
 
-      {currentStep===3&&<WorkspaceExport candidate={visibleCandidate} pending={candidatePending} error={candidateError} onPrepare={()=>void prepareCandidate()} onDownload={()=>void exportToDocx()} onDownloadOriginal={()=>void handleDownloadOriginalFile()} onPrintCandidate={()=>void handlePrintCandidate()} originalAvailable={sourceBlobAvailability==='available'} onPrev={()=>goToStep(2)} onReviewSource={()=>{setCurrentStep(1);setShowSideBySideModal(true);}} onEditTarget={(targetId)=>{setCurrentStep(2);requestAnimationFrame(()=>{const node=[...document.querySelectorAll<HTMLElement>('[data-workspace-node]')].find(el=>el.dataset.workspaceNode===targetId);(node?.querySelector<HTMLElement>('[contenteditable="true"]')??document.querySelector<HTMLElement>('[data-canvas-id="body"] [contenteditable="true"]'))?.focus({preventScroll:true});});}}/>}
+      {currentStep===3&&<WorkspaceExport candidate={visibleCandidate} complianceReport={complianceReport} complianceRevision={complianceRevision} pending={candidatePending} error={candidateError} onPrepare={()=>void prepareCandidate()} onDownload={()=>void exportToDocx()} onDownloadOriginal={()=>void handleDownloadOriginalFile()} onPrintCandidate={()=>void handlePrintCandidate()} originalAvailable={sourceBlobAvailability==='available'} onPrev={()=>goToStep(2)} onReviewSource={()=>{setCurrentStep(1);setShowSideBySideModal(true);}} onEditTarget={(targetId)=>{setCurrentStep(2);requestAnimationFrame(()=>{const node=[...document.querySelectorAll<HTMLElement>('[data-workspace-node]')].find(el=>el.dataset.workspaceNode===targetId);(node?.querySelector<HTMLElement>('[contenteditable="true"]')??document.querySelector<HTMLElement>('[data-canvas-id="body"] [contenteditable="true"]'))?.focus({preventScroll:true});});}}/>}
       <div className="df-workspace-step2-shell" hidden={currentStep!==2}>
-        {sourceChosen&&canEnterWorkspaceStep(workspaceSnapshot,2)&&<WorkspaceEditor key={workspaceSnapshot.workspace.source?.identity??originalSnapshot?.sourceId??'template'} snapshot={workspaceSnapshot} initialCanvasId={editorState.activeCanvasId} onCanvasSelected={id=>setEditorState({activeCanvasId:id})} active={currentStep===2} onAction={workspaceAction} onRequestRegimeSwitch={requestRegimeSwitch} onPartition={()=>{setCurrentStep(1);setShowSideBySideModal(true);}} onRefine={handleAiRefine} refining={isRefining} canContinue={canEnterStep(3)} complianceReport={complianceReport} onOpenCompliance={()=>setShowComplianceModal(true)}/>}
+        {sourceChosen&&canEnterWorkspaceStep(workspaceSnapshot,2)&&<WorkspaceEditor key={workspaceSnapshot.workspace.source?.identity??originalSnapshot?.sourceId??'template'} snapshot={workspaceSnapshot} initialCanvasId={editorState.activeCanvasId} onCanvasSelected={id=>setEditorState({activeCanvasId:id})} active={currentStep===2} onAction={workspaceAction} onRequestRegimeSwitch={requestRegimeSwitch} onPartition={()=>{setCurrentStep(1);setShowSideBySideModal(true);}} onRefine={handleAiRefine} refining={isRefining} aiProvider={partitionAiProvider} chatGPTReady={chatGPTStatus.enabled&&chatGPTStatus.session.status==="connected"&&chatGPTStatus.session.sharing} onAiSettings={()=>setShowAppSettings(true)} canContinue={canEnterStep(3)} complianceReport={complianceReport} onOpenCompliance={()=>setShowComplianceModal(true)}/>}
       </div>
       </div></div>
       {toast && (
@@ -3197,12 +3930,12 @@ export default function App() {
                   data-partition-approve
                   type="button"
                   onClick={handleAiCheckPartitions}
-                  disabled={!aiPartitionConsent || isCheckingPartitions}
+                  disabled={!aiPartitionConsent || isCheckingPartitions || (partitionAiProvider === "chatgpt" && (!chatGPTStatus.enabled || chatGPTStatus.session.status !== "connected" || !chatGPTStatus.session.sharing))}
                   className="px-3 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs rounded-xl shadow transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                  title={aiPartitionConsent ? "Gửi nguồn đã chuẩn hóa, không kèm role parser, cho Gemini kiểm tra" : "Bật cho phép AI ở Bước 1 trước khi gửi nguồn"}
+                  title={aiPartitionConsent ? `Gửi nguồn đã chuẩn hóa, không kèm role parser, cho ${partitionAiProvider === "chatgpt" ? "ChatGPT plan" : "Gemini"} kiểm tra` : "Bật cho phép AI ở Bước 1 trước khi gửi nguồn"}
                 >
                   <Sparkles className={`w-3.5 h-3.5 ${isCheckingPartitions ? "animate-spin" : ""}`} />
-                  <span>{isCheckingPartitions ? "AI Đang Rà Soát..." : "AI Kiểm Tra Phân Vùng"}</span>
+                  <span>{isCheckingPartitions ? "AI Đang Rà Soát..." : `Rà Soát Phân Vùng (${partitionAiProvider === "chatgpt" ? "ChatGPT plan" : "Gemini"})`}</span>
                 </button>
                 {partitionHistory.length > 0 && (
                   <button
@@ -3231,16 +3964,16 @@ export default function App() {
               <div className="flex items-center gap-2">
                 <ShieldCheck className="w-4 h-4 text-emerald-700 shrink-0" />
                 <span>
-                  <strong>Phạm vi gửi:</strong> {aiPartitionConsent ? "toàn bộ chữ nguồn và tọa độ ô bảng đã bật cho phép; không có role parser, tên tệp, HTML hoặc XML." : "AI đang tắt; nguồn không được gửi. Quy tắc nội bộ vẫn hoạt động."} Gợi ý không tự áp dụng.
+                  <strong>Phạm vi gửi:</strong> {aiPartitionConsent ? `toàn bộ chữ nguồn và tọa độ ô bảng đã bật cho phép; không có role parser, tên tệp, HTML hoặc XML. Nhà cung cấp: ${partitionAiProvider === "chatgpt" ? "ChatGPT plan qua máy chủ local" : "Gemini"}.` : "AI đang tắt; nguồn không được gửi. Quy tắc nội bộ vẫn hoạt động."} Gợi ý không tự áp dụng.
                 </span>
               </div>
               <div className="flex items-center gap-2">
                 <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                  partitionCheckSource === "gemini_ai" || partitionCheckSource === "mixed"
+                  partitionCheckSource === "gemini_ai" || partitionCheckSource === "chatgpt_ai" || partitionCheckSource === "mixed"
                     ? "bg-emerald-500/20 text-emerald-700 border border-emerald-500/30"
                     : (partitionCheckSource === "rule_fallback" ? "bg-amber-500/20 text-amber-700 border border-amber-500/30" : "bg-slate-100 text-slate-600")
                 }`}>
-                  {partitionCheckSource === "gemini_ai" ? "✓ Gemini AI đã kiểm tra" : (partitionCheckSource === "mixed" ? "Gemini AI + quy tắc nội bộ" : (partitionCheckSource === "rule_fallback" ? "Quy tắc nội bộ" : "Chưa kiểm tra bằng AI"))}
+                  {partitionCheckSource === "gemini_ai" ? "Gemini đã rà soát · chờ duyệt" : (partitionCheckSource === "chatgpt_ai" ? "ChatGPT plan đã rà soát · chờ duyệt" : (partitionCheckSource === "mixed" ? "AI + quy tắc nội bộ · chờ duyệt" : (partitionCheckSource === "rule_fallback" ? "Quy tắc nội bộ" : "Chưa kiểm tra bằng AI")))}
                 </span>
                 {partitionCheckNotice && (
                   <span className="text-[10px] text-slate-500 italic">{partitionCheckNotice}</span>
@@ -3339,13 +4072,13 @@ export default function App() {
                                     {prop.currentRole} ➔ <span className="text-purple-700 font-bold">{prop.suggestedRole}</span>
                                     {prop.fieldKey ? ` (${prop.fieldKey})` : ""}
                                   </span>
-                                  <span className={`text-[9px] px-1.5 py-0.2 rounded font-semibold ${prop.source === "gemini_ai" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>
-                                    {prop.source === "gemini_ai" ? "Gemini AI" : "Quy tắc nội bộ"}
+                                  <span className={`text-[9px] px-1.5 py-0.2 rounded font-semibold ${prop.source === "gemini_ai" || prop.source === "chatgpt_ai" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>
+                                    {prop.source === "chatgpt_ai" ? "ChatGPT plan" : prop.source === "gemini_ai" ? "Gemini AI" : "Quy tắc nội bộ"}
                                   </span>
                                   <span className={`text-[9.5px] px-1.5 py-0.2 rounded font-semibold ${
                                     prop.confidence === "high" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
                                   }`}>
-                                    Độ tin cậy: {prop.confidence}
+                                    {prop.source === "gemini_ai" || prop.source === "chatgpt_ai" ? "AI tự đánh giá" : "Quy tắc đánh giá"}: {prop.confidence}
                                   </span>
                                 </div>
                                 {prop.cellLocation && (
@@ -3466,7 +4199,7 @@ export default function App() {
                         reviewBlockFilter === "signature" ? "bg-amber-700 text-white shadow-2xs" : "text-slate-600 hover:bg-slate-100"
                       }`}
                     >
-                      Khối ký ({partitionReviewBlocks.filter(b => b.role === "signature").length})
+                      Khối ký riêng ({partitionReviewBlocks.filter(b => b.role === "signature").length})
                     </button>
                     <button
                       type="button"
@@ -3692,9 +4425,9 @@ export default function App() {
                         <button
                           type="button"
                           onClick={fetchAiReviewProposals}
-                          disabled={isReviewingProposals}
+                          disabled={isReviewingProposals || (partitionAiProvider === "chatgpt" && (!chatGPTStatus.enabled || chatGPTStatus.session.status !== "connected" || !chatGPTStatus.session.sharing))}
                           className="px-2 py-0.5 rounded bg-purple-700 hover:bg-purple-800 disabled:opacity-50 text-white text-[10px] font-bold shadow-2xs cursor-pointer transition flex items-center gap-1"
-                          title="Gửi cấu trúc tài liệu tới Gemini AI để rà soát thể thức & nội dung"
+                          title={`Gửi cấu trúc tài liệu tới ${partitionAiProvider === "chatgpt" ? "ChatGPT plan" : "Gemini"} để rà soát thể thức và nội dung`}
                         >
                           {isReviewingProposals ? (
                             <>
@@ -3704,7 +4437,7 @@ export default function App() {
                           ) : (
                             <>
                               <Sparkles className="w-3 h-3 text-amber-700" />
-                              <span>Rà soát AI (Gemini)</span>
+                              <span>Rà soát AI ({partitionAiProvider === "chatgpt" ? "ChatGPT plan" : "Gemini"})</span>
                             </>
                           )}
                         </button>
@@ -3719,20 +4452,23 @@ export default function App() {
                         )}
                       </div>
                     </div>
+                    {partitionAiProvider === "chatgpt" && (!chatGPTStatus.enabled || chatGPTStatus.session.status !== "connected" || !chatGPTStatus.session.sharing) && (
+                      <button type="button" onClick={() => setCurrentStep(1)} className="mt-1 text-[10.5px] font-semibold text-amber-800 underline">Kết nối ChatGPT plan tại Bước 1 để dùng rà soát AI.</button>
+                    )}
 
                     {/* Collapsible AI Payload Inspector (User Consent & Transparency) */}
                     {showPayloadInspector && (
                       <div className="p-2.5 bg-slate-50 text-slate-700 rounded-lg text-[10.5px] space-y-1.5 border border-slate-200">
                         <div className="flex items-center justify-between text-slate-500 border-b border-slate-200 pb-1">
                           <span className="font-semibold text-emerald-700 flex items-center gap-1">
-                            <ShieldCheck className="w-3.5 h-3.5" /> Dữ liệu chuẩn bị gửi tới Gemini AI:
+                            <ShieldCheck className="w-3.5 h-3.5" /> Dữ liệu chuẩn bị gửi tới {partitionAiProvider === "chatgpt" ? "ChatGPT plan" : "Gemini"}:
                           </span>
                           <span className="text-[10px] text-slate-400">
                             {uploadedBlocks.length} khối | {rawText.length} ký tự | {uploadedBlocks.filter(b => b.kind === "table").length} bảng
                           </span>
                         </div>
                         <div className="text-[10px] text-amber-200/90 bg-amber-950/40 border border-amber-800/40 p-1.5 rounded">
-                          🔒 <strong>Minh bạch & Quyền riêng tư:</strong> Tài liệu chỉ được gửi tới Gemini khi bạn nhấn nút "Rà soát AI (Gemini)". Mặc định tài liệu chỉ chạy bộ quy tắc ngoại tuyến 100% nội bộ.
+                          🔒 <strong>Minh bạch & Quyền riêng tư:</strong> Nội dung nguồn tối đa 15.000 ký tự và sơ đồ khối được gửi tới {partitionAiProvider === "chatgpt" ? "ChatGPT plan" : "Gemini"} khi bạn nhấn nút rà soát AI. Đề xuất chỉ áp dụng sau khi bạn duyệt.
                         </div>
                         <div className="max-h-36 overflow-y-auto font-mono text-[9.5px] bg-white p-2 rounded border border-slate-200 text-slate-500 whitespace-pre-wrap">
                           {JSON.stringify({
@@ -3789,13 +4525,13 @@ export default function App() {
                                      prop.type === "segmentation" ? "Phân đoạn" : "Nhất quán"}
                                   </span>
 
-                                  {/* Source tag: Gemini AI vs Quy tắc NĐ 30 */}
+                                  {/* Source tag: selected AI provider or deterministic rules */}
                                   <span className={`text-[8.5px] font-semibold px-1 py-0.5 rounded border ${
-                                    prop.source === "gemini_ai"
+                                    prop.source === "gemini_ai" || prop.source === "chatgpt_ai"
                                       ? "bg-purple-100 text-purple-900 border-purple-300"
                                       : "bg-slate-100 text-slate-700 border-slate-300"
                                   }`}>
-                                    {prop.source === "gemini_ai" ? "Gemini AI" : "Quy tắc NĐ 30"}
+                                    {prop.source === "chatgpt_ai" ? "ChatGPT plan" : prop.source === "gemini_ai" ? "Gemini AI" : "Quy tắc nội bộ"}
                                   </span>
 
                                   {/* Exact target block badge */}
@@ -3878,13 +4614,13 @@ export default function App() {
                           </span>
                           <span className="text-[10px] text-slate-600">
                             {(partitionReviewBlocks.length > 0 ? partitionReviewBlocks : (structuredImport?.blocks || [])).filter(b => b.role === "unclassified").length === 0
-                              ? "100% nội dung đã được phân bổ vào các vùng dữ liệu (Header, Body, Ký, Phụ lục)."
+                              ? "Mọi khối đã có vùng lưu giữ; chỉ số này không xác nhận vai trò đã đúng hoặc đề xuất AI đã được duyệt."
                               : "Các khối chưa phân loại sẽ được bảo toàn nguyên vẹn trong mục Khối chưa phân loại."}
                           </span>
                         </div>
                       </div>
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-white border border-emerald-300 text-emerald-800 shrink-0">
-                        BẢO TOÀN DỮ LIỆU
+                        ĐÃ GÁN VÙNG
                       </span>
                     </div>
 
@@ -3908,7 +4644,7 @@ export default function App() {
                         </div>
                         <div className="bg-white p-1 rounded border border-slate-200 text-center">
                           <span className="text-slate-500 block">Khối ký</span>
-                          <strong className="text-amber-900">{(partitionReviewBlocks.length > 0 ? partitionReviewBlocks : (structuredImport?.blocks || [])).filter(b => b.role === "signature").length} khối</strong>
+                          <strong className="text-amber-900">{(partitionReviewBlocks.length > 0 ? partitionReviewBlocks : (structuredImport?.blocks || [])).filter(b => b.role === "signature").length} khối riêng</strong>
                         </div>
                         <div className="bg-white p-1 rounded border border-slate-200 text-center">
                           <span className="text-slate-500 block">Phụ lục</span>
@@ -3916,7 +4652,8 @@ export default function App() {
                         </div>
                       </div>
                       <p className="text-[10px] text-slate-500 italic pt-1">
-                        * Lưu ý: "0 khối chưa phân loại" chỉ xác nhận không có dữ liệu bị bỏ rơi, không đồng nghĩa phân đoạn đã hoàn hảo. Hãy rà soát danh sách khối ở Cột 1 để đảm bảo tính đúng đắn trước khi hoàn tất.
+                        {embeddedSignatureTables.length > 0 ? `${embeddedSignatureTables.length} bảng chung Nơi nhận / người ký được giữ nguyên trong Body và nhận diện theo từng ô. ` : ""}
+                        "0 khối chưa phân loại" chỉ xác nhận mọi khối đã có vùng lưu giữ; không xác nhận phân vùng đúng hay bản xuất đạt chuẩn.
                       </p>
                     </div>
                   </div>
@@ -4050,7 +4787,7 @@ export default function App() {
                   <h3 className="font-bold text-sm text-slate-900 flex items-center gap-2">
                     {refineProposal.label}
                     <span className="text-[10px] font-semibold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full">
-                      {refineProposal.isFallback ? "Quy tắc dự phòng" : "Gemini AI tối ưu hóa"}
+                      {refineProposal.isFallback ? "Quy tắc dự phòng" : refineProposal.source === "chatgpt_ai" ? "ChatGPT plan đề xuất" : "Gemini AI đề xuất"}
                     </span>
                   </h3>
                   <p className="text-[11px] text-slate-500 mt-0.5">
@@ -4603,6 +5340,20 @@ export default function App() {
         regime={standardType}
         versions={versions}
         onRestoreVersion={restoreVersion}
+      />
+
+      <AppSettingsDrawer
+        isOpen={showAppSettings}
+        onClose={() => setShowAppSettings(false)}
+        aiProvider={partitionAiProvider}
+        onAiProviderChange={handlePartitionAiProviderChange}
+        preferencePersisted={aiApplicationSettings.preferencePersisted}
+        storageAvailable={aiApplicationSettings.storageAvailable}
+        chatGPTStatus={chatGPTStatus}
+        isChatGPTActionPending={isChatGPTActionPending}
+        onChatGPTConnect={() => void handleChatGPTConnect()}
+        onChatGPTConnectCancel={handleChatGPTConnectCancel}
+        onChatGPTDisconnect={() => void handleChatGPTDisconnect()}
       />
 
     </div>

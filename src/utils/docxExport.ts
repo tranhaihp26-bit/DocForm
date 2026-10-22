@@ -30,8 +30,11 @@ import type { TableModel } from "../shared/tableModel.ts";
 import { COMPANY_HEADER_PROFILE_ID, createCompanyHeaderTable, COMPANY_HEADER_GEOMETRY_MM } from "../canonical/nd30/companyHeader.ts";
 import { COMPANY_ND30_BODY_PROFILE } from "../canonical/nd30/companyBodyProfile.ts";
 import { COMPANY_HEADER_HD05_PROFILE_ID, createCompanyHeaderHD05Table, COMPANY_HEADER_HD05_GEOMETRY_MM } from "../canonical/hd05/companyHeaderHD05.ts";
+import { readSemanticParagraphFormatting, type SemanticFirstLineIndent, type SemanticLineSpacing } from "./semanticRuleFormatting.ts";
+import { classifyTableMarkup, type TableFormatScope } from "../server/tableRoleClassifier.ts";
 import { 
   calculateTableColumnWidthsTwip, 
+  calculateUnheadedColumnWidthsTwip,
   detectColumnSemanticType, 
   getColumnDocxAlignment,
   syncTableModelFromHtml,
@@ -359,7 +362,9 @@ export function buildDocxTableFromModel(model: TableModel, headerProfile?: strin
                     break: part.break,
                     font: useCompanyTableFormat ? COMPANY_ND30_BODY_PROFILE.table.fontFace : (r.font || "Times New Roman"),
                     size: tableFontHalfPoints ?? r.sizeHalfPt ?? 24,
-                    bold: isHeaderRow ? true : r.bold,
+                    // A repeat-header marker controls pagination, not visual emphasis.
+                    // Preserve imported run formatting unless the explicit company preset owns it.
+                    bold: useCompanyTableFormat && isHeaderRow ? true : r.bold,
                     italics: r.italic,
                     underline: r.underline ? {} : undefined,
                     color: r.color,
@@ -369,7 +374,7 @@ export function buildDocxTableFromModel(model: TableModel, headerProfile?: strin
                     break: part.break,
                     font: COMPANY_ND30_BODY_PROFILE.table.fontFace,
                     size: tableFontHalfPoints ?? 24,
-                    bold: isHeaderRow,
+                    bold: useCompanyTableFormat && isHeaderRow,
                   }));
 
               return new Paragraph({
@@ -393,7 +398,7 @@ export function buildDocxTableFromModel(model: TableModel, headerProfile?: strin
                     text: line,
                     font: useCompanyTableFormat ? COMPANY_ND30_BODY_PROFILE.table.fontFace : "Times New Roman",
                     size: tableFontHalfPoints ?? 24,
-                    bold: isHeaderRow,
+                    bold: useCompanyTableFormat && isHeaderRow,
                   })
                 ],
               })
@@ -553,19 +558,22 @@ export function convertHtmlToDocxElements(
   regime: "administrative" | "party" = "administrative",
   bodyInsetMm = 0,
   importedTables?: Record<string, TableModel>,
-  headerProfile?: string
+  headerProfile?: string,
+  scope: TableFormatScope = "body"
 ): (Paragraph | Table)[] {
   const elements: (Paragraph | Table)[] = [];
   const profile = getStyleProfile(regime, headerProfile);
   const useCompanyBodyFormat = regime === "administrative" && headerProfile === COMPANY_ND30_BODY_PROFILE.id;
   const defaultHalfPoints = profile.bodyFontSize * 2;
-  const tableHalfPoints = useCompanyBodyFormat
-    ? COMPANY_ND30_BODY_PROFILE.table.fontSizePt * 2
-    : (profile.bodyFontSize - 1) * 2;
   const companyBodyLineTwips = COMPANY_ND30_BODY_PROFILE.body.lineSpacingPt * 20;
   const companyBodyFirstLineTwips = COMPANY_ND30_BODY_PROFILE.body.firstLineIndentIn * 1440;
   const companyBodyAfterTwips = COMPANY_ND30_BODY_PROFILE.body.paragraphAfterPt * 20;
   const bodyInsetTwips = convertMillimetersToTwip(bodyInsetMm);
+  const semanticSpacing = (value?: SemanticLineSpacing): { line: number; lineRule?: typeof LineRuleType[keyof typeof LineRuleType] } | undefined => value === "18pt" ? { line: 360, lineRule: LineRuleType.EXACT }
+    : value === "19pt" ? { line: 380, lineRule: LineRuleType.EXACT }
+      : value === "1.15" ? { line: 276 } : undefined;
+  const semanticIndent = (value?: SemanticFirstLineIndent) => value === "1cm" ? 567
+    : value === "1.27cm" ? 720 : value === "0.5in" ? 720 : undefined;
 
   // Luôn làm sạch HTML trước khi parse để triệt tiêu mọi mã độc hoặc payload XSS
   const safeHtml = sanitizeHtmlForDocx(html);
@@ -583,6 +591,7 @@ export function convertHtmlToDocxElements(
       if (DANGEROUS_HTML_TAGS.has(tagName)) return;
 
       const styleAttr = child.getAttribute("style") || "";
+      const semanticFormatting = readSemanticParagraphFormatting(child.outerHTML);
       const textContent = child.textContent?.trim() || "";
       if (!textContent && tagName !== "table") return;
 
@@ -602,10 +611,18 @@ export function convertHtmlToDocxElements(
           return;
         }
 
+        const tableDecision = classifyTableMarkup(child.outerHTML, scope, regime);
+        const applyContentPreset = tableDecision.canAutoFormat;
+
         const trElements = Array.from(child.querySelectorAll("tr"));
         if (trElements.length > 0) {
-          const isHiddenTable = styleAttr.includes("border: none") || child.classList.contains("border-none");
-          const tableBorders = isHiddenTable
+          const borderAttr = child.getAttribute("border")?.trim();
+          const isHiddenTable = styleAttr.includes("border: none") || child.classList.contains("border-none") || child.getAttribute("data-borders") === "false";
+          const hasExplicitBorder = Boolean(borderAttr && !/^(?:0|none|false)$/i.test(borderAttr)) || /\bborder\s*:/i.test(styleAttr) ||
+            child.querySelector("td[style*='border'],th[style*='border']") !== null;
+          const useGridBorders = applyContentPreset || hasExplicitBorder ||
+            (tableDecision.isContentTable && tableDecision.requiresManualReview);
+          const tableBorders = isHiddenTable || !useGridBorders
             ? {
                 top: { style: BorderStyle.NONE, size: 0, color: "auto" },
                 bottom: { style: BorderStyle.NONE, size: 0, color: "auto" },
@@ -631,30 +648,47 @@ export function convertHtmlToDocxElements(
           const firstRowCells = Array.from(trElements[0].children).filter(
             c => c.tagName.toLowerCase() === "td" || c.tagName.toLowerCase() === "th"
           );
-          const headerTexts = firstRowCells.map(c => c.textContent?.trim() || "");
-          const colWidths = calculateTableColumnWidthsTwip(headerTexts, totalTableWidthTwips);
-          const colTypes = headerTexts.map(h => detectColumnSemanticType(h));
+          const useSemanticColumns = applyContentPreset && tableDecision.hasHeaderRow;
+          const headerTexts = useSemanticColumns
+            ? tableDecision.headers
+            : firstRowCells.map(c => c.textContent?.trim() || "");
+          const tableRowsText = trElements.map(row => Array.from(row.children)
+            .filter(cell => cell.tagName.toLowerCase() === "td" || cell.tagName.toLowerCase() === "th")
+            .map(cell => cell.textContent?.trim() || ""));
+          const colWidths = applyContentPreset
+            ? useSemanticColumns
+              ? calculateTableColumnWidthsTwip(headerTexts, totalTableWidthTwips)
+              : calculateUnheadedColumnWidthsTwip(tableRowsText, totalTableWidthTwips)
+            : calculateTableColumnWidthsTwip(headerTexts, totalTableWidthTwips);
+          const hasOrdinalFirstColumn = tableRowsText.length > 1 && tableRowsText.every(row => /^\s*\d{1,4}[.)]?\s*$/.test(row[0] || ""));
+          const colTypes = applyContentPreset && !useSemanticColumns
+            ? []
+            : headerTexts.map(h => detectColumnSemanticType(h));
 
           const docxRows = trElements.map((tr, index) => {
             const cellElements = Array.from(tr.children).filter(
               c => c.tagName.toLowerCase() === "td" || c.tagName.toLowerCase() === "th"
             );
-            const isHeaderRow = index === 0 && (
-              useCompanyBodyFormat ||
-              Array.from(tr.children).some(c => c.tagName.toLowerCase() === "th") ||
-              tr.parentElement?.tagName.toLowerCase() === "thead"
-            );
+            const isHeaderRow = applyContentPreset && index === 0 && tableDecision.hasHeaderRow;
 
             return new TableRow({
-              cantSplit: true,
+              cantSplit: applyContentPreset ? true : undefined,
               tableHeader: isHeaderRow,
               children: cellElements.map((cell, colIdx) => {
-                const isHeader = cell.tagName.toLowerCase() === "th" || isHeaderRow;
+                const isSemanticHeader = cell.tagName.toLowerCase() === "th" || isHeaderRow;
+                const isHeader = applyContentPreset && isSemanticHeader;
                 const colWidth = colWidths[colIdx] || Math.round(totalTableWidthTwips / (cellElements.length || 1));
-                const colType = colTypes[colIdx] || "general";
-                const cellAlignment = useCompanyBodyFormat && index === 0
-                  ? AlignmentType.CENTER
-                  : getColumnDocxAlignment(colType, isHeader);
+                const colType = applyContentPreset
+                  ? useSemanticColumns ? (colTypes[colIdx] || "general") : hasOrdinalFirstColumn && colIdx === 0 ? "stt" : "general"
+                  : (colTypes[colIdx] || "general");
+                const inlineCellAlignment = (cell.getAttribute("style") || "").match(/text-align\s*:\s*(left|center|right|justify)/i)?.[1]?.toLowerCase();
+                const cellAlignment = applyContentPreset
+                  ? getColumnDocxAlignment(colType, isHeader)
+                  : inlineCellAlignment === "center" ? AlignmentType.CENTER
+                    : inlineCellAlignment === "right" ? AlignmentType.RIGHT
+                      : inlineCellAlignment === "justify" ? AlignmentType.JUSTIFIED
+                        : getColumnDocxAlignment(colType, isSemanticHeader);
+                const tableFontHalfPoints = applyContentPreset ? 26 : (profile.bodyFontSize - 1) * 2;
 
                 // Hỗ trợ colspan và rowspan từ HTML
                 const colSpanAttr = cell.getAttribute("colspan");
@@ -671,7 +705,7 @@ export function convertHtmlToDocxElements(
                 let cellParagraphs: Paragraph[] = [];
                 if (childParagraphEls.length > 0) {
                   cellParagraphs = childParagraphEls.map((pEl, pIdx) => {
-                    const pRuns = parseInlineNodes(pEl, tableHalfPoints, { forceBold: isHeader });
+                    const pRuns = parseInlineNodes(pEl, tableFontHalfPoints, { forceBold: cell.tagName.toLowerCase() === "th" || isHeaderRow });
                     return new Paragraph({
                       alignment: cellAlignment,
                       spacing: {
@@ -681,21 +715,21 @@ export function convertHtmlToDocxElements(
                       },
                       children: pRuns.length > 0 ? pRuns : createRunsAndTabsFromText(
                         pEl.textContent?.trim() || "",
-                        tableHalfPoints,
-                        { bold: isHeader }
+                        tableFontHalfPoints,
+                        { bold: cell.tagName.toLowerCase() === "th" || isHeaderRow }
                       ),
                     });
                   });
                 } else {
-                  const cellRuns = parseInlineNodes(cell, tableHalfPoints, { forceBold: isHeader });
+                  const cellRuns = parseInlineNodes(cell, tableFontHalfPoints, { forceBold: cell.tagName.toLowerCase() === "th" || isHeaderRow });
                   cellParagraphs = [
                     new Paragraph({
                       alignment: cellAlignment,
                       spacing: { line: 240, before: 40, after: 40 },
                       children: cellRuns.length > 0 ? cellRuns : createRunsAndTabsFromText(
                         cell.textContent?.trim() || "",
-                        tableHalfPoints,
-                        { bold: isHeader }
+                        tableFontHalfPoints,
+                        { bold: cell.tagName.toLowerCase() === "th" || isHeaderRow }
                       ),
                     }),
                   ];
@@ -916,17 +950,20 @@ export function convertHtmlToDocxElements(
           ...(pIndent?.firstLine ? { firstLine: pIndent.firstLine } : {})
         };
       }
+      const ruleIndent = semanticIndent(semanticFormatting.firstLineIndent);
+      if (ruleIndent !== undefined) pIndent = { ...(pIndent ?? {}), firstLine: ruleIndent };
+      const ruleSpacing = semanticSpacing(semanticFormatting.lineSpacing);
 
       elements.push(
         new Paragraph({
           alignment: pAlignment,
           indent: pIndent,
           keepNext: pKeepNext,
-          spacing: useCompanyBodyFormat && !isDividerOnly
+          spacing: ruleSpacing ?? (useCompanyBodyFormat && !isDividerOnly
             ? { before: pBefore, after: pAfter, line: companyBodyLineTwips, lineRule: LineRuleType.EXACT }
             : regime === "party"
               ? { before: pBefore, after: pAfter, line: 360, lineRule: LineRuleType.EXACT }
-              : { before: pBefore, after: pAfter, line: 276 },
+              : { before: pBefore, after: pAfter, line: 276 }),
           children: runs.length > 0 ? runs : createRunsAndTabsFromText(
             textContent,
             defaultHalfPoints,
@@ -961,34 +998,78 @@ export function convertHtmlToDocxElements(
         continue;
       }
 
+      const tableDecision = classifyTableMarkup(trimmed, scope, regime);
+      const applyContentPreset = tableDecision.canAutoFormat;
+      const tableAttrs = trimmed.match(/^<table\b([^>]*)>/i)?.[1] || "";
+      const tableStyle = tableAttrs.match(/\bstyle\s*=\s*(["'])([\s\S]*?)\1/i)?.[2] || "";
+      const isHiddenTable = /border\s*:\s*none/i.test(tableStyle) || /\bborder-none\b/i.test(tableAttrs) || /data-borders=["']false["']/i.test(tableAttrs);
+      const borderAttr = tableAttrs.match(/\bborder\s*=\s*(["']?)([^"'\s>]+)\1/i)?.[2];
+      const hasExplicitBorder = /\bborder\s*:/i.test(tableStyle) || Boolean(borderAttr && !/^(?:0|none|false)$/i.test(borderAttr)) || /\bstyle\s*=["'][^"']*border\s*:/i.test(trimmed);
+      const useGridBorders = !isHiddenTable && (
+        applyContentPreset || hasExplicitBorder || (tableDecision.isContentTable && tableDecision.requiresManualReview)
+      );
+      const tableBorders = useGridBorders ? {
+        top: { style: BorderStyle.SINGLE, size: 4, color: "000000" },
+        bottom: { style: BorderStyle.SINGLE, size: 4, color: "000000" },
+        left: { style: BorderStyle.SINGLE, size: 4, color: "000000" },
+        right: { style: BorderStyle.SINGLE, size: 4, color: "000000" },
+        insideHorizontal: { style: BorderStyle.SINGLE, size: 4, color: "000000" },
+        insideVertical: { style: BorderStyle.SINGLE, size: 4, color: "000000" },
+      } : {
+        top: { style: BorderStyle.NONE, size: 0, color: "auto" },
+        bottom: { style: BorderStyle.NONE, size: 0, color: "auto" },
+        left: { style: BorderStyle.NONE, size: 0, color: "auto" },
+        right: { style: BorderStyle.NONE, size: 0, color: "auto" },
+        insideHorizontal: { style: BorderStyle.NONE, size: 0, color: "auto" },
+        insideVertical: { style: BorderStyle.NONE, size: 0, color: "auto" },
+      };
+
       const rowMatches = trimmed.match(/<tr[\s\S]*?<\/tr>/gi) || [];
       if (rowMatches.length > 0) {
         const totalTableWidthTwips = bodyInsetMm
           ? convertMillimetersToTwip(COMPANY_HEADER_GEOMETRY_MM.bodyWidth)
           : convertMillimetersToTwip(165);
 
-        // Đọc header hàng 0
+        // Dùng header ngữ nghĩa nếu bảng nội dung có header; bảng khác giữ cách căn theo markup.
         const firstRowCells = rowMatches[0]?.match(/<t[dh][\s\S]*?<\/t[dh]>/gi) || [];
-        const headerTexts = firstRowCells.map(c => extractHtmlTextWithBreaks(c));
-        const colWidths = calculateTableColumnWidthsTwip(headerTexts, totalTableWidthTwips);
-        const colTypes = headerTexts.map(h => detectColumnSemanticType(h));
+        const useSemanticColumns = applyContentPreset && tableDecision.hasHeaderRow;
+        const headerTexts = useSemanticColumns
+          ? tableDecision.headers
+          : firstRowCells.map(c => extractHtmlTextWithBreaks(c));
+        const tableRowsText = rowMatches.map(row => (row.match(/<t[dh][\s\S]*?<\/t[dh]>/gi) || []).map(extractHtmlTextWithBreaks));
+        const colWidths = applyContentPreset
+          ? useSemanticColumns
+            ? calculateTableColumnWidthsTwip(headerTexts, totalTableWidthTwips)
+            : calculateUnheadedColumnWidthsTwip(tableRowsText, totalTableWidthTwips)
+          : calculateTableColumnWidthsTwip(headerTexts, totalTableWidthTwips);
+        const hasOrdinalFirstColumn = tableRowsText.length > 1 && tableRowsText.every(row => /^\s*\d{1,4}[.)]?\s*$/.test(row[0] || ""));
+        const colTypes = applyContentPreset && !useSemanticColumns
+          ? []
+          : headerTexts.map(h => detectColumnSemanticType(h));
 
         const docxRows = rowMatches.map((trHtml, rowIndex) => {
           const cellMatches = trHtml.match(/<t[dh][\s\S]*?<\/t[dh]>/gi) || [];
-          const isThRow = rowIndex === 0 && (
-            useCompanyBodyFormat || trHtml.toLowerCase().includes("<th")
-          );
+          const isThRow = applyContentPreset && rowIndex === 0 && tableDecision.hasHeaderRow;
 
           return new TableRow({
-            cantSplit: true,
+            cantSplit: applyContentPreset ? true : undefined,
             tableHeader: isThRow,
             children: cellMatches.map((cellHtml, colIdx) => {
-              const isTh = cellHtml.toLowerCase().startsWith("<th") || isThRow;
+              const explicitTh = cellHtml.toLowerCase().startsWith("<th");
+              const isTh = applyContentPreset && (explicitTh || isThRow);
               const colWidth = colWidths[colIdx] || Math.round(totalTableWidthTwips / (cellMatches.length || 1));
-              const colType = colTypes[colIdx] || "general";
-              const alignment = useCompanyBodyFormat && rowIndex === 0
-                ? AlignmentType.CENTER
-                : getColumnDocxAlignment(colType, isTh);
+              const colType = useSemanticColumns
+                ? (colTypes[colIdx] || "general")
+                : applyContentPreset && hasOrdinalFirstColumn && colIdx === 0 ? "stt" : (colTypes[colIdx] || "general");
+              const cellStyle = cellHtml.match(/\bstyle\s*=\s*(["'])([\s\S]*?)\1/i)?.[2] || "";
+              const inlineAlignment = cellStyle.match(/text-align\s*:\s*(left|center|right|justify)/i)?.[1]?.toLowerCase();
+              const alignment = applyContentPreset
+                ? getColumnDocxAlignment(colType, isTh)
+                : inlineAlignment === "center" ? AlignmentType.CENTER
+                  : inlineAlignment === "right" ? AlignmentType.RIGHT
+                    : inlineAlignment === "justify" ? AlignmentType.JUSTIFIED
+                      : getColumnDocxAlignment(colType, explicitTh);
+              const tableFontHalfPoints = applyContentPreset ? 26 : (profile.bodyFontSize - 1) * 2;
 
               // 1. Kiểm tra colspan & rowspan
               const colSpanMatch = cellHtml.match(/colspan=["']?(\d+)["']?/i);
@@ -1010,8 +1091,8 @@ export function convertHtmlToDocxElements(
                       before: pIdx === 0 ? 30 : 20,
                       after: pIdx === pMatches.length - 1 ? 30 : 20,
                     },
-                    children: createRunsAndTabsFromText(pText, tableHalfPoints, {
-                      bold: isTh,
+                    children: createRunsAndTabsFromText(pText, tableFontHalfPoints, {
+                      bold: explicitTh || isThRow,
                     }),
                   });
                 });
@@ -1021,8 +1102,8 @@ export function convertHtmlToDocxElements(
                   new Paragraph({
                     alignment,
                     spacing: { line: 240, before: 40, after: 40 },
-                    children: createRunsAndTabsFromText(cellText, tableHalfPoints, {
-                      bold: isTh,
+                    children: createRunsAndTabsFromText(cellText, tableFontHalfPoints, {
+                      bold: explicitTh || isThRow,
                     }),
                   }),
                 ];
@@ -1033,12 +1114,12 @@ export function convertHtmlToDocxElements(
                 columnSpan: columnSpan && columnSpan > 1 ? columnSpan : undefined,
                 rowSpan: rowSpan && rowSpan > 1 ? rowSpan : undefined,
                 margins: { top: 120, bottom: 120, left: 160, right: 160 },
-                borders: {
+                borders: useGridBorders ? {
                   top: { style: BorderStyle.SINGLE, size: 4, color: "000000" },
                   bottom: { style: BorderStyle.SINGLE, size: 4, color: "000000" },
                   left: { style: BorderStyle.SINGLE, size: 4, color: "000000" },
                   right: { style: BorderStyle.SINGLE, size: 4, color: "000000" },
-                },
+                } : INVISIBLE_CELL_BORDER,
                 children: cellParagraphs,
               });
             }),
@@ -1049,6 +1130,7 @@ export function convertHtmlToDocxElements(
           new Table({
             width: { size: totalTableWidthTwips, type: WidthType.DXA },
             columnWidths: colWidths,
+            borders: tableBorders,
             rows: docxRows,
           })
         );
@@ -1083,6 +1165,7 @@ export function convertHtmlToDocxElements(
     // 3. Xử lý Đoạn văn
     const text = extractHtmlTextWithBreaks(trimmed);
     if (text) {
+      const semanticFormatting = readSemanticParagraphFormatting(trimmed);
       const isDividerOnly = text.length >= 3 && /^[-—–_.\s]+$/.test(text);
       const isCenteredBlock = /text-align\s*:\s*center/i.test(trimmed) || isDividerOnly;
       const isRightBlock = /text-align\s*:\s*right/i.test(trimmed);
@@ -1124,17 +1207,20 @@ export function convertHtmlToDocxElements(
           ...(pIndent?.firstLine ? { firstLine: pIndent.firstLine } : {})
         };
       }
+      const ruleIndent = semanticIndent(semanticFormatting.firstLineIndent);
+      if (ruleIndent !== undefined) pIndent = { ...(pIndent ?? {}), firstLine: ruleIndent };
+      const ruleSpacing = semanticSpacing(semanticFormatting.lineSpacing);
 
       elements.push(
         new Paragraph({
           alignment: pAlignment,
           indent: pIndent,
           keepNext: pKeepNext,
-          spacing: useCompanyBodyFormat && !isDividerOnly
+          spacing: ruleSpacing ?? (useCompanyBodyFormat && !isDividerOnly
             ? { before: pBefore, after: pAfter, line: companyBodyLineTwips, lineRule: LineRuleType.EXACT }
             : regime === "party"
               ? { before: pBefore, after: pAfter, line: 360, lineRule: LineRuleType.EXACT }
-              : { before: pBefore, after: pAfter, line: 276 },
+              : { before: pBefore, after: pAfter, line: 276 }),
           children: createRunsAndTabsFromText(text, defaultHalfPoints, {
             bold: isArticleHeader || isTableTitle,
             italics: isLegalBasis,
@@ -1242,7 +1328,10 @@ export interface HeaderRenderPlan{renderSystemHeader:boolean;renderType:boolean;
 export function getHeaderRenderPlan(data:DocumentFormatType):HeaderRenderPlan{
   const isParty=data.regime==="party",company=data.headerProfile===COMPANY_HEADER_PROFILE_ID||data.headerProfile===COMPANY_HEADER_HD05_PROFILE_ID;
   const isCongVanParty=isParty&&(data.documentType??"").trim().toUpperCase()==="CÔNG VĂN";
-  const isCongVanState=!isParty&&((data.documentType??"").trim().toUpperCase()==="CÔNG VĂN"||/^(?:V\/v|Về việc)\s+/i.test((data.subject??"").trim()));
+  const normalizedDocumentType=(data.documentType??"").trim().toLocaleUpperCase("vi-VN");
+  // A subject beginning with "V/v" is only a fallback signal when the type is
+  // absent. It must not suppress an explicitly selected type such as QUYẾT ĐỊNH.
+  const isCongVanState=!isParty&&(normalizedDocumentType==="CÔNG VĂN"||(!normalizedDocumentType&&/^(?:V\/v|Về việc)\s+/i.test((data.subject??"").trim())));
   const hasEmbeddedHeader=detectEmbeddedHeader(data.bodyHtml??"");
   const hasOfficeReference=Boolean(data.orgHeader2&&!isPlaceholderValue(data.orgHeader2)||data.referenceNumber&&!isPlaceholderValue(data.referenceNumber));
   const renderSystemHeader=!hasEmbeddedHeader&&(company||hasOfficeReference);
@@ -1276,7 +1365,7 @@ export function detectEmbeddedSignature(bodyHtml: string): boolean {
     const firstRowCells = firstRow.match(/<t[dh]\b[^>]*>[\s\S]*?<\/t[dh]>/gi) || [];
     const cellTexts = firstRowCells.map(c => c.replace(/<[^>]+>/g, "").trim());
 
-    const signerRoleRegex = /\b(THƯ KÝ|TRƯỞNG ĐOÀN|CHỦ TỌA|CHỦ TRÌ|NGƯỜI LẬP|ĐẠI DIỆN|BÊN A|BÊN B|BÊN C|CÁN BỘ|GIÁM ĐỐC|TỔNG GIÁM ĐỐC|CHỦ TỊCH|BÍ THƯ)\b/i;
+    const signerRoleRegex = /\b(THƯ KÝ|TRƯỞNG ĐOÀN|CHỦ TỌA|CHỦ TRÌ|NGƯỜI LẬP|ĐẠI DIỆN|BÊN A|BÊN B|BÊN C|CÁN BỘ|GIÁM ĐỐC|TỔNG GIÁM ĐỐC|CHỦ TỊCH|BÍ THƯ|PHỤ TRÁCH PHÒNG)\b/i;
     const signerCount = cellTexts.filter(t => signerRoleRegex.test(t)).length;
     const hasSigNote = /\(k[ýí]\s*(?:,|và)?\s*(?:ghi rõ|đóng dấu|chữ ký)/i.test(rawText);
 
@@ -1403,7 +1492,8 @@ export function generateND30DocxDocument(data: DocumentFormatType): Document {
     data.regime,
     useCompanyND30Header ? COMPANY_HEADER_GEOMETRY_MM.bodyInset : 0,
     data.importedTables,
-    data.headerProfile
+    data.headerProfile,
+    "body"
   );
 
   const nationalHeader1Text = isParty
@@ -1476,7 +1566,7 @@ export function generateND30DocxDocument(data: DocumentFormatType): Document {
           ],
         }),
       ] : []),
-      ...convertHtmlToDocxElements(app.html || "", data.regime, 0, data.importedTables, data.headerProfile),
+      ...convertHtmlToDocxElements(app.html || "", data.regime, 0, data.importedTables, data.headerProfile, "appendix"),
       candidateSectionMarker(`appendix:${app.id}:end`),
     ]),
   }] : [];
@@ -1493,7 +1583,7 @@ export function generateND30DocxDocument(data: DocumentFormatType): Document {
             const fallback = `<p>${(block.text || "[Khối không có văn bản]").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</p>`;
             return [
               new Paragraph({ text: `Khối #${block.index + 1} (${block.kind})` }),
-              ...convertHtmlToDocxElements(block.html || fallback, data.regime, 0, data.importedTables),
+              ...convertHtmlToDocxElements(block.html || fallback, data.regime, 0, data.importedTables, data.headerProfile, "other"),
             ];
           }),
         ]

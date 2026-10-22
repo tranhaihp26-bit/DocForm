@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import DOMPurify from 'dompurify';
 import { AlignCenter, AlignJustify, AlignLeft, AlignRight, AlertCircle, Bold, CheckCircle2, HelpCircle, Italic, List, ListOrdered, Maximize2, Minimize2, Redo2, Sparkles, Underline, Undo2 } from 'lucide-react';
 import { projectWorkspace } from '../utils/workspaceProjection.ts';
@@ -6,7 +7,7 @@ import { assessTableCellCapabilities, workspaceNodeTableId, type EditorSafety } 
 import { canEnterWorkspaceStep, type EditableNode, type WorkspaceSnapshot } from '../utils/workspaceState.ts';
 import type { WorkspaceAction } from '../utils/workspaceTransactions.ts';
 import type { TableModel } from '../shared/tableModel.ts';
-import type { DocumentState, ND30ComplianceReport } from '../shared/schemas/document.schema.ts';
+import { isPlaceholderValue, type DocumentState, type ND30ComplianceReport } from '../shared/schemas/document.schema.ts';
 import { WorkspaceCanvasEditor } from './ND30Editor.tsx';
 import { useAccessibleDialog } from '../utils/useAccessibleDialog.ts';
 import { BUILT_IN_ISSUER_PROFILES, loadIssuerProfiles, saveIssuerProfiles, type IssuerProfile } from '../utils/issuerProfiles.ts';
@@ -23,7 +24,7 @@ const labels: Record<string, string> = {
 };
 
 type ProjectedNode = EditableNode & { safety: EditorSafety; editable: boolean };
-type Canvas = { id: string; title: string; nodes: ProjectedNode[] };
+type Canvas = { id: string; title: string; accessibilityLabel: string; nodes: ProjectedNode[] };
 
 function capabilityMessage(reason: string): string {
   if (reason === 'table_source_evidence_unavailable') return 'Thiếu bằng chứng nguồn đủ để mở sửa ô này.';
@@ -41,9 +42,14 @@ function groupStatus(group: ReturnType<typeof projectWorkspace>['groups'][number
     if (seal?.status === 'unverified') return { label: 'Chưa xác minh', tone: 'review', Icon: HelpCircle };
     return { label: 'Chưa có bằng chứng', tone: 'quiet', Icon: HelpCircle };
   }
-  const hasContent = group.fields.some(field => field.value.trim().length > 0) || group.sourceBlockIds.length > 0;
-  return hasContent
-    ? { label: 'Có dữ liệu', tone: 'evidence', Icon: CheckCircle2 }
+  const fieldsToCheck = group.id === 1 ? group.fields.filter(field => field.key === 'nationalHeader1')
+    : group.id === 2 ? group.fields.filter(field => field.key === 'orgHeader2') : group.fields;
+  const complete = fieldsToCheck.length > 0 && fieldsToCheck.every(field => !isPlaceholderValue(field.value));
+  if (complete) return { label: 'Có dữ liệu', tone: 'evidence', Icon: CheckCircle2 };
+  if (group.id === 7) return { label: 'Chưa xác định người ký', tone: 'quiet', Icon: HelpCircle };
+  const hasSourceOrDraft = group.sourceBlockIds.length > 0 || group.fields.some(field => field.value.trim().length > 0);
+  return hasSourceOrDraft
+    ? { label: 'Cần bổ sung', tone: 'review', Icon: AlertCircle }
     : { label: 'Chưa có dữ liệu', tone: 'quiet', Icon: AlertCircle };
 }
 
@@ -111,24 +117,15 @@ function ComponentCard({
   const [profileNotice, setProfileNotice] = useState('');
   const [confirmDeleteProfile, setConfirmDeleteProfile] = useState(false);
   const [profileManagerOpen, setProfileManagerOpen] = useState(false);
+  const [headerChoiceDraft, setHeaderChoiceDraft] = useState<'state' | 'party' | 'none'>('state');
   const previewButton = useRef<HTMLButtonElement | null>(null);
-  const editorPanel = useRef<HTMLDivElement | null>(null);
-  const wasEditing = useRef(false);
+  const editDialog = useAccessibleDialog(editing, () => setEditing(false), { initialFocusSelector: 'input, textarea' });
   const status = group.id === 1 && omitNationalHeader
     ? { label: 'Đã chọn không dùng', tone: 'evidence', Icon: CheckCircle2 }
     : groupStatus(group, seal);
   const hasEditableFields = group.id === 1 || group.id === 2 || group.fields.some(field => field.editable);
   const availableProfiles = [...BUILT_IN_ISSUER_PROFILES, ...issuerProfiles].filter(profile => profile.regime === standardType);
   const StatusIcon = status.Icon;
-  useEffect(() => {
-    if (editing) {
-      wasEditing.current = true;
-      editorPanel.current?.querySelector<HTMLElement>('select, input, textarea')?.focus();
-    } else if (wasEditing.current) {
-      previewButton.current?.focus();
-      wasEditing.current = false;
-    }
-  }, [editing]);
   const beginEditing = () => {
     const nextDrafts: Partial<Record<keyof DocumentState, string>> = {};
     for (const field of group.fields) nextDrafts[field.key] = field.value;
@@ -136,6 +133,7 @@ function ComponentCard({
     const dateParts = parseLocationAndDate(group.fields.find(field => field.key === 'locationAndDate')?.value ?? '');
     setLocationDraft(dateParts.location);
     setDateDraft(dateParts.date);
+    setHeaderChoiceDraft(omitNationalHeader ? 'none' : standardType);
     if (group.id === 2) {
       const org1 = String(nextDrafts.orgHeader1 ?? '');
       const org2 = String(nextDrafts.orgHeader2 ?? '');
@@ -149,7 +147,21 @@ function ComponentCard({
     setEditing(true);
   };
   const saveAndClose = () => {
-    if (group.id === 1) { setEditing(false); return; }
+    if (group.id === 1) {
+      if (headerChoiceDraft === (omitNationalHeader ? 'none' : standardType)) {
+        setEditing(false);
+        return;
+      }
+      if (headerChoiceDraft === 'none') {
+        if (onAction({ type: 'setNationalHeaderOmitted', omitted: true })) setEditing(false);
+      } else if (headerChoiceDraft === standardType) {
+        if (onAction({ type: 'setNationalHeaderOmitted', omitted: false })) setEditing(false);
+      } else {
+        setEditing(false);
+        onRequestRegimeSwitch(headerChoiceDraft);
+      }
+      return;
+    }
     if (group.id === 2) {
       const orgHeader1 = String(drafts.orgHeader1 ?? group.fields.find(field => field.key === 'orgHeader1')?.value ?? '');
       const orgHeader2 = String(drafts.orgHeader2 ?? group.fields.find(field => field.key === 'orgHeader2')?.value ?? '');
@@ -184,7 +196,11 @@ function ComponentCard({
     setProfileName(selected?.builtIn ? '' : selected?.name ?? '');
     setConfirmDeleteProfile(false);
     setProfileNotice('');
-    if (selected) setDrafts(current => ({ ...current, orgHeader1: selected.orgHeader1, orgHeader2: selected.orgHeader2 }));
+    setDrafts(current => ({
+      ...current,
+      orgHeader1: selected?.orgHeader1 ?? group.fields.find(field => field.key === 'orgHeader1')?.value ?? '',
+      orgHeader2: selected?.orgHeader2 ?? group.fields.find(field => field.key === 'orgHeader2')?.value ?? '',
+    }));
   };
   const saveIssuerProfile = () => {
     const name = profileName.trim();
@@ -242,15 +258,9 @@ function ComponentCard({
     </span>;
   const fieldEditor = group.id === 1 ? <fieldset className="df-ws-header-choice">
     <legend>Tiêu đề thể thức</legend>
-    <label><input type="radio" name="national-header-choice" checked={!omitNationalHeader && standardType === 'state'} onChange={() => {
-      if (standardType === 'state') onAction({ type: 'setNationalHeaderOmitted', omitted: false });
-      else onRequestRegimeSwitch('state');
-    }} /> NĐ30 · Quốc hiệu và tiêu ngữ</label>
-    <label><input type="radio" name="national-header-choice" checked={!omitNationalHeader && standardType === 'party'} onChange={() => {
-      if (standardType === 'party') onAction({ type: 'setNationalHeaderOmitted', omitted: false });
-      else onRequestRegimeSwitch('party');
-    }} /> HD05 · Đảng Cộng sản Việt Nam</label>
-    <label><input type="radio" name="national-header-choice" checked={Boolean(omitNationalHeader)} onChange={() => onAction({ type: 'setNationalHeaderOmitted', omitted: true })} /> Không dùng · để trống vị trí này</label>
+    <label><input type="radio" name="national-header-choice" checked={headerChoiceDraft === 'state'} onChange={() => setHeaderChoiceDraft('state')} /> NĐ30 · Quốc hiệu và tiêu ngữ</label>
+    <label><input type="radio" name="national-header-choice" checked={headerChoiceDraft === 'party'} onChange={() => setHeaderChoiceDraft('party')} /> HD05 · Đảng Cộng sản Việt Nam</label>
+    <label><input type="radio" name="national-header-choice" checked={headerChoiceDraft === 'none'} onChange={() => setHeaderChoiceDraft('none')} /> Không dùng · để trống vị trí này</label>
   </fieldset> : group.fields.map(field => {
     if (field.key === 'locationAndDate' && field.editable) return <div className="df-ws-date-fields" key={field.key}>
       <label>
@@ -258,7 +268,7 @@ function ComponentCard({
         <input aria-label="Địa danh" data-workspace-field="location" type="text" value={locationDraft} onChange={event => setLocationDraft(event.target.value)} placeholder="Ví dụ: Hải Phòng" />
       </label>
       <label>
-        <span>Ngày tháng (có thể để trống)</span>
+        <span>Ngày tháng (có thể để trống khi soạn)</span>
         <input aria-label="Chọn ngày tháng" data-workspace-field="date" type="date" value={dateDraft} onChange={event => setDateDraft(event.target.value)} />
       </label>
       <p className="df-ws-date-preview">{composeLocationAndDate(locationDraft, dateDraft) || 'ngày ...... tháng ...... năm ......'}</p>
@@ -277,26 +287,45 @@ function ComponentCard({
     </label>;
   });
 
-  return <article id={`df-step2-group-${group.id}`} className={`df-ws-component-card${editing ? ' is-editing' : ''}`} data-workspace-group={group.id} data-office-letter={group.id === 5 && isOfficialLetter ? 'true' : undefined}>
-    {hasEditableFields && !editing
-      ? <button ref={previewButton} type="button" className="df-ws-component-preview" onClick={beginEditing}>
+  return <>
+    <article id={`df-step2-group-${group.id}`} className="df-ws-component-card" data-workspace-group={group.id} data-office-letter={group.id === 5 && isOfficialLetter ? 'true' : undefined}>
+    {hasEditableFields
+      ? <button ref={previewButton} type="button" className="df-ws-component-preview" aria-haspopup="dialog" onClick={beginEditing}>
         <span className="df-ws-component-heading"><span className="df-ws-component-label">{title}{statusIcon}</span></span>
         {values}
       </button>
       : <header className="df-ws-component-heading">
         <div className="df-ws-component-label"><h3><span>{String(group.id).padStart(2, '0')}.</span> {group.name.replace(/^\d+\.\s*/, '')}</h3>{statusIcon}</div>
-        {editing && <button type="button" className="df-ws-save-close" onClick={saveAndClose}>Lưu &amp; đóng</button>}
       </header>}
-    {!(hasEditableFields && !editing) && !(group.id === 2 && editing) && values}
+    {!hasEditableFields && values}
     {group.cellReferences.length > 0 && <p className="df-ws-component-note">{group.cellReferences.length} ô bảng nguồn được tham chiếu.</p>}
-    {hasEditableFields && editing && <div ref={editorPanel} className="df-ws-field-editor" id={`df-ws-field-editor-${group.id}`}>
-      {group.id === 2 && <div className="df-ws-profile-bar">
-        <label><span>Profile cơ quan</span><select aria-label="Chọn profile cơ quan" value={selectedProfileId} onChange={event => selectIssuerProfile(event.target.value)}>
-          <option value="">Thông tin hiện tại / profile mới</option>
-          {availableProfiles.map(profile => <option key={profile.id} value={profile.id}>{profile.name}{profile.builtIn ? ' · mẫu có sẵn' : ''}</option>)}
-        </select></label>
-        <button type="button" aria-expanded={profileManagerOpen} aria-controls="df-ws-profile-manager-2" onClick={() => setProfileManagerOpen(value => !value)}>{profileManagerOpen ? 'Ẩn quản lý' : 'Quản lý'}</button>
-      </div>}
+    </article>
+    {editing && createPortal(<div className="df-ws-edit-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setEditing(false); }}>
+      <section ref={editDialog} role="dialog" aria-modal="true" aria-labelledby={`df-ws-edit-title-${group.id}`} className="df-ws-edit-dialog">
+        <header className="df-ws-edit-dialog-header">
+          <h2 id={`df-ws-edit-title-${group.id}`}>{String(group.id).padStart(2, '0')}. {group.name.replace(/^\d+\.\s*/, '')}</h2>
+          <button type="button" aria-label="Đóng hộp thoại" onClick={() => setEditing(false)}>×</button>
+        </header>
+        <div className="df-ws-edit-dialog-body">
+        <div className="df-ws-field-editor" id={`df-ws-field-editor-${group.id}`}>
+      {group.id === 2 && <fieldset className="df-ws-profile-picker">
+        <legend>Profile cơ quan</legend>
+        <label className={`df-ws-profile-choice${!selectedProfileId ? ' is-selected' : ''}`}>
+          <input type="radio" name="issuer-profile-choice" checked={!selectedProfileId} onChange={() => selectIssuerProfile('')} />
+          <span className="df-ws-profile-choice-content"><strong>Thông tin hiện tại / profile mới</strong>
+            <span><b>Cơ quan cấp trên</b>{String(drafts.orgHeader1 ?? '').trim() || 'Để trống'}</span>
+            <span><b>Cơ quan ban hành</b>{String(drafts.orgHeader2 ?? '').trim() || 'Để trống'}</span>
+          </span>
+        </label>
+        {availableProfiles.map(profile => <label key={profile.id} className={`df-ws-profile-choice${selectedProfileId === profile.id ? ' is-selected' : ''}`}>
+          <input type="radio" name="issuer-profile-choice" checked={selectedProfileId === profile.id} onChange={() => selectIssuerProfile(profile.id)} />
+          <span className="df-ws-profile-choice-content"><strong>{profile.name}{profile.builtIn ? ' · mẫu có sẵn' : ''}</strong>
+            <span><b>Cơ quan cấp trên</b>{profile.orgHeader1.trim() || 'Để trống'}</span>
+            <span><b>Cơ quan ban hành</b>{profile.orgHeader2.trim() || 'Để trống'}</span>
+          </span>
+        </label>)}
+        <button type="button" className="df-ws-profile-manage-toggle" aria-expanded={profileManagerOpen} aria-controls="df-ws-profile-manager-2" onClick={() => setProfileManagerOpen(value => !value)}>{profileManagerOpen ? 'Ẩn quản lý profile' : 'Quản lý profile'}</button>
+      </fieldset>}
       {fieldEditor}
       {group.id === 2 && profileManagerOpen && <div className="df-ws-profile-manager" id="df-ws-profile-manager-2">
         <div className="df-ws-profile-actions">
@@ -312,13 +341,20 @@ function ComponentCard({
         {availableProfiles.find(profile => profile.id === selectedProfileId)?.builtIn && <p>Profile mẫu chỉ đọc. Chọn “Thêm profile” để lưu bản tùy chỉnh.</p>}
       </div>}
       {group.id === 2 && profileNotice && <p className="df-ws-profile-notice" role="status">{profileNotice}</p>}
-    </div>}
-  </article>;
+        </div>
+        </div>
+        <footer className="df-ws-edit-dialog-footer">
+          <button type="button" onClick={() => setEditing(false)}>Hủy</button>
+          <button type="button" className="df-ws-save-close" onClick={saveAndClose}>Lưu &amp; đóng</button>
+        </footer>
+      </section>
+    </div>, document.body)}
+  </>;
 }
 
 export function WorkspaceEditor({
   snapshot, active, initialCanvasId, onCanvasSelected, onAction, onRequestRegimeSwitch, onPartition, onRefine,
-  refining, canContinue, complianceReport, onOpenCompliance,
+  refining, aiProvider = 'gemini', chatGPTReady = true, onAiSettings = () => {}, canContinue, complianceReport, onOpenCompliance,
 }: {
   snapshot: WorkspaceSnapshot;
   active: boolean;
@@ -329,6 +365,9 @@ export function WorkspaceEditor({
   onPartition: () => void;
   onRefine: (a: 'proofread' | 'formalize', nodeId?: string) => void;
   refining: boolean;
+  aiProvider?: 'gemini' | 'chatgpt';
+  chatGPTReady?: boolean;
+  onAiSettings?: () => void;
   canContinue: boolean;
   complianceReport: ND30ComplianceReport | null;
   onOpenCompliance: () => void;
@@ -361,8 +400,11 @@ export function WorkspaceEditor({
   const dialog = useAccessibleDialog(Boolean(removeId), () => setRemoveId(null));
   const selected = activeCanvas === 'body' || projection.appendices.some(appendix => appendix.id === activeCanvas) ? activeCanvas : 'body';
   const canvases: Canvas[] = [
-    { id: 'body', title: 'Nội dung văn bản', nodes: projection.body.nodes as ProjectedNode[] },
-    ...projection.appendices.map(appendix => ({ id: appendix.id, title: appendix.title || 'Phụ lục', nodes: appendix.nodes as ProjectedNode[] })),
+    { id: 'body', title: 'Nội dung văn bản', accessibilityLabel: 'Nội dung văn bản', nodes: projection.body.nodes as ProjectedNode[] },
+    ...projection.appendices.map((appendix, index) => {
+      const title = appendix.title?.trim() || 'Chưa đặt tên';
+      return { id: appendix.id, title: appendix.title || 'Phụ lục', accessibilityLabel: `Nội dung phụ lục ${index + 1}: ${title}`, nodes: appendix.nodes as ProjectedNode[] };
+    }),
   ];
   const selectedCanvas = canvases.find(canvas => canvas.id === selected)!;
   const activeBodyNode = selected === 'body'
@@ -389,7 +431,7 @@ export function WorkspaceEditor({
   const tableModel = (id: string): TableModel | undefined => snapshot.doc.importedTables?.[id]
     ?? snapshot.workspace.source?.blocks.find(block => (block.tableModel?.tableId ?? block.id) === id)?.tableModel
     ?? snapshot.reviewBlocks.find(block => (block.tableModel?.tableId ?? block.id) === id)?.tableModel;
-  const renderNode = (node: ProjectedNode) => {
+  const renderNode = (node: ProjectedNode, canvasLabel: string) => {
     const tableId = workspaceNodeTableId(node.html);
     if (tableId) {
       const model = tableModel(tableId), cells = assessTableCellCapabilities(snapshot, tableId);
@@ -415,7 +457,7 @@ export function WorkspaceEditor({
     </article>;
     return <article key={node.editableNodeId} data-workspace-node={node.editableNodeId} data-workspace-node-capability={node.editable ? 'editable' : 'readonly'} data-node-container={node.container} className="df-ws-node">
       <WorkspaceCanvasEditor
-        id={node.editableNodeId}
+        ariaLabel={canvasLabel}
         content={node.html}
         safety={node.safety}
         onChange={html => onAction({ type: 'editNode', id: node.editableNodeId, html })}
@@ -510,7 +552,7 @@ export function WorkspaceEditor({
             <button type="button" onClick={() => onAction({ type: 'moveAppendix', id: canvas.id, index: 0 })}>Đưa lên đầu</button>
             <button type="button" onClick={() => setRemoveId(canvas.id)}>Xóa phụ lục</button>
           </div>}
-          <div className="df-ws-mixed-surface">{canvas.nodes.map(renderNode)}</div>
+          <div className="df-ws-mixed-surface">{canvas.nodes.map(node => renderNode(node, canvas.accessibilityLabel))}</div>
         </section>)}
       </section>
 
@@ -579,11 +621,13 @@ export function WorkspaceEditor({
           ? <div className="df-ws-ai-target"><strong>{activeBodyNode.editableNodeId}</strong><p>{selectedText.slice(0, 180) || 'Đoạn chưa có chữ.'}{selectedText.length > 180 ? '…' : ''}</p></div>
           : <p className="df-ws-ai-target">{selected === 'body' ? 'Chọn một đoạn có thể sửa trong Body để bắt đầu.' : 'AI hiện chỉ hỗ trợ đoạn trong Body; phụ lục và ô bảng không được gửi.'}</p>}
         <h3 className="df-ws-rail-section-title">Công cụ AI hỗ trợ</h3>
+        <p className="df-ws-ai-approval">Khi nhấn công cụ, nội dung đoạn đang chọn được gửi tới {aiProvider === 'chatgpt' ? 'ChatGPT plan' : 'Gemini'}. Đề xuất chỉ áp dụng sau khi bạn duyệt.</p>
+        {aiProvider === 'chatgpt' && !chatGPTReady && <button type="button" className="df-ws-check-details" onClick={onAiSettings}>Mở cài đặt chung để kết nối ChatGPT plan <span aria-hidden="true">→</span></button>}
         <div className="df-ws-ai-actions">
-          <button type="button" data-ai-action="proofread" data-ai-target-node={activeBodyNode?.editableNodeId ?? ''} disabled={selected !== 'body' || refining || !activeBodyNode} onClick={() => activeBodyNode && onRefine('proofread', activeBodyNode.editableNodeId)}>
+          <button type="button" data-ai-action="proofread" data-ai-target-node={activeBodyNode?.editableNodeId ?? ''} disabled={selected !== 'body' || refining || !activeBodyNode || (aiProvider === 'chatgpt' && !chatGPTReady)} onClick={() => activeBodyNode && onRefine('proofread', activeBodyNode.editableNodeId)}>
             <span className="df-ws-ai-icon" aria-hidden="true">⌕</span><span><strong>Rà chính tả, câu từ</strong><small>Kiểm tra lỗi chính tả, ngữ pháp và câu từ</small></span><span aria-hidden="true">→</span>
           </button>
-          <button type="button" data-ai-action="formalize" data-ai-target-node={activeBodyNode?.editableNodeId ?? ''} disabled={selected !== 'body' || refining || !activeBodyNode} onClick={() => activeBodyNode && onRefine('formalize', activeBodyNode.editableNodeId)}>
+          <button type="button" data-ai-action="formalize" data-ai-target-node={activeBodyNode?.editableNodeId ?? ''} disabled={selected !== 'body' || refining || !activeBodyNode || (aiProvider === 'chatgpt' && !chatGPTReady)} onClick={() => activeBodyNode && onRefine('formalize', activeBodyNode.editableNodeId)}>
             <span className="df-ws-ai-icon" aria-hidden="true">✎</span><span><strong>Nâng văn phong</strong><small>Gợi ý diễn đạt rõ ràng, trang trọng hơn</small></span><span aria-hidden="true">→</span>
           </button>
         </div>

@@ -71,7 +71,7 @@ export interface ImportSessionState {
   partitionHistory: SourceBlock[][];
   userModifiedBlockIds: string[];
   partitionCheckNotice: string;
-  partitionCheckSource: "gemini_ai" | "rule_fallback" | "mixed" | "unverified";
+  partitionCheckSource: "gemini_ai" | "chatgpt_ai" | "rule_fallback" | "mixed" | "unverified";
   reviewProposals: ReviewProposal[];
   acceptedProposalIds: Set<string>;
 }

@@ -11,12 +11,62 @@ import type { SourceBlock, SourceBlockKind, TableProperties } from "../shared/sc
  * Strips XML tags or extracts text cleanly.
  */
 function decodeXmlEntities(str: string): string {
-  return str
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'");
+  const decodeEntities = (value: string) => value
+    .replace(/&(#x[0-9a-f]+|#[0-9]+|amp|lt|gt|quot|apos);/gi, (entity, token: string) => {
+      const normalized = token.toLowerCase();
+      if (normalized.startsWith("#x")) return String.fromCodePoint(Number.parseInt(normalized.slice(2), 16));
+      if (normalized.startsWith("#")) return String.fromCodePoint(Number.parseInt(normalized.slice(1), 10));
+      return ({ amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" } as const)[normalized as "amp" | "lt" | "gt" | "quot" | "apos"];
+    });
+  let decoded = "";
+  let cursor = 0;
+  while (cursor < str.length) {
+    const start = str.indexOf("<![CDATA[", cursor);
+    if (start < 0) return decoded + decodeEntities(str.slice(cursor));
+    decoded += decodeEntities(str.slice(cursor, start));
+    const end = str.indexOf("]]>", start + 9);
+    if (end < 0) return decoded + str.slice(start);
+    decoded += str.slice(start + 9, end);
+    cursor = end + 3;
+  }
+  return decoded;
+}
+
+function escapeXmlCdataSectionsForParsing(xml: string): string {
+  let result = "";
+  let cursor = 0;
+  while (cursor < xml.length) {
+    const start = xml.indexOf("<", cursor);
+    if (start < 0) return result + xml.slice(cursor);
+    result += xml.slice(cursor, start);
+    if (xml.startsWith("<!--", start)) {
+      const end = xml.indexOf("-->", start + 4);
+      if (end < 0) return result;
+      cursor = end + 3;
+      continue;
+    }
+    if (xml.startsWith("<?", start)) {
+      const end = xml.indexOf("?>", start + 2);
+      if (end < 0) return result;
+      cursor = end + 2;
+      continue;
+    }
+    if (!xml.startsWith("<![CDATA[", start)) {
+      result += "<";
+      cursor = start + 1;
+      continue;
+    }
+    const contentStart = start + 9;
+    const end = xml.indexOf("]]>", contentStart);
+    const contentEnd = end < 0 ? xml.length : end;
+    result += xml.slice(contentStart, contentEnd)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+    if (end < 0) return result;
+    cursor = end + 3;
+  }
+  return result;
 }
 
 function escapeHtml(str: string): string {
@@ -32,6 +82,7 @@ function escapeHtml(str: string): string {
  * Extracts plain text from a paragraph XML node (<w:p>...</w:p>).
  */
 function extractParagraphText(pXml: string): string {
+  pXml = escapeXmlCdataSectionsForParsing(pXml);
   const parts: string[] = [];
   const runRegex = /<w:t(?:\s[^>]*)?>([\s\S]*?)<\/w:t>|<w:tab(?:\s[^>]*)?\/?>|<w:br(?:\s[^>]*)?\/?>/g;
   let match: RegExpExecArray | null;
@@ -53,6 +104,7 @@ function extractParagraphText(pXml: string): string {
  * to prevent diacritic splitting across inline element boundaries.
  */
 function paragraphXmlToHtml(pXml: string): string {
+  pXml = escapeXmlCdataSectionsForParsing(pXml);
   const jcMatch = pXml.match(/<w:jc\s+w:val="([^"]+)"/);
   const align = jcMatch ? jcMatch[1].toLowerCase() : "";
   let alignStyle = "";
@@ -142,13 +194,16 @@ import {
 } from "../shared/tableModel.ts";
 import { scanRawTableXmlFeatures } from "../shared/importFidelity.ts";
 
+const XML_NAME_PART = String.raw`[\p{L}\p{Nl}_][\p{L}\p{Nl}\p{Mn}\p{Mc}\p{Nd}\p{Pc}.\-\u00B7\u0300-\u036F\u203F-\u2040]*`;
+const XML_TAG_NAME_PATTERN = new RegExp(`^\\s*(\\/?)\\s*(${XML_NAME_PART}(?::${XML_NAME_PART})?)`, "u");
+
 /**
  * Scans direct children tags of a parent XML node without getting confused by deeper nested elements.
  */
 export function extractDirectChildren(
   xml: string, 
   parentTagName: string, 
-  supportedTags: Set<string>
+  supportedTags?: Set<string>
 ): Array<{ tag: string; xml: string }> {
   const openRegex = new RegExp(`<${parentTagName}(?=[\\s>])`);
   const parentMatch = openRegex.exec(xml);
@@ -164,6 +219,12 @@ export function extractDirectChildren(
     if (start < 0) break;
     if (xml.startsWith("<!--", start)) {
       const end = xml.indexOf("-->", start + 4);
+      if (end < 0) break;
+      pos = end + 3;
+      continue;
+    }
+    if (xml.startsWith("<![CDATA[", start)) {
+      const end = xml.indexOf("]]>", start + 9);
       if (end < 0) break;
       pos = end + 3;
       continue;
@@ -189,7 +250,7 @@ export function extractDirectChildren(
     }
     if (end >= xml.length) break;
     const rawTag = xml.slice(start + 1, end);
-    const match = /^\s*(\/?)\s*([\w:.-]+)/.exec(rawTag);
+    const match = XML_TAG_NAME_PATTERN.exec(rawTag);
     pos = end + 1;
     if (!match) continue;
     const [, closing, name] = match;
@@ -201,12 +262,12 @@ export function extractDirectChildren(
         continue;
       }
       stack.pop();
-      if (stack.length === 0 && supportedTags.has(childTag)) {
+      if (stack.length === 0 && (!supportedTags || supportedTags.has(childTag))) {
         results.push({ tag: childTag, xml: xml.slice(childStart, pos) });
       }
     } else if (stack.length === 0) {
       if (selfClosing) {
-        if (supportedTags.has(name)) {
+        if (!supportedTags || supportedTags.has(name)) {
           results.push({ tag: name, xml: xml.slice(start, pos) });
         }
       } else {
@@ -223,6 +284,7 @@ export function extractDirectChildren(
  * Trích xuất cấu trúc TableModel hoàn chỉnh từ XML <w:tbl>, bảo toàn lưới, gộp ngang, gộp dọc và thuộc tính hàng/ô.
  */
 export function extractTableModelFromXml(tblXml: string, tableId: string = "table_extracted"): TableModel {
+  tblXml = escapeXmlCdataSectionsForParsing(tblXml);
   const tblPrMatch = tblXml.match(/<w:tblPr\b[\s\S]*?<\/w:tblPr>/);
   const tblPr = tblPrMatch ? tblPrMatch[0] : "";
   const captionMatch = tblPr.match(/<w:tblCaption\b[^>]*w:val=["']([^"']+)["']/i) || tblPr.match(/<w:tblDescription\b[^>]*w:val=["']([^"']+)["']/i);
@@ -605,6 +667,12 @@ function extractBodyXmlChildren(xml: string): Array<{ tag: "w:p" | "w:tbl" | "w:
       pos = end + 3;
       continue;
     }
+    if (xml.startsWith("<![CDATA[", start)) {
+      const end = xml.indexOf("]]>", start + 9);
+      if (end < 0) break;
+      pos = end + 3;
+      continue;
+    }
     if (xml.startsWith("<?", start)) {
       const end = xml.indexOf("?>", start + 2);
       if (end < 0) break;
@@ -704,7 +772,7 @@ export async function extractBlocksFromDocx(buffer: Uint8Array | ArrayBuffer): P
     if (child.tag === "w:tbl") {
       const blockId = `block-${blockIndex}`;
       const details = extractTableDetails(child.xml, blockId);
-      const unsupported = scanRawTableXmlFeatures(child.xml, blockId, blockId);
+      const unsupported = scanRawTableXmlFeatures(escapeXmlCdataSectionsForParsing(child.xml), blockId, blockId);
       blocks.push({
         id: blockId,
         index: blockIndex,

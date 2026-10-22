@@ -27,6 +27,7 @@ import { evidenceFromDocumentXml } from "./nd30/canonicalAudit.ts";
 import { extractHD05EvidenceFromXml } from "./hd05/canonicalAuditHD05.ts";
 import { extractBodyOoxmlEvidence } from "./bodyOoxmlEvidence.ts";
 import { resolveRuleApplicability } from "./bodyRuleApplicability.ts";
+import { classifyTablesInMarkup, type TableMarkupClassification } from "../server/tableRoleClassifier.ts";
 
 export type RuleRegime = "administrative" | "party";
 
@@ -584,6 +585,19 @@ export interface DocumentEvaluationSummary {
   results: RuleEvaluationResult[];
 }
 
+function collectContentTableRuleEvidence(doc: Record<string, any>, regime: RuleRegime): TableMarkupClassification[] {
+  const bodyTables = classifyTablesInMarkup(String(doc.bodyHtml || ""), "body", regime);
+  const appendixTables = (Array.isArray(doc.appendices) ? doc.appendices : []).flatMap((appendix: any) =>
+    classifyTablesInMarkup(String(appendix?.html || ""), "appendix", regime)
+  );
+  return [...bodyTables, ...appendixTables].filter(table => table.isContentTable);
+}
+
+function countActiveRepeatedHeaderRows(documentXml: string): number {
+  const markers = Array.from(documentXml.matchAll(/<w:tblHeader\b([^>]*)\/?\s*>/gi));
+  return markers.filter(([, attributes]) => !/\bw:val\s*=\s*["'](?:off|false|0)["']/i.test(attributes || "")).length;
+}
+
 /**
  * Executes evaluation of the document against the 2 regimes × 9 groups architecture.
  * Strictly separates NOT_EVALUATED and NEEDS_REVIEW from PASS.
@@ -610,6 +624,7 @@ export function evaluateDocumentRules(
   const docType = String(doc.documentType || "").trim().toUpperCase();
   const isCongVan = docType.includes("CÔNG VĂN");
   const isMinutes = docType.includes("BIÊN BẢN");
+  const contentTableEvidence = collectContentTableRuleEvidence(doc, effectiveRegime);
 
   const rules = getRulesForRegime(effectiveRegime);
   const results: RuleEvaluationResult[] = [];
@@ -1195,13 +1210,10 @@ export function evaluateDocumentRules(
             }
           }
         } else if (r.id === "BODY.TABLE.PRESERVATION") {
-          const hasAnyTables = Boolean(
-            (doc.importedTables && Object.keys(doc.importedTables).length > 0) ||
-            /<table\b/i.test(doc.bodyHtml || "")
-          );
+          const hasAnyTables = contentTableEvidence.length > 0;
           if (!hasAnyTables) {
             status = "NOT_APPLICABLE";
-            reason = "Văn bản không chứa bảng biểu nội dung.";
+            reason = "Body và Phụ lục không có bảng trình bày nội dung; bảng bố cục/chữ ký không thuộc rule này.";
           } else if (ooxmlEvidence.candidate_fidelity_result) {
             const safe = Boolean(ooxmlEvidence.candidate_fidelity_result.safe);
             status = safe ? "PASS" : "FAIL";
@@ -1213,38 +1225,26 @@ export function evaluateDocumentRules(
             reason = "Chưa có kết quả kiểm chứng roundtrip trên DOCX ứng viên thực tế.";
           }
         } else if (r.id === "BODY.TABLE.HEADER_ROW") {
-          const hasAnyTables = Boolean(
-            (doc.importedTables && Object.keys(doc.importedTables).length > 0) ||
-            /<table\b/i.test(doc.bodyHtml || "")
-          );
-          const hasTablesWithHeaderRow = isUsingNd30CompanyProfile
-            ? hasAnyTables
-            : Boolean(
-                (doc.importedTables && Object.values(doc.importedTables as Record<string, any>).some((t: any) => t.rows && t.rows.some((row: any) => row.isHeader))) ||
-                /<th\b/i.test(doc.bodyHtml || "")
-              );
+          const hasAnyTables = contentTableEvidence.length > 0;
+          const hasTablesWithHeaderRow = contentTableEvidence.some(table => table.hasHeaderRow);
           if (!hasAnyTables || !hasTablesWithHeaderRow) {
             status = "NOT_APPLICABLE";
-            reason = "Văn bản không có bảng yêu cầu hàng tiêu đề lặp lại.";
+            reason = "Body và Phụ lục không có bảng nội dung với hàng tiêu đề nhận diện được.";
           } else if (ooxmlEvidence.candidate_fidelity_result) {
             const candidateXml = ooxmlEvidence.candidate_fidelity_result.candidateXml || "";
             const hasHeaderDiff = ooxmlEvidence.candidate_fidelity_result.diffs?.some((d: any) => d.messageVi?.includes("tblHeader") || d.messageVi?.includes("tiêu đề"));
-            const hasTblHeaderXml = candidateXml
-              ? isUsingNd30CompanyProfile
-                ? (() => {
-                    const bodyTables = (candidateXml.match(/<w:tbl\b[\s\S]*?<\/w:tbl>/gi) || [])
-                      .filter((tableXml: string) => !/w:tblCaption\b[^>]*w:val=["']system_(?:header_layout|signature_layout)_table["']/i.test(tableXml));
-                    return bodyTables.length > 0 && bodyTables.every((tableXml: string) => {
-                      const firstRow = tableXml.match(/<w:tr\b[\s\S]*?<\/w:tr>/i)?.[0] || "";
-                      return /<w:tblHeader\b/i.test(firstRow);
-                    });
-                  })()
-                : /<w:tblHeader\b/i.test(candidateXml)
-              : !hasHeaderDiff;
-            status = (!hasHeaderDiff && hasTblHeaderXml) ? "PASS" : "FAIL";
-            reason = status === "PASS"
-              ? "Hàng tiêu đề bảng được định dạng và gán thuộc tính lặp w:tblHeader trên DOCX ứng viên."
-              : "Hàng tiêu đề bảng bị mất thuộc tính lặp w:tblHeader trong DOCX ứng viên.";
+            const expectedHeaderRows = contentTableEvidence.filter(table => table.hasHeaderRow).length;
+            if (!candidateXml) {
+              status = "NOT_EVALUATED";
+              reason = "Có bảng nội dung cần lặp tiêu đề ở Body/Phụ lục nhưng chưa có XML ứng viên để kiểm tra.";
+            } else {
+              const actualHeaderRows = countActiveRepeatedHeaderRows(candidateXml);
+              const hasTblHeaderXml = actualHeaderRows >= expectedHeaderRows;
+              status = (!hasHeaderDiff && hasTblHeaderXml) ? "PASS" : "FAIL";
+              reason = status === "PASS"
+                ? `Đã tìm thấy thuộc tính lặp tiêu đề cho các bảng nội dung Body/Phụ lục (${actualHeaderRows} dấu w:tblHeader, cần ít nhất ${expectedHeaderRows}).`
+                : "Hàng tiêu đề của bảng nội dung bị thiếu thuộc tính lặp w:tblHeader trong DOCX ứng viên.";
+            }
           } else {
             status = "NOT_EVALUATED";
             reason = "Chưa có bằng chứng DOCX ứng viên để kiểm tra thuộc tính lặp w:tblHeader.";
@@ -1472,8 +1472,13 @@ export function evaluateDocumentRules(
             }
           }
         } else if (r.id === "HD05-TABLE-CELL-FONT-SIZE") {
-          status = "NOT_APPLICABLE";
-          reason = "Quy tắc cỡ chữ ô bảng phụ lục (12-13pt) chỉ áp dụng cho bảng biểu phụ lục.";
+          if (contentTableEvidence.length === 0) {
+            status = "NOT_APPLICABLE";
+            reason = "Body và Phụ lục không có bảng trình bày nội dung để áp dụng rule cỡ chữ ô bảng.";
+          } else {
+            status = "NOT_EVALUATED";
+            reason = `Rule cỡ chữ ô bảng áp dụng cho ${contentTableEvidence.length} bảng nội dung ở Body/Phụ lục; hiện chưa có bằng chứng OOXML tách riêng các bảng này để đo cỡ chữ.`;
+          }
         } else if (r.id === "BODY.PARTY.SUBJECT_UPRIGHT_BOLD") {
           const sEv = ooxmlEvidence?.subject_evidence || ooxmlEvidence?.body_evidence?.directParagraphs?.find((p: any) => p.role === "subject");
           const hasBold = ooxmlEvidence?.subject_is_bold !== undefined ? ooxmlEvidence.subject_is_bold : sEv?.isBold;

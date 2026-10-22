@@ -478,14 +478,17 @@ export const A4DocumentPreview: React.FC<A4DocumentPreviewProps> = ({
 
       {/* 4. Main Body HTML */}
       <div
-        className="text-justify my-4 space-y-2 [&_p]:my-2 [&_p]:text-justify [&_p]:leading-[1.25] [&_p]:indent-[1.27cm] [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6 [&_table]:w-full [&_table]:table-fixed [&_table]:border-collapse [&_table]:my-3.5 [&_th]:border [&_th]:border-black [&_th]:p-2 [&_th]:font-bold [&_th]:bg-slate-50 [&_th]:text-center [&_th]:align-middle [&_td]:border [&_td]:border-black [&_td]:p-1.5 [&_td]:align-top [&_td]:indent-0 [&_td_p]:indent-0 [&_td_p]:my-0 [&_table[data-borders='false']_td]:border-none [&_table[data-borders='false']_th]:border-none [&_table.border-none_td]:border-none [&_table.border-none_th]:border-none [&_table[data-preserve='true']_th]:bg-transparent"
+        className="text-justify my-4 space-y-2 [&_p]:my-2 [&_p]:text-justify [&_p]:leading-[1.25] [&_p]:indent-[1.27cm] [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6 [&_td]:indent-0 [&_td_p]:indent-0 [&_td_p]:my-0"
         style={{
           fontSize: isParty ? "14pt" : "13pt",
           fontFamily: "'Times New Roman', Times, serif",
           lineHeight: "1.25",
         }}
         dangerouslySetInnerHTML={{
-          __html: DOMPurify.sanitize(optimizeTableHtml(bodyHtml || (isImported ? "" : "<p>[Chưa có nội dung văn bản]</p>"))),
+          __html: DOMPurify.sanitize(optimizeTableHtml(bodyHtml || (isImported ? "" : "<p>[Chưa có nội dung văn bản]</p>"), {
+            scope: "body",
+            regime: isParty ? "party" : "administrative",
+          })),
         }}
       />
 
@@ -568,14 +571,17 @@ export const A4DocumentPreview: React.FC<A4DocumentPreviewProps> = ({
                 )}
               </div>
               <div
-                className="text-justify space-y-2 [&_p]:my-2 [&_p]:text-justify [&_p]:leading-[1.25] [&_p]:indent-[1.27cm] [&_table]:w-full [&_table]:table-fixed [&_table]:border-collapse [&_table]:my-3.5 [&_th]:border [&_th]:border-black [&_th]:p-2 [&_th]:font-bold [&_th]:bg-slate-50 [&_th]:text-center [&_th]:align-middle [&_td]:border [&_td]:border-black [&_td]:p-1.5 [&_td]:align-top [&_td]:indent-0 [&_td_p]:indent-0 [&_td_p]:my-0 [&_table[data-borders='false']_td]:border-none [&_table[data-borders='false']_th]:border-none [&_table.border-none_td]:border-none [&_table.border-none_th]:border-none [&_table[data-preserve='true']_th]:bg-transparent"
+                className="text-justify space-y-2 [&_p]:my-2 [&_p]:text-justify [&_p]:leading-[1.25] [&_p]:indent-[1.27cm] [&_td]:indent-0 [&_td_p]:indent-0 [&_td_p]:my-0"
                 style={{
                   fontSize: isParty ? "14pt" : "13pt",
                   fontFamily: "'Times New Roman', Times, serif",
                   lineHeight: "1.25",
                 }}
                 dangerouslySetInnerHTML={{
-                  __html: DOMPurify.sanitize(optimizeTableHtml(app.html || "")),
+                  __html: DOMPurify.sanitize(optimizeTableHtml(app.html || "", {
+                    scope: "appendix",
+                    regime: isParty ? "party" : "administrative",
+                  })),
                 }}
               />
             </div>

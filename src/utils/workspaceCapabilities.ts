@@ -1,5 +1,6 @@
 import type {SourceBlock,TableModel} from '../shared/schemas/document.schema.ts';
 import type {EditableNode,WorkspaceSnapshot} from './workspaceState.ts';
+import {isSemanticFirstLineIndent,isSemanticLineSpacing} from './semanticRuleFormatting.ts';
 
 export interface EditorSafety {editable:boolean;reasons:string[]}
 export interface TableCellCapability {tableId:string;cellId:string;text:string;editable:boolean;reason:string}
@@ -19,6 +20,10 @@ export function workspaceEditorSafety(html:string):EditorSafety{
    if(!ALIGNABLE_TAGS.has(tag)||!/^text-align\s*:\s*(left|center|right|justify)\s*;?$/.test(style))reasons.add('inline_style_roundtrip_not_verified');
    attrs=attrs.replace(styleMatch[0],'');
   }
+  const lineMatch=attrs.match(/\bdata-df-line-spacing\s*=\s*(["'])(.*?)\1/i);
+  if(lineMatch){if(tag!=='p'||!isSemanticLineSpacing(lineMatch[2]))reasons.add('semantic_rule_attribute_invalid');attrs=attrs.replace(lineMatch[0],'');}
+  const indentMatch=attrs.match(/\bdata-df-first-line-indent\s*=\s*(["'])(.*?)\1/i);
+  if(indentMatch){if(tag!=='p'||!isSemanticFirstLineIndent(indentMatch[2]))reasons.add('semantic_rule_attribute_invalid');attrs=attrs.replace(indentMatch[0],'');}
   attrs=attrs.replace(/\bdata-block-id\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi,'').replace(/\bstart\s*=\s*(?:"\d+"|'\d+'|\d+)/gi,'').trim().replace(/\/$/,'').trim();
   if(attrs)reasons.add('editor_attributes_roundtrip_not_verified');
  }

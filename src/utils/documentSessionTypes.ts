@@ -17,6 +17,7 @@ import type {
 import type { DraftRecord } from "./draftStore.ts";
 import type { WorkspaceState } from "./workspaceState.ts";
 import { isWorkspaceStateValid } from "./workspacePersistence.ts";
+import { isPersistedFullTextSemanticReviewValid } from "./fullTextReviewPersistence.ts";
 
 /** Stable ID of the session created from the v2 `current_active_draft` record. */
 export const LEGACY_SESSION_ID = "legacy-current-active-draft";
@@ -303,7 +304,7 @@ export function isReviewProposalValid(r: any): r is ReviewProposal {
   if (typeof r.suggested !== "string") return false;
   if (typeof r.reason !== "string") return false;
   if (r.confidence !== "high" && r.confidence !== "medium" && r.confidence !== "low") return false;
-  if (r.source !== undefined && r.source !== "gemini_ai" && r.source !== "rule_fallback") return false;
+  if (r.source !== undefined && r.source !== "gemini_ai" && r.source !== "chatgpt_ai" && r.source !== "rule_fallback") return false;
   if (r.label !== undefined && typeof r.label !== "string") return false;
   if (r.title !== undefined && typeof r.title !== "string") return false;
   return true;
@@ -618,6 +619,18 @@ export function isDocumentSessionRecordValid(
     if (!isStructuredImportValid(record.structuredImport)) return false;
   }
 
+  if (record.semanticDecisions !== undefined) {
+    if (!record.semanticDecisions || typeof record.semanticDecisions !== "object" || Array.isArray(record.semanticDecisions)) return false;
+    for (const [unitId, decision] of Object.entries(record.semanticDecisions)) {
+      if (!unitId || !decision || typeof decision !== "object") return false;
+      const value = decision as { contextKey?: unknown; status?: unknown; evidenceFingerprint?: unknown };
+      if (typeof value.contextKey !== "string" ||
+          (value.status !== "user_confirmed" && value.status !== "rejected") ||
+          (value.evidenceFingerprint !== undefined && (typeof value.evidenceFingerprint !== "string" || value.evidenceFingerprint.length > 200_000))) return false;
+    }
+  }
+  if (record.fullTextSemanticReview !== undefined && !isPersistedFullTextSemanticReviewValid(record.fullTextSemanticReview)) return false;
+
   if (!Array.isArray(record.versions)) return false;
   for (const v of record.versions) {
     if (!isSessionVersionValid(v)) return false;
@@ -665,6 +678,9 @@ export function hasPreservableV3Content(record: any): boolean {
   // A frozen draft / ledger may be the only surviving copy after a partial write.
   // Treat even a damaged workspace as valuable; migration must never replace it.
   if (record.workspace !== undefined && record.workspace !== null) return true;
+  if (record.semanticDecisions && typeof record.semanticDecisions === "object" &&
+      Object.keys(record.semanticDecisions).length > 0) return true;
+  if (record.fullTextSemanticReview !== undefined) return true;
 
   // 1. Any version containing data, doc, or other user content
   if (Array.isArray(record.versions) && record.versions.length > 0) {

@@ -67,7 +67,7 @@ Mọi thay đổi trong parser, segmenter và export phải tuân thủ nghiêm 
   - Không cho phép cờ `roundtripProven` tĩnh từ phiên cũ chứng nhận bản xuất mới sau khi người dùng đã sửa đổi nội dung. Mỗi lần xuất đều phải vượt qua phép đối chiếu candidate bytes thực tế với manifest nhập.
 - **Bảo toàn tệp gốc và cơ chế Fail-Closed:**
   - Tệp DOCX gốc được lưu trữ trong object store `source_blobs` độc lập của IndexedDB (SHA-256). Hàm `saveSourceBlob` và `parseLocalFile` trả rõ trạng thái lưu bền vững (`indexeddb`) hay tạm thời trong bộ nhớ (`memory`) để cảnh báo người dùng trung thực trên giao diện.
-  - Người dùng luôn có thể tải lại tệp gốc nguyên vẹn thông qua nút "Tải Lại Tệp Gốc" tại Bước 4.
+  - Người dùng có thể tải lại tệp gốc nguyên vẹn tại Bước 3 (Xem & xuất) khi byte nguồn còn sẵn trong kho lưu trữ.
   - **Một nguồn trạng thái đã duyệt & Đề xuất AI chuẩn xác vị trí (Target Block Precision & Deterministic Reconstruction):**
     - Trạng thái phân vùng đã duyệt (`reviewBlocks`) kết hợp cùng module `proposalState.ts` (`applySingleProposal`, `applyAllProposalsSequentially`, `changeBlockRole`) bảo đảm cập nhật bất biến, không mutate React state.
     - Khi áp dụng đề xuất sửa đoạn văn hoặc ô bảng, cập nhật chính xác khối mục tiêu (`targetBlockId`) và ô chỉ định (`cellIndex`). Với ô bảng, `tableModelToHtmlView` tái tạo lại HTML chuẩn xác với các thuộc tính `data-cell-id`, ngăn chặn hoàn toàn lỗi string replace thay nhầm vị trí đầu tiên khi nhiều đoạn hoặc nhiều ô có text giống nhau (`SAME`).
@@ -129,7 +129,7 @@ Các lệnh thực sự tồn tại trong [`package.json`](package.json) và mô
 | Kiểm tra kiểu dữ liệu TypeScript | `npm run lint` (thực thi `tsc --noEmit`) | Bắt buộc đạt exit code `0` trước khi hoàn tất thay đổi |
 | Build đóng gói sản phẩm + kiểm tra kiểu | `npm run build` (thực thi `vite build && tsc --noEmit`) | Đóng gói production bundle vào `dist/` và kiểm tra toàn bộ kiểu TypeScript |
 | Chạy bản kiểm thử thể thức NĐ 30 | `npm test` | Chạy 32 bài test tại [`test/nd30-compliance.test.ts`](test/nd30-compliance.test.ts) |
-| Kiểm thử workflow 4 bước & ruleEngine | `npx tsx test/office-worker-redesign.test.ts` | Kiểm tra 19 bài test: cách ly 2 hệ, bảng biểu, regex, tệp không chữ ký, OOXML audit, chuyển hệ, draftStore, visualDiff tài liệu dài (chống đệ quy vô hạn), snapshot Step 4, và tính trung thực của nhãn đạt chuẩn |
+| Kiểm thử hồi quy workflow cũ & ruleEngine | `npx tsx test/office-worker-redesign.test.ts` | Bộ kiểm thử lịch sử có các ca về giao diện 4 bước cũ; không dùng riêng bộ này để xác nhận wizard 3 bước hiện tại. |
 | Kiểm thử phần đầu 2 hệ thể thức | `npx tsx test/header-dual-regime.test.ts` | Kiểm tra 5 ca header NĐ 30 & HD 05 (Generic & Hoa Tiêu) |
 | Kiểm thử trích xuất bảng & body | `npm run test:body:tables` | Chạy [`test/table-and-body-format.test.ts`](test/table-and-body-format.test.ts) |
 | Kiểm thử phân đoạn cấu trúc | `npm run test:import:segments` | Chạy [`test/import-segments.test.ts`](test/import-segments.test.ts) |

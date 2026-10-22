@@ -268,23 +268,8 @@ export function generateRuleBasedProposals(
     }
   }
 
-  // 7. STRUCTURAL SEGMENTATION & TABLE PROTECTION AUDIT
-  const signTitle = fields.signTitle?.value || "";
-  const signName = fields.signName?.value || "";
-  if (!signTitle && !signName) {
-    proposals.push({
-      id: `prop-unsigned-${Date.now()}-10`,
-      type: "segmentation",
-      target: "signature",
-      original: "(Không có khối chữ ký trong tệp gốc)",
-      suggested: "Giữ nguyên trạng thái bản thảo / kế hoạch nội bộ chưa ký",
-      reason: "Tài liệu nguồn không có khối chữ ký. Hệ thống bảo toàn nguyên bản, không tạo chữ ký giả mạo.",
-      confidence: "high",
-      source: "rule_fallback",
-    });
-  }
-
-  // 8. ADMINISTRATIVE SPELLING AUDIT (Precise Block and Cell Tracking)
+  // Absence of a signature is a document state, never replacement text.
+  // ADMINISTRATIVE SPELLING AUDIT (Precise Block and Cell Tracking)
   if (blocks && blocks.length > 0) {
     for (const b of blocks) {
       if (b.role === "header") continue; // Header fields handled above
