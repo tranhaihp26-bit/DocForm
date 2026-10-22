@@ -166,6 +166,8 @@ export interface ImportStepViewProps {
    */
   docTypeOverride: DocTypeDecision | null;
   onConfirmDocTypeOverride: () => void;
+  profileDecisionValid: boolean;
+  onConfirmProfileDecision: (chosenProfile: "company" | "generic") => void;
 }
 
 export function ImportStepView({
@@ -208,6 +210,8 @@ export function ImportStepView({
   onNext,
   docTypeOverride,
   onConfirmDocTypeOverride,
+  profileDecisionValid,
+  onConfirmProfileDecision,
 }: ImportStepViewProps) {
   const isParty = regime === "party";
   const isCompanyProfile = isParty
@@ -294,7 +298,7 @@ export function ImportStepView({
   const blocksCount = uploadedBlocks.length;
   const appendicesCount = structuredImport?.appendices.length ?? doc.appendices?.length ?? 0;
   const filteredTemplates = templates.filter((t) => t.type === (draftRegime === "party" ? "party" : "state") && t.defaultData.documentType.toUpperCase().startsWith(draftDocType));
-  const hasImportedFile = Boolean(uploadedFileName || blocksCount > 0);
+  const hasImportedFile = sourceOrigin === "uploaded_file" || originalSnapshot?.sourceType === "uploaded_file" || Boolean(uploadedFileName || blocksCount > 0);
   const hasUploadedSource = sourceOrigin === "uploaded_file" && hasImportedFile;
   const detection = structuredImport?.regimeDetection ?? null;
   const sourceTypeEvidence = detection?.documentType ?? null;
@@ -322,9 +326,23 @@ export function ImportStepView({
     chosenRegime: regime,
     chosenDocType,
   });
-  const { sourceDocType, docTypeMismatch, profileMismatch, templateMismatch } = mismatch;
+  const { sourceDocType, docTypeMismatch, sourceProfile, profileMismatch, templateMismatch } = mismatch;
   // Quyết định override chỉ có hiệu lực cho đúng cặp nguồn/loại/hệ đã xác nhận.
   const overrideCovers = docTypeDecisionCovers(docTypeOverride, mismatch, regime);
+  const selectProfile = (selectedProfile: "company" | "generic") => {
+    if (choosingNew) {
+      setDraftProfile(selectedProfile);
+      return;
+    }
+    if (hasUploadedSource && profileMismatch) {
+      onConfirmProfileDecision(selectedProfile);
+      return;
+    }
+    const profileId = selectedProfile === "generic"
+      ? "generic"
+      : isParty ? COMPANY_HEADER_HD05_PROFILE_ID : COMPANY_HEADER_PROFILE_ID;
+    onFieldChange("headerProfile" as keyof DocumentState, profileId);
+  };
 
   const suggestedRegimeText = !detection
     ? null
@@ -337,11 +355,6 @@ export function ImportStepView({
   const confirmedRegimeText = detection
     ? `${REGIME_LABEL[detection.confirmedRegime]} (${detection.decidedBy === "user" ? "do bạn xác nhận" : "theo chứng cứ mạnh"})`
     : null;
-
-  const sourceOrgHeader =
-    structuredImport?.fields?.orgHeader1?.value ||
-    (appliedTemplate ? `${appliedTemplate.defaultData.orgHeader1} ${appliedTemplate.defaultData.orgHeader2}` : "");
-  const sourceLooksCompany = /HOA TIÊU/i.test(sourceOrgHeader);
 
   const evidenceItems = detection?.evidence ?? [];
   const demoDocType = (templates[0]?.defaultData.documentType || "").toUpperCase().trim();
@@ -387,6 +400,17 @@ export function ImportStepView({
   const canOpenSourceReview = hasSelectedSource && Boolean(onOpenReviewModal);
   const flowSourceReady=flow==="upload"?sourceOrigin==="uploaded_file":flow==="create"?sourceOrigin==="system_template":false;
   const continueDisabled = !flowSourceReady||(!canContinue && !canOpenSourceReview);
+  const semanticConfirmedCount = semanticReviewRows.filter(row => row.status === "user_confirmed" || row.status === "auto_confirmed").length;
+  const semanticPendingCount = semanticReviewRows.filter(row => row.status === "needs_review" || row.status === "unsupported").length;
+  const sourceVisualStatusText = sourceVisualState.status === "rendering"
+    ? "Đang dựng trang trên máy này…"
+    : sourceVisualState.status === "complete"
+      ? sourceVisualState.manifest?.complete ? "Đã dựng đủ trang để xem bố cục." : "Đã dựng một phần trang; cần kiểm tra lại."
+      : sourceVisualState.status === "incomplete"
+        ? "Chưa dựng đủ trang để đối chiếu."
+        : sourceVisualState.status === "error" || sourceVisualState.status === "unavailable"
+          ? "Chưa thể xem bố cục trang trên máy này."
+          : "Chưa xem bố cục trang gốc.";
   const handleContinue = () => {
     if (!flowSourceReady) return;
     if (canContinue) onNext();
@@ -523,14 +547,7 @@ export function ImportStepView({
             <button
               type="button"
               aria-pressed={choiceIsCompany}
-              onClick={() => {
-                if(choosingNew){setDraftProfile("company");return;}
-                if (isParty) {
-                  onFieldChange("headerProfile" as keyof DocumentState, COMPANY_HEADER_HD05_PROFILE_ID);
-                } else {
-                  onFieldChange("headerProfile" as keyof DocumentState, COMPANY_HEADER_PROFILE_ID);
-                }
-              }}
+              onClick={() => selectProfile("company")}
               className={`p-2.5 rounded-xl border text-left transition flex items-center justify-between gap-2 cursor-pointer min-h-[52px] ${
                 choiceIsCompany
                   ? "border-[#6255E8] bg-[#EEF0FE]/70 text-[#17233D] ring-1 ring-[#6255E8]/30 shadow-2xs"
@@ -558,7 +575,7 @@ export function ImportStepView({
             <button
               type="button"
               aria-pressed={!choiceIsCompany}
-              onClick={() => choosingNew ? setDraftProfile("generic") : onFieldChange("headerProfile" as keyof DocumentState, "generic")}
+              onClick={() => selectProfile("generic")}
               className={`p-2.5 rounded-xl border text-left transition flex items-center justify-between gap-2 cursor-pointer min-h-[52px] ${
                 !choiceIsCompany
                   ? "border-[#6255E8] bg-[#EEF0FE]/70 text-[#17233D] ring-1 ring-[#6255E8]/30 shadow-2xs"
@@ -633,6 +650,23 @@ export function ImportStepView({
             );
           })}
         </div>
+
+        {!choosingNew && sourceEvidenceSuggestsMinutes && sourceTypeEvidence && (
+          <div data-testid="doctype-source-suggestion" className="mt-2.5 rounded-xl border border-blue-200 bg-blue-50 p-2.5 text-[11.5px] text-[#334155]">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span>
+                <strong className="text-[#17233D]">Gợi ý từ nội dung: Biên bản</strong>
+                <span> — “{sourceTypeEvidence.exactQuote}” · vị trí {sourceTypeEvidence.blockIndex + 1}</span>
+              </span>
+              {doc.documentType.toUpperCase() === "BIÊN BẢN"
+                ? <span role="status" className="font-semibold text-emerald-800">Đã chọn</span>
+                : <button type="button" onClick={() => onFieldChange("documentType", "BIÊN BẢN")}
+                    className="rounded-lg border border-blue-300 bg-white px-2.5 py-1.5 font-semibold text-blue-900 hover:bg-blue-100">
+                    Xác nhận “Biên bản”
+                  </button>}
+            </div>
+          </div>
+        )}
 
         {!choosingNew&&docTypeMismatch && (
           <div
@@ -715,61 +749,98 @@ export function ImportStepView({
         </div>}
       </section>}
 
-      {flow==="upload"&&phase==="metadata"&&<section className="df-import-card mt-3 border border-[#CFD8EA] bg-white rounded-2xl p-3.5 shadow-2xs" data-testid="semantic-review-panel" aria-labelledby="semantic-review-heading">
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <div><h2 id="semantic-review-heading" className="text-sm font-bold text-[#17233D]">Đọc nguồn và đối chiếu ngữ nghĩa</h2>
-            <p className="mt-1 text-xs text-[#52607A]">Tách biệt đọc tại máy, gửi tệp cho nhà cung cấp, đọc cấu trúc và xem từng trang. Hiện kết nối ChatGPT plan chưa hỗ trợ đọc tệp nguyên bản.</p>
-          </div>
-          <button type="button" onClick={onRenderSourceVisual} disabled={sourceVisualState.status==="rendering"||!originalSnapshot?.sourceHash||originalSnapshot.fileType!=="docx"}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-[#6255E8] px-3 py-2 text-xs font-semibold text-[#5145C0] disabled:opacity-50"
-            aria-label="Dựng và kiểm tra tất cả trang từ DOCX gốc trên máy này">
-            <Eye size={15}/>{sourceVisualState.status==="rendering"?"Đang dựng đủ trang…":"Dựng trang trên máy này"}
-          </button>
+      {flow==="upload"&&phase==="metadata"&&<section className="df-import-card mt-3 border border-[#CFD8EA] bg-white rounded-2xl p-3.5 shadow-2xs space-y-3" data-testid="semantic-review-panel" aria-labelledby="semantic-review-heading">
+        <div>
+          <h2 id="semantic-review-heading" className="text-sm font-bold text-[#17233D]">Đọc và đối chiếu tài liệu</h2>
+          <p className="mt-1 text-xs text-[#52607A]">DocForm đọc nội dung tại máy. Bạn có thể xem bố cục trang gốc; gửi văn bản cho AI là tùy chọn.</p>
         </div>
-        <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5" data-testid="local-source-visual-status">
-            <strong className="text-[#17233D]">Local</strong>
-            <p className="mt-1">Tệp gốc: {originalAvailable?"đã lưu, có thể tải lại":"chưa xác nhận còn trong kho"}. SHA: <code>{originalSnapshot?.sourceHash?.slice(0,16)??"chưa có"}</code></p>
-            {sourceVisualState.manifest&&<p className="mt-1" role="status">Local endpoint nhận byte gốc đã băm: {sourceVisualState.localEndpointReceived?"có":"chưa"}. Trang đã dựng: {sourceVisualState.manifest.pages.length}/{sourceVisualState.manifest.pageCount} · {sourceVisualState.manifest.complete?"đủ trang, từng ảnh đã băm":"chưa đủ trang"} · {sourceVisualState.manifest.rendererName} {sourceVisualState.manifest.rendererVersion??""} · SHA nguồn khớp {sourceVisualState.sourceSha256===originalSnapshot?.sourceHash?"có":"không"}.</p>}
-            {sourceVisualState.reason&&<p className="mt-1 text-amber-800" role="status">{sourceVisualState.reason}</p>}
-            {sourceVisualState.status==="complete"&&sourceVisualState.renderId&&sourceVisualState.manifest&&<div className="mt-2 rounded border border-slate-200 bg-white p-2">
-              <div className="flex items-center justify-between gap-2 text-xs"><div className="flex items-center gap-1"><button type="button" disabled={activeSourcePage<=1} onClick={()=>setActiveSourcePage(page=>Math.max(1,page-1))} aria-label="Trang nguồn trước">‹</button><span>Trang {activeSourcePage}/{sourceVisualState.manifest.pageCount}</span><button type="button" disabled={activeSourcePage>=sourceVisualState.manifest.pageCount} onClick={()=>setActiveSourcePage(page=>Math.min(sourceVisualState.manifest?.pageCount??1,page+1))} aria-label="Trang nguồn tiếp">›</button></div><a href={`/api/ai/source-visual/${encodeURIComponent(sourceVisualState.renderId)}/source.pdf`} target="_blank" rel="noreferrer" className="font-semibold text-[#5145C0] underline">Mở PDF local</a></div>
-              {sourcePagePreview?<img src={sourcePagePreview} alt={`Trang ${activeSourcePage} dựng cục bộ từ DOCX gốc`} className="mt-2 mx-auto max-h-[68vh] max-w-full object-contain border border-slate-200"/>:sourcePagePreviewError?<p role="alert" className="mt-2 text-[11px] text-rose-800">Không hiển thị trang: {sourcePagePreviewError}</p>:<p className="mt-2 text-[11px] text-slate-600" role="status">Đang tải và kiểm tra hash trang…</p>}
-              <p className="mt-1 text-[10px] text-slate-500">Bản dựng chỉ lưu tạm trong máy chủ local 10 phút; không chuyển trang sang nhà cung cấp AI.</p>
-            </div>}
+
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs" data-testid="local-source-visual-status">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <strong className="text-[#17233D]">Tài liệu gốc</strong>
+              <p className="mt-0.5 text-[#52607A]">{originalAvailable?"Tệp gốc đã lưu trên máy.":"Chưa xác nhận tệp gốc còn trong kho."} {sourceVisualStatusText}</p>
+            </div>
+            <button type="button" onClick={onRenderSourceVisual} disabled={sourceVisualState.status==="rendering"||!originalSnapshot?.sourceHash||originalSnapshot.fileType!=="docx"}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-[#6255E8] bg-white px-3 py-2 text-xs font-semibold text-[#5145C0] disabled:opacity-50"
+              aria-label="Xem bố cục trang gốc">
+              <Eye size={15}/>{sourceVisualState.status==="rendering"?"Đang dựng trang…":sourceVisualState.status==="complete"?"Tải lại bố cục trang":"Xem bố cục trang gốc"}
+            </button>
           </div>
-          <div className="rounded-lg border border-amber-200 bg-amber-50 p-2.5" data-testid="provider-capability-status">
-            <strong className="text-[#17233D]">Năng lực nhà cung cấp AI</strong>
+          {sourceVisualState.status==="complete"&&sourceVisualState.renderId&&sourceVisualState.manifest&&<div className="mt-3 rounded-lg border border-slate-200 bg-white p-2">
+            <div className="flex items-center justify-between gap-2 text-xs"><div className="flex items-center gap-1"><button type="button" disabled={activeSourcePage<=1} onClick={()=>setActiveSourcePage(page=>Math.max(1,page-1))} aria-label="Trang nguồn trước">‹</button><span>Trang {activeSourcePage}/{sourceVisualState.manifest.pageCount}</span><button type="button" disabled={activeSourcePage>=sourceVisualState.manifest.pageCount} onClick={()=>setActiveSourcePage(page=>Math.min(sourceVisualState.manifest?.pageCount??1,page+1))} aria-label="Trang nguồn tiếp">›</button></div><a href={`/api/ai/source-visual/${encodeURIComponent(sourceVisualState.renderId)}/source.pdf`} target="_blank" rel="noreferrer" className="font-semibold text-[#5145C0] underline">Mở bản PDF xem trước</a></div>
+            {sourcePagePreview?<img src={sourcePagePreview} alt={`Trang ${activeSourcePage} dựng cục bộ từ DOCX gốc`} className="mt-2 mx-auto max-h-[68vh] max-w-full object-contain border border-slate-200"/>:sourcePagePreviewError?<p role="alert" className="mt-2 text-[11px] text-rose-800">Không hiển thị được trang gốc. Hãy thử lại hoặc xem chi tiết kỹ thuật.</p>:<p className="mt-2 text-[11px] text-slate-600" role="status">Đang tải trang xem trước…</p>}
+          </div>}
+          <details className="mt-2 rounded-lg border border-slate-200 bg-white p-2" data-testid="local-source-technical-details">
+            <summary className="cursor-pointer text-xs font-semibold text-slate-700">Chi tiết kỹ thuật</summary>
+            <div className="mt-2 space-y-1 text-[10px] text-slate-600">
+              <p>SHA nguồn: <code>{originalSnapshot?.sourceHash??"chưa có"}</code></p>
+              {sourceVisualState.manifest&&<p>Endpoint local nhận byte gốc: {sourceVisualState.localEndpointReceived?"có":"chưa"}; trang dựng {sourceVisualState.manifest.pages.length}/{sourceVisualState.manifest.pageCount}; renderer {sourceVisualState.manifest.rendererName} {sourceVisualState.manifest.rendererVersion??""}; SHA khớp {sourceVisualState.sourceSha256===originalSnapshot?.sourceHash?"có":"không"}.</p>}
+              {sourceVisualState.reason&&<p role="status">Lý do: {sourceVisualState.reason}</p>}
+              {sourcePagePreviewError&&<p role="status">Lỗi hiển thị trang: {sourcePagePreviewError}</p>}
+              {sourceVisualState.renderId&&<p>Render ID: <code>{sourceVisualState.renderId}</code>. Bản dựng tạm được giữ local tối đa 10 phút; trang không được gửi sang nhà cung cấp AI.</p>}
+            </div>
+          </details>
+        </div>
+
+        <details className="rounded-xl border border-violet-200 bg-violet-50/40 p-3" data-testid="ai-source-review-options">
+          <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-2 text-sm font-semibold text-[#17233D]">
+            <span>Đối chiếu bằng AI (tùy chọn)</span>
+            <span className="rounded-full bg-white px-2 py-1 text-[10px] text-slate-600">Không tự gửi</span>
+          </summary>
+          <p className="mt-2 text-xs text-[#52607A]">ChatGPT plan hiện không nhận DOCX nguyên bản. Nếu rà soát văn bản trích xuất khả dụng, DocForm chỉ gửi sau khi bạn xem phạm vi, bật consent riêng và nhấn nút gửi.</p>
+          <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-xs" data-testid="provider-capability-status">
+            <strong className="text-[#17233D]">Trạng thái nhà cung cấp</strong>
             {fullDocumentCapability?<>
-              <p className="mt-1"><strong>ChatGPT plan / OAuth</strong> · kết nối: {fullDocumentCapability.providers["chatgpt-plan"].session?.status??fullDocumentCapability.session?.status??"chưa rõ"}; văn bản: {fullDocumentCapability.providers["chatgpt-plan"].textInput.status}; manifest đầy đủ: {fullDocumentCapability.providers["chatgpt-plan"].fullTextManifest.status}.</p>
-              <ul className="mt-1 list-disc pl-4">{Object.entries(fullDocumentCapability.providers["chatgpt-plan"].features).map(([key,value])=><li key={`chatgpt-${key}`}><code>{key}</code>: <strong>{value.status}</strong> — {value.reason}</li>)}</ul>
-              <p className="mt-2"><strong>Gemini API hiện có</strong> · khóa máy chủ: {fullDocumentCapability.providers.gemini.configured?"đã cấu hình":"chưa phát hiện"}; văn bản: {fullDocumentCapability.providers.gemini.textInput.status}; manifest đầy đủ: {fullDocumentCapability.providers.gemini.fullTextManifest.status}; tier: {fullDocumentCapability.providers.gemini.dataUseTier?.tier??"chưa xác minh"}.</p>
-              <ul className="mt-1 list-disc pl-4">{Object.entries(fullDocumentCapability.providers.gemini.features).map(([key,value])=><li key={`gemini-${key}`}><code>{key}</code>: <strong>{value.status}</strong> — {value.reason}</li>)}</ul>
-              <p className="mt-1">{fullDocumentCapability.providers["chatgpt-plan"].oauthFileInputProbeReason}</p>
-            </>:<p className="mt-1">NOT_VERIFIED: chưa lấy được trạng thái khả năng từ máy chủ local.</p>}
-            <p className="mt-1 font-semibold">Không gửi tệp, PDF hoặc ảnh sang AI. Văn bản tách khối không được tính là đã gửi nguyên tệp.</p>
+              <p className="mt-1">ChatGPT plan: {fullDocumentCapability.providers["chatgpt-plan"].session?.status??fullDocumentCapability.session?.status??"chưa xác định"}. Chưa có xác nhận rằng nhà cung cấp đã mở hoặc xem tệp gốc.</p>
+              <p className="mt-1">Gemini API: {fullDocumentCapability.providers.gemini.configured?"đã có cấu hình":"chưa sẵn sàng"}. Gói Gemini hiện tại chưa được xác minh là Free Tier.</p>
+              <details className="mt-2 rounded border border-amber-200 bg-white p-2" data-testid="provider-capability-details">
+                <summary className="cursor-pointer text-xs font-semibold">Chi tiết kỹ thuật</summary>
+                <div className="mt-2 space-y-2 text-[10px] text-slate-600">
+                  <p>ChatGPT plan / OAuth · văn bản: {fullDocumentCapability.providers["chatgpt-plan"].textInput.status}; manifest: {fullDocumentCapability.providers["chatgpt-plan"].fullTextManifest.status}.</p>
+                  <ul className="list-disc pl-4">{Object.entries(fullDocumentCapability.providers["chatgpt-plan"].features).map(([key,value])=><li key={`chatgpt-${key}`}><code>{key}</code>: <strong>{value.status}</strong> — {value.reason}</li>)}</ul>
+                  <p>Gemini API · văn bản: {fullDocumentCapability.providers.gemini.textInput.status}; manifest: {fullDocumentCapability.providers.gemini.fullTextManifest.status}; tier: {fullDocumentCapability.providers.gemini.dataUseTier?.tier??"chưa xác minh"}.</p>
+                  <ul className="list-disc pl-4">{Object.entries(fullDocumentCapability.providers.gemini.features).map(([key,value])=><li key={`gemini-${key}`}><code>{key}</code>: <strong>{value.status}</strong> — {value.reason}</li>)}</ul>
+                  <p>{fullDocumentCapability.providers["chatgpt-plan"].oauthFileInputProbeReason}</p>
+                  <p>{fullDocumentCapability.providers.gemini.dataUseTier?.reason??"Chưa xác minh cấu hình Free Tier."}</p>
+                </div>
+              </details>
+            </>:<p className="mt-1">Chưa lấy được trạng thái nhà cung cấp từ máy chủ local.</p>}
+            <p className="mt-1 font-semibold">Không gửi tệp DOCX, PDF hoặc ảnh trang. Văn bản trích xuất không đồng nghĩa với việc AI đã đọc nguyên tệp.</p>
           </div>
-        </div>
-        {fullTextReview && <FullTextReviewPanel {...fullTextReview} />}
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-          <h3 className="text-xs font-bold text-[#17233D]">Đơn vị Body và phụ lục · {semanticReviewRows.filter(row=>row.status==="user_confirmed"||row.status==="auto_confirmed").length} đã duyệt · {semanticReviewRows.filter(row=>row.status==="needs_review"||row.status==="unsupported").length} chờ người dùng</h3>
-          {semanticDecisionFingerprint&&<code className="text-[10px] text-slate-500">revision {semanticDecisionFingerprint.slice(0,12)}</code>}
-        </div>
-        <div className="mt-2 max-h-80 overflow-y-auto space-y-2" aria-label="Các đơn vị ngữ nghĩa cần rà soát">
-          {semanticReviewRows.length===0?<p className="rounded-lg bg-slate-50 p-2 text-xs text-slate-600">Chưa có khối Body/phụ lục đủ chứng cứ để phân loại.</p>:semanticReviewRows.map(row=><article key={row.id} className="rounded-lg border border-slate-200 p-2.5" data-semantic-unit-id={row.id}>
-            <div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-xs text-[#17233D]">{row.scope==="body"?"Body":`Phụ lục · ${row.appendixTitle??"chưa rõ cha"}`} · {row.label}</strong><span className="text-[10px] font-semibold text-amber-800">{row.status==="user_confirmed"?"Đã xác nhận":row.status==="auto_confirmed"?"Khớp tự động":row.status==="rejected"?"Đã từ chối":row.status==="unsupported"?"Chưa hỗ trợ":"Chờ duyệt"}</span></div>
-            <blockquote className="mt-1 border-l-2 border-slate-300 pl-2 text-xs text-[#3B4663] whitespace-pre-wrap">{row.quote||"(ô nguồn không có chữ)"}</blockquote>
-            <p className="mt-1 text-[10px] text-slate-500">Nguồn: {row.anchor} · AI text: {row.aiLabel??"chưa có quan sát đã căn chỉnh"}. {row.reason}</p>
-            <p className="mt-1 text-[10px] text-slate-600">Quy tắc đề xuất: {row.rules.length?row.rules.map(rule=>`${rule.title} [${rule.ruleId}; ${rule.category}; ${rule.sourceReference??"chưa gắn căn cứ"}]`).join(" · "):row.ruleReason??"Chưa có quy tắc phù hợp."} {row.rulesApplied?"Đã áp dụng vào đoạn soạn.":"Chưa áp dụng định dạng."}</p>
-            {row.rules.length>0&&(row.status==="user_confirmed"||row.status==="auto_confirmed")&&(row.rulesApplied
-              ?<p className="mt-1 text-[10px] font-semibold text-emerald-800" role="status">Đã áp dụng quy tắc vào đúng đoạn Body. Bản xuất sẽ dùng các giá trị này.</p>
-              :row.ruleApplyAvailable
-                ?<button type="button" onClick={()=>onApplySemanticRules(row.id)} className="mt-2 rounded border border-[#6255E8] bg-[#F6F5FF] px-2 py-1 text-[11px] font-semibold text-[#5145C0]">Áp dụng quy tắc vào đoạn soạn</button>
-                :<p className="mt-1 text-[10px] text-amber-800">Chưa thể áp dụng: {row.ruleApplyReason??"neo nguồn chưa đủ chính xác để sửa một đoạn riêng lẻ."}</p>)}
-            {row.rules.length>0&&row.status!=="user_confirmed"&&row.status!=="auto_confirmed"&&<p className="mt-1 text-[10px] text-slate-500">Xác nhận nhãn này trước khi áp dụng định dạng.</p>}
-            {(row.status==="needs_review"||row.status==="unsupported")&&<div className="mt-2 flex gap-2"><button type="button" onClick={()=>onSemanticDecision(row.id,"user_confirmed")} className="rounded border border-emerald-700 px-2 py-1 text-[11px] font-semibold text-emerald-800">Xác nhận nhãn</button><button type="button" onClick={()=>onSemanticDecision(row.id,"rejected")} className="rounded border border-slate-400 px-2 py-1 text-[11px] text-slate-700">Từ chối nhãn</button></div>}
-          </article>)}
-        </div>
+          {fullTextReview && <FullTextReviewPanel {...fullTextReview} />}
+        </details>
+
+        <details id="df-step1-semantic-review" className="rounded-xl border border-[#CFD8EA] bg-white p-3" aria-label="Các đơn vị nội dung Body và phụ lục cần xem">
+          <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-2">
+            <span id="semantic-review-heading" className="text-sm font-bold text-[#17233D]">Body và phụ lục</span>
+            <span className="text-xs text-[#52607A]">{semanticConfirmedCount} đã xác nhận · {semanticPendingCount} chờ bạn xem</span>
+            <span className="text-xs font-semibold text-[#5145C0]">{semanticPendingCount>0?"Xem các mục cần duyệt":"Xem kết quả"}</span>
+          </summary>
+          <p className="mt-2 text-xs text-[#52607A]">Các nhãn chưa được xác nhận sẽ không tự áp dụng quy tắc. Bạn có thể xem trích đoạn rồi xác nhận hoặc từ chối từng mục.</p>
+          <div className="mt-2 max-h-80 space-y-2 overflow-y-auto" aria-label="Các đơn vị ngữ nghĩa cần rà soát">
+            {semanticReviewRows.length===0?<p className="rounded-lg bg-slate-50 p-2 text-xs text-slate-600">Chưa có khối Body/phụ lục đủ chứng cứ để phân loại.</p>:semanticReviewRows.map(row=><article key={row.id} className="rounded-lg border border-slate-200 p-2.5" data-semantic-unit-id={row.id}>
+              <div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-xs text-[#17233D]">{row.scope==="body"?"Body":`Phụ lục · ${row.appendixTitle??"chưa rõ cha"}`} · {row.label}</strong><span className="text-[10px] font-semibold text-amber-800">{row.status==="user_confirmed"?"Đã xác nhận":row.status==="auto_confirmed"?"Khớp tự động":row.status==="rejected"?"Đã từ chối":row.status==="unsupported"?"Chưa hỗ trợ":"Chờ duyệt"}</span></div>
+              <blockquote className="mt-1 border-l-2 border-slate-300 pl-2 text-xs text-[#3B4663] whitespace-pre-wrap">{row.quote||"(ô nguồn không có chữ)"}</blockquote>
+              <p className="mt-1 text-[11px] text-slate-600">{row.reason}</p>
+              {row.rules.length>0&&<p className="mt-1 text-[11px] text-slate-600">Quy tắc liên quan: {row.rules.map(rule=>rule.title).join(" · ")}</p>}
+              {row.rules.length>0&&(row.status==="user_confirmed"||row.status==="auto_confirmed")&&(row.rulesApplied
+                ?<p className="mt-1 text-[10px] font-semibold text-emerald-800" role="status">Đã áp dụng quy tắc vào đúng đoạn Body. Bản xuất sẽ dùng các giá trị này.</p>
+                :row.ruleApplyAvailable
+                  ?<button type="button" onClick={()=>onApplySemanticRules(row.id)} className="mt-2 rounded border border-[#6255E8] bg-[#F6F5FF] px-2 py-1 text-[11px] font-semibold text-[#5145C0]">Áp dụng quy tắc vào đoạn soạn</button>
+                  :<p className="mt-1 text-[10px] text-amber-800">Chưa thể áp dụng: {row.ruleApplyReason??"neo nguồn chưa đủ chính xác để sửa một đoạn riêng lẻ."}</p>)}
+              {row.rules.length>0&&row.status!=="user_confirmed"&&row.status!=="auto_confirmed"&&<p className="mt-1 text-[10px] text-slate-500">Xác nhận nhãn này trước khi áp dụng định dạng.</p>}
+              {(row.status==="needs_review"||row.status==="unsupported")&&<div className="mt-2 flex flex-wrap gap-2"><button type="button" onClick={()=>onSemanticDecision(row.id,"user_confirmed")} className="rounded border border-emerald-700 px-2 py-1 text-[11px] font-semibold text-emerald-800">Xác nhận nhãn</button><button type="button" onClick={()=>onSemanticDecision(row.id,"rejected")} className="rounded border border-slate-400 px-2 py-1 text-[11px] text-slate-700">Từ chối nhãn</button></div>}
+              <details className="mt-2 rounded border border-slate-200 p-2" data-semantic-technical-details>
+                <summary className="cursor-pointer text-[10px] font-semibold text-slate-600">Chi tiết kỹ thuật</summary>
+                <div className="mt-1 space-y-1 break-words text-[10px] text-slate-500">
+                  <p>Nguồn: {row.anchor} · quan sát AI: {row.aiLabel??"chưa có"}.</p>
+                  <p>{semanticDecisionFingerprint?`Revision ${semanticDecisionFingerprint.slice(0,12)}. `:""}{row.rules.length?row.rules.map(rule=>`${rule.title} [${rule.ruleId}; ${rule.category}; ${rule.sourceReference??"chưa gắn căn cứ"}]`).join(" · "):row.ruleReason??"Chưa có quy tắc phù hợp."}</p>
+                </div>
+              </details>
+            </article>)}
+          </div>
+        </details>
       </section>}
 
       {/* 4. Nguồn tài liệu: tệp hoặc mẫu */}
@@ -1135,21 +1206,37 @@ export function ImportStepView({
           </>
         )}
 
-        {(profileMismatch || templateMismatch) && <details className="df-import-disclosure df-import-recognition-warnings">
+        {(profileMismatch || templateMismatch) && <details className="df-import-disclosure df-import-recognition-warnings" open={profileMismatch || undefined}>
           <summary>Cần kiểm tra lựa chọn mẫu <span>{Number(profileMismatch) + Number(templateMismatch)} lưu ý</span></summary>
         {profileMismatch && (
           <div
             id="source-mismatch-profile"
             data-source-warning="profile"
+            data-testid="source-profile-conflict"
             role="status"
             className="mt-2.5 p-2.5 rounded-xl bg-amber-50 border border-amber-300 text-[11.5px] text-[#9E5206] flex items-start gap-2"
           >
             <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-            <span>
-              {sourceLooksCompany
-                ? "Phần đầu nguồn có tên Công ty Hoa tiêu nhưng bạn đang chọn “Cơ quan chung”. Hệ thống không tự ép mẫu công ty lên tệp nhập — bấm “Hoa tiêu miền Bắc” nếu muốn dùng mẫu đã duyệt."
-                : "Bạn đang chọn mẫu “Hoa tiêu miền Bắc” nhưng phần đầu nguồn không có tên Công ty Hoa tiêu. Hãy chọn “Cơ quan chung” hoặc xác nhận bạn muốn áp mẫu công ty."}
-            </span>
+            <div className="min-w-0">
+              <p>
+                {sourceProfile === "company"
+                  ? "Hai dòng cơ quan trong nguồn khớp mẫu Hoa tiêu miền Bắc, nhưng bạn đang chọn “Cơ quan chung”."
+                  : sourceProfile === "other"
+                    ? "Tên cơ quan trong nguồn không khớp đầy đủ với mẫu Hoa tiêu miền Bắc."
+                    : "Chưa đủ thông tin hai dòng cơ quan để đối chiếu với mẫu Hoa tiêu miền Bắc."}
+                {profileDecisionValid && " Bạn đã xác nhận lựa chọn cho tệp này trong phiên hiện tại."}
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2" role="group" aria-label="Xác nhận mẫu cơ quan cho tệp này">
+                <button type="button" data-action="confirm-generic-profile" onClick={() => onConfirmProfileDecision("generic")}
+                  className="rounded-lg border border-[#CFD8EA] bg-white px-2.5 py-1.5 font-semibold text-[#17233D] hover:border-[#6255E8]">
+                  Dùng Cơ quan chung
+                </button>
+                <button type="button" data-action="confirm-company-profile" onClick={() => onConfirmProfileDecision("company")}
+                  className="rounded-lg border border-[#6255E8] bg-white px-2.5 py-1.5 font-semibold text-[#5145C0] hover:bg-[#F6F5FF]">
+                  Vẫn dùng Hoa tiêu miền Bắc
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
@@ -1186,7 +1273,6 @@ export function ImportStepView({
         {phase==="recognition"&&<button type="button" className="df-import-forward" onClick={()=>setPhase("metadata")}>Xác nhận thông tin <ArrowRight size={16}/></button>}
         {phase==="metadata"&&!doc.documentType&&<div id="doctype-required-reason" role="status" aria-live="polite" className="w-full rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
           Chưa thể xem tóm tắt: hãy xác nhận loại văn bản để chọn đúng quy tắc và mẫu.
-          {sourceEvidenceSuggestsMinutes&&sourceTypeEvidence&&<div className="mt-1 flex flex-wrap items-center gap-2"><span>Gợi ý từ nguồn: <strong>Biên bản</strong> — “{sourceTypeEvidence.exactQuote}” (khối {sourceTypeEvidence.sourceBlockId}, vị trí {sourceTypeEvidence.blockIndex+1}).</span><button type="button" onClick={()=>onFieldChange("documentType","BIÊN BẢN")} className="rounded border border-amber-800 px-2 py-1 font-semibold">Xác nhận “Biên bản”</button></div>}
         </div>}
         {phase==="metadata"&&<button type="button" className="df-import-forward" disabled={!doc.documentType} aria-describedby={!doc.documentType?"doctype-required-reason":undefined} onClick={()=>setPhase("ready")}>Xem tóm tắt <ArrowRight size={16}/></button>}
         {phase==="regime"&&<button type="button" className="df-import-forward" onClick={()=>setPhase("doctype")}>Chọn loại văn bản <ArrowRight size={16}/></button>}

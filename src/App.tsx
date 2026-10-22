@@ -171,6 +171,7 @@ import {
   inferDraftSourceOrigin,
   type DocTypeDecision,
 } from "./utils/sourceMismatch.ts";
+import { profileDecisionCovers, type ProfileDecision, type ProfileDecisionContext } from "./utils/profileDecision.ts";
 
 const PILOT_CATEGORIES = [
   { id: "all", name: "Tất cả", count: 27, icon: "📁" },
@@ -1385,6 +1386,8 @@ export default function App() {
    */
   const [editorState,setEditorState]=useState({activeCanvasId:"body"});
   const [docTypeOverride, setDocTypeOverride] = useState<DocTypeDecision | null>(null);
+  // Profile decisions are intentionally session-only; reload requires resolving a remaining conflict again.
+  const [profileDecision, setProfileDecision] = useState<ProfileDecision | null>(null);
   const [safeRegimeModal, setSafeRegimeModal] = useState<{ isOpen: boolean; targetRegime: "state" | "party" } | null>(null);
   // Chặng 2: pending extracted source awaiting an explicit regime confirmation.
   // While set, document A is untouched and no source blob has been stored.
@@ -2180,7 +2183,10 @@ export default function App() {
         const restoredMismatch = deriveSourceMismatch({
           hasSelectedSource: restoredOrigin !== "none",
           hasImportedFile: Boolean(
-            savedDraft.uploadedFileName || (savedDraft.uploadedBlocks?.length ?? 0) > 0
+            restoredOrigin === "uploaded_file" ||
+            savedDraft.originalSnapshot?.sourceType === "uploaded_file" ||
+            savedDraft.uploadedFileName ||
+            (savedDraft.uploadedBlocks?.length ?? 0) > 0
           ),
           structuredImport: savedDraft.structuredImport ?? null,
           originalSnapshot: savedDraft.originalSnapshot ?? null,
@@ -2194,12 +2200,13 @@ export default function App() {
         });
         const restoredCanExport =
           restoredStructureReady &&
+          !restoredMismatch.profileMismatch &&
           (restoredOrigin !== "uploaded_file" ||
             (restoredApproval !== null &&
               restoredApproval === (savedDraft.originalSnapshot?.sourceHash ?? ""))) &&
           (!restoredMismatch.docTypeMismatch ||
             docTypeDecisionCovers(restoredDecision, restoredMismatch, savedDraft.standardType));
-        const restoredMaxStep: 1 | 2 | 3 = restoredCanExport ? 3 : restoredOrigin !== "none" ? 2 : 1;
+        const restoredMaxStep: 1 | 2 | 3 = restoredMismatch.profileMismatch ? 1 : restoredCanExport ? 3 : restoredOrigin !== "none" ? 2 : 1;
         const requestedStep = (savedDraft.currentStep ?? 1) as 1 | 2 | 3;
         setCurrentStep(restoredWorkspace.workspace.staged||!canEnterWorkspaceStep(restoredWorkspace,2)?1:(requestedStep > restoredMaxStep ? restoredMaxStep : requestedStep) as 1 | 2 | 3);
         if(restoredWorkspace.workspace.staged)setShowSideBySideModal(true);
@@ -2484,18 +2491,19 @@ export default function App() {
 
   // Mâu thuẫn nguồn ↔ lựa chọn (loại văn bản, mẫu cơ quan, hệ của mẫu). Dùng chung
   // một phép suy luận với Bước 1 để giao diện và cổng xuất không nói hai điều khác nhau.
+  const chosenProfile: ProfileDecisionContext["chosenProfile"] =
+    standardType === "party"
+      ? doc.headerProfile === COMPANY_HEADER_HD05_PROFILE_ID ? "company" : "generic"
+      : doc.headerProfile === COMPANY_HEADER_PROFILE_ID ? "company" : "generic";
   const sourceMismatch = React.useMemo(
     () =>
       deriveSourceMismatch({
         hasSelectedSource: sourceChosen,
-        hasImportedFile: Boolean(uploadedFileName || uploadedBlocks.length > 0),
+        hasImportedFile: Boolean(sourceOrigin === "uploaded_file" || originalSnapshot?.sourceType === "uploaded_file" || uploadedFileName || uploadedBlocks.length > 0),
         structuredImport,
         originalSnapshot,
         templates: TEMPLATES,
-        isCompanyProfile:
-          standardType === "party"
-            ? doc.headerProfile === COMPANY_HEADER_HD05_PROFILE_ID
-            : doc.headerProfile === COMPANY_HEADER_PROFILE_ID,
+        isCompanyProfile: chosenProfile === "company",
         chosenRegime: standardType,
         chosenDocType: doc.documentType,
       }),
@@ -2506,10 +2514,23 @@ export default function App() {
       structuredImport,
       originalSnapshot,
       standardType,
-      doc.headerProfile,
+      chosenProfile,
       doc.documentType,
     ],
   );
+
+  const profileDecisionContext: ProfileDecisionContext = {
+    sourceKey: originalSnapshot?.sourceHash?.trim()
+      ? `sha256:${originalSnapshot.sourceHash.toLowerCase()}:generation:${sourceGeneration}`
+      : originalSnapshot
+        ? `snapshot:${originalSnapshot.sourceType}:${originalSnapshot.sourceId ?? originalSnapshot.fileName ?? "unknown"}:${originalSnapshot.uploadedAt}:${sourceGeneration}`
+        : `source:${sourceOrigin}:${uploadedFileName || "unknown"}:generation:${sourceGeneration}`,
+    regime: standardType,
+    sourceProfile: sourceMismatch.sourceProfile,
+    chosenProfile,
+  };
+  const profileDecisionValid = profileDecisionCovers(profileDecision, profileDecisionContext);
+  const canEnterProfileDecision = !sourceMismatch.profileMismatch || profileDecisionValid;
 
   /** Quyết định override còn hiệu lực cho đúng cặp nguồn/loại/hệ hiện tại hay không. */
   const docTypeDecisionValid = docTypeDecisionCovers(docTypeOverride, sourceMismatch, standardType);
@@ -2523,9 +2544,9 @@ export default function App() {
   const currentSourceHash = originalSnapshot?.sourceHash ?? "";
   const importReviewSatisfied=sourceOrigin!=='uploaded_file'||hasWorkspaceApproval(workspaceSnapshot);
   const importMetadataReady=sourceOrigin!=='uploaded_file'||Boolean(doc.documentType?.trim());
-  const canExportSource=importMetadataReady&&structureReady&&importReviewSatisfied&&(!sourceMismatch.docTypeMismatch||docTypeDecisionValid)&&canEnterWorkspaceStep(workspaceSnapshot,3);
-  const canEnterStep=(step:1|2|3)=>step===1||sourceChosen&&importMetadataReady&&canEnterWorkspaceStep(workspaceSnapshot,step)&&(step!==3||canExportSource);
-  const stepIsComplete=(step:1|2|3)=>step===1?sourceChosen&&importMetadataReady&&canEnterWorkspaceStep(workspaceSnapshot,2):step===2?canExportSource:Boolean(visibleCandidate?.downloadable);
+  const canExportSource=importMetadataReady&&structureReady&&importReviewSatisfied&&canEnterProfileDecision&&(!sourceMismatch.docTypeMismatch||docTypeDecisionValid)&&canEnterWorkspaceStep(workspaceSnapshot,3);
+  const canEnterStep=(step:1|2|3)=>step===1||sourceChosen&&importMetadataReady&&canEnterProfileDecision&&canEnterWorkspaceStep(workspaceSnapshot,step)&&(step!==3||canExportSource);
+  const stepIsComplete=(step:1|2|3)=>step===1?sourceChosen&&importMetadataReady&&canEnterProfileDecision&&canEnterWorkspaceStep(workspaceSnapshot,2):step===2?canExportSource:Boolean(visibleCandidate?.downloadable);
 
   const sidebarItemsByStep: Record<1 | 2 | 3, Array<{ id: string; label: string; selector?: string }>> = {
     1: [
@@ -2563,6 +2584,8 @@ export default function App() {
       showToast(
         !sourceChosen
           ? "Cần một nguồn tài liệu (tệp Word/TXT hoặc mẫu chuẩn) trước khi sang bước soạn thảo."
+          : sourceMismatch.profileMismatch && !profileDecisionValid
+            ? "Hãy xác nhận dùng Cơ quan chung hoặc vẫn dùng mẫu Hoa tiêu miền Bắc trước khi rời Bước 1."
           : sourceOrigin === "uploaded_file" && !importReviewSatisfied
             ? workspaceSnapshot.workspace.staged
               ? "Phân vùng đang chờ xác nhận. Hãy hoàn tất đối chiếu nguồn ở Bước 1 trước khi soạn."
@@ -2675,6 +2698,26 @@ export default function App() {
     setSuccessMsg(isActivating
       ? `Đã áp dụng phần đầu công ty (${isPartyMode ? "Hướng dẫn 05-HD/VPTW" : "Nghị định 30/2020/NĐ-CP"}). Nội dung, số ký hiệu và ngày ban hành được giữ nguyên.`
       : "Đã chuyển sang phần đầu tùy chỉnh; bạn có thể sửa thông tin cơ quan.");
+  };
+
+  const handleConfirmProfileDecision = (selectedProfile: "company" | "generic") => {
+    if (!sourceMismatch.profileMismatch) return;
+    const decision: ProfileDecision = {
+      ...profileDecisionContext,
+      chosenProfile: selectedProfile,
+      decidedAt: new Date().toISOString(),
+    };
+    const profileId = selectedProfile === "generic"
+      ? "generic"
+      : standardType === "party" ? COMPANY_HEADER_HD05_PROFILE_ID : COMPANY_HEADER_PROFILE_ID;
+    handleFieldChange("headerProfile", profileId);
+    setProfileDecision(decision);
+    showToast(
+      selectedProfile === "generic"
+        ? "Đã ghi nhận lựa chọn Cơ quan chung cho tệp này."
+        : "Đã ghi nhận quyết định vẫn dùng mẫu Hoa tiêu miền Bắc cho tệp này.",
+      "success",
+    );
   };
 
   const applyTemplate = (t: TemplatePreset, headerProfile: "company" | "generic" = "company") => {
@@ -3292,13 +3335,24 @@ export default function App() {
 
   const handleConfirmSideBySideImport = () => {
     const current=workspaceSnapshotRef.current;
-    if(current.workspace.staged){if(applyWorkspaceResult(confirmWorkspacePartition(current))){setShowSideBySideModal(false);setImportReviewApprovedSourceHash(originalSnapshot?.sourceHash??'');setCurrentStep(2);}return;}
-    if(current.workspace.partition.approval||current.workspace.workingRevision>0){if(applyWorkspaceResult(approveWorkspacePartition(current))){setShowSideBySideModal(false);setImportReviewApprovedSourceHash(originalSnapshot?.sourceHash??'');setCurrentStep(2);}return;}
+    const finishPartitionReview = () => {
+      setShowSideBySideModal(false);
+      setImportReviewApprovedSourceHash(originalSnapshot?.sourceHash ?? "");
+      if (canEnterProfileDecision) setCurrentStep(2);
+      else {
+        setCurrentStep(1);
+        showToast("Đã duyệt phân vùng nguồn. Hãy xác nhận mẫu cơ quan ở Bước 1 trước khi tiếp tục.", "info");
+      }
+    };
+    if(current.workspace.staged){if(applyWorkspaceResult(confirmWorkspacePartition(current))){finishPartitionReview();}return;}
+    if(current.workspace.partition.approval||current.workspace.workingRevision>0){if(applyWorkspaceResult(approveWorkspacePartition(current))){finishPartitionReview();}return;}
     if (!structuredImport) return;
     if (liveValidationErrors.length > 0) return;
 
     const newDoc: DocumentState = {
-      headerProfile: "generic",
+      headerProfile: chosenProfile === "company"
+        ? standardType === "party" ? COMPANY_HEADER_HD05_PROFILE_ID : COMPANY_HEADER_PROFILE_ID
+        : "generic",
       orgHeader1: liveReconstructed.fields.orgHeader1 || "",
       orgHeader2: liveReconstructed.fields.orgHeader2 || "",
       draftNote: liveReconstructed.draftNote || "",
@@ -3325,6 +3379,22 @@ export default function App() {
         sourceFilename: uploadedFileName,
       }
     };
+    const importedMismatch = deriveSourceMismatch({
+      hasSelectedSource: true,
+      hasImportedFile: true,
+      structuredImport,
+      originalSnapshot,
+      templates: TEMPLATES,
+      isCompanyProfile: chosenProfile === "company",
+      chosenRegime: standardType,
+      chosenDocType: newDoc.documentType,
+    });
+    const importedProfileContext: ProfileDecisionContext = {
+      ...profileDecisionContext,
+      sourceProfile: importedMismatch.sourceProfile,
+      chosenProfile,
+    };
+    const importedProfileResolved = !importedMismatch.profileMismatch || profileDecisionCovers(profileDecision, importedProfileContext);
     const pending=structuredClone(createWorkspaceSnapshot({doc:newDoc,standardType,reviewBlocks,structuredImport}, {blobHash:originalSnapshot?.sourceHash||'unverified',generation:sourceGeneration,blocks:uploadedBlocks.length?uploadedBlocks:reviewBlocks}));
     pending.workspace.partition=makePartition(pending.workspace.source,standardType,reviewBlocks,pending.workspace.partition.revision,current.workspace.partition.cells);
     if(!applyWorkspaceResult(approveWorkspacePartition(pending)))return;
@@ -3337,7 +3407,11 @@ export default function App() {
     // mở được Bước 3 và các nút xuất/in.
     setImportReviewAccepted(true);
     setImportReviewApprovedSourceHash(originalSnapshot?.sourceHash ?? "");
-    setCurrentStep(2);
+    if (importedProfileResolved) setCurrentStep(2);
+    else {
+      setCurrentStep(1);
+      showToast("Đã duyệt phân vùng nguồn. Hãy xác nhận dùng Cơ quan chung hoặc vẫn dùng mẫu Hoa tiêu miền Bắc trước khi tiếp tục.", "info");
+    }
   };
 
   const handleAiRefine = async (action: "proofread" | "formalize", nodeId?:string) => {
@@ -3860,12 +3934,14 @@ export default function App() {
           onNext={() => goToStep(2)}
           docTypeOverride={docTypeDecisionValid ? docTypeOverride : null}
           onConfirmDocTypeOverride={handleConfirmDocTypeOverride}
+          profileDecisionValid={profileDecisionValid}
+          onConfirmProfileDecision={handleConfirmProfileDecision}
         />
       )}
 
-      {currentStep===3&&<WorkspaceExport candidate={visibleCandidate} complianceReport={complianceReport} complianceRevision={complianceRevision} pending={candidatePending} error={candidateError} onPrepare={()=>void prepareCandidate()} onDownload={()=>void exportToDocx()} onDownloadOriginal={()=>void handleDownloadOriginalFile()} onPrintCandidate={()=>void handlePrintCandidate()} originalAvailable={sourceBlobAvailability==='available'} onPrev={()=>goToStep(2)} onReviewSource={()=>{setCurrentStep(1);setShowSideBySideModal(true);}} onEditTarget={(targetId)=>{setCurrentStep(2);requestAnimationFrame(()=>{const node=[...document.querySelectorAll<HTMLElement>('[data-workspace-node]')].find(el=>el.dataset.workspaceNode===targetId);(node?.querySelector<HTMLElement>('[contenteditable="true"]')??document.querySelector<HTMLElement>('[data-canvas-id="body"] [contenteditable="true"]'))?.focus({preventScroll:true});});}}/>}
+      {currentStep===3&&<WorkspaceExport candidate={visibleCandidate} complianceReport={complianceReport} complianceRevision={complianceRevision} pending={candidatePending} error={candidateError} onPrepare={()=>void prepareCandidate()} onDownload={()=>void exportToDocx()} onDownloadOriginal={()=>void handleDownloadOriginalFile()} onPrintCandidate={()=>void handlePrintCandidate()} originalAvailable={sourceBlobAvailability==='available'} onPrev={()=>goToStep(2)} onReviewSource={()=>{setCurrentStep(1);setShowSideBySideModal(true);}} onEditTarget={(targetId)=>{if(!canEnterStep(2)){goToStep(2);return;}setCurrentStep(2);requestAnimationFrame(()=>{const node=[...document.querySelectorAll<HTMLElement>('[data-workspace-node]')].find(el=>el.dataset.workspaceNode===targetId);(node?.querySelector<HTMLElement>('[contenteditable="true"]')??document.querySelector<HTMLElement>('[data-canvas-id="body"] [contenteditable="true"]'))?.focus({preventScroll:true});});}}/>}
       <div className="df-workspace-step2-shell" hidden={currentStep!==2}>
-        {sourceChosen&&canEnterWorkspaceStep(workspaceSnapshot,2)&&<WorkspaceEditor key={workspaceSnapshot.workspace.source?.identity??originalSnapshot?.sourceId??'template'} snapshot={workspaceSnapshot} initialCanvasId={editorState.activeCanvasId} onCanvasSelected={id=>setEditorState({activeCanvasId:id})} active={currentStep===2} onAction={workspaceAction} onRequestRegimeSwitch={requestRegimeSwitch} onPartition={()=>{setCurrentStep(1);setShowSideBySideModal(true);}} onRefine={handleAiRefine} refining={isRefining} aiProvider={partitionAiProvider} chatGPTReady={chatGPTStatus.enabled&&chatGPTStatus.session.status==="connected"&&chatGPTStatus.session.sharing} onAiSettings={()=>setShowAppSettings(true)} canContinue={canEnterStep(3)} complianceReport={complianceReport} onOpenCompliance={()=>setShowComplianceModal(true)}/>}
+        {sourceChosen&&canEnterProfileDecision&&canEnterWorkspaceStep(workspaceSnapshot,2)&&<WorkspaceEditor key={workspaceSnapshot.workspace.source?.identity??originalSnapshot?.sourceId??'template'} snapshot={workspaceSnapshot} initialCanvasId={editorState.activeCanvasId} onCanvasSelected={id=>setEditorState({activeCanvasId:id})} active={currentStep===2} onAction={workspaceAction} onRequestRegimeSwitch={requestRegimeSwitch} onPartition={()=>{setCurrentStep(1);setShowSideBySideModal(true);}} onRefine={handleAiRefine} refining={isRefining} aiProvider={partitionAiProvider} chatGPTReady={chatGPTStatus.enabled&&chatGPTStatus.session.status==="connected"&&chatGPTStatus.session.sharing} onAiSettings={()=>setShowAppSettings(true)} canContinue={canEnterStep(3)} complianceReport={complianceReport} onOpenCompliance={()=>setShowComplianceModal(true)}/>}
       </div>
       </div></div>
       {toast && (

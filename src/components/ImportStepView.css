@@ -433,6 +433,9 @@
 .df-import-context .df-import-next-card { background: #fcfcff; }
 
 .df-import-step .df-import-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 20;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -440,6 +443,9 @@
   margin-top: 0;
   padding: 13px 0 3px;
   border-top: 1px solid var(--df-step-border);
+  background: rgb(255 255 255 / 96%);
+  box-shadow: 0 -8px 20px rgb(25 43 77 / 5%);
+  backdrop-filter: blur(10px);
 }
 
 .df-import-step .df-import-continue {
@@ -491,6 +497,12 @@
   .df-import-step .df-import-appendix > span:last-child { grid-column: 2; }
   .df-import-step .df-import-actions { align-items: stretch; flex-direction: column; }
   .df-import-step .df-import-continue { width: 100%; }
+}
+
+@media (min-width: 1001px) {
+  .df-import-step[data-flow-phase="metadata"] > .df-step-content > [data-testid="semantic-review-panel"] {
+    grid-column: 1 / -1;
+  }
 }
 
 @media (max-width: 390px) {

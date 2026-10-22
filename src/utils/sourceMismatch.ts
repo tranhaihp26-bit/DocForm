@@ -9,6 +9,37 @@
  */
 import type { StructuredImport } from "../shared/schemas/document.schema.ts";
 import type { OriginalDocumentSnapshot } from "./draftStore.ts";
+import { COMPANY_HEADER_PARENT, COMPANY_HEADER_ISSUER } from "../canonical/nd30/companyHeader.ts";
+import { COMPANY_HEADER_HD05_PARENT, COMPANY_HEADER_HD05_ISSUER } from "../canonical/hd05/companyHeaderHD05.ts";
+
+export type SourceProfileEvidence = "company" | "other" | "unknown";
+
+function normalizeProfileHeader(value: string | null | undefined): string | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  return value.normalize("NFC").replace(/\s+/g, " ").trim().toLocaleUpperCase("vi-VN");
+}
+
+/**
+ * Chỉ nhận diện hồ sơ Hoa tiêu khi cả hai dòng cơ quan khớp chính xác mẫu của hệ.
+ * Không dùng từ khóa hoặc so khớp gần đúng vì tên tổ chức khác có thể chứa "Hoa tiêu".
+ */
+export function sourceProfileEvidence(
+  regime: "state" | "party",
+  orgHeader1: string | null | undefined,
+  orgHeader2: string | null | undefined,
+): SourceProfileEvidence {
+  const parent = normalizeProfileHeader(orgHeader1);
+  const issuer = normalizeProfileHeader(orgHeader2);
+  if (!parent || !issuer) return "unknown";
+
+  const expectedParent = normalizeProfileHeader(
+    regime === "party" ? COMPANY_HEADER_HD05_PARENT : COMPANY_HEADER_PARENT,
+  );
+  const expectedIssuer = normalizeProfileHeader(
+    regime === "party" ? COMPANY_HEADER_HD05_ISSUER : COMPANY_HEADER_ISSUER,
+  );
+  return parent === expectedParent && issuer === expectedIssuer ? "company" : "other";
+}
 
 export type SourceOrigin = "none" | "uploaded_file" | "system_template";
 
@@ -49,6 +80,7 @@ export interface SourceMismatchResult {
   sourceDocType: string;
   chosenDocType: string;
   docTypeMismatch: boolean;
+  sourceProfile: SourceProfileEvidence;
   profileMismatch: boolean;
   templateMismatch: boolean;
 }
@@ -80,20 +112,19 @@ export function deriveSourceMismatch(input: SourceMismatchInput): SourceMismatch
     input.hasSelectedSource && sourceDocType && chosenDocType && sourceDocType !== chosenDocType,
   );
 
-  const sourceOrgHeader =
-    input.structuredImport?.fields?.orgHeader1?.value ||
-    (appliedTemplate
-      ? `${appliedTemplate.defaultData.orgHeader1} ${appliedTemplate.defaultData.orgHeader2}`
-      : "");
-  const sourceLooksCompany = /HOA TIÊU/i.test(sourceOrgHeader);
+  const sourceProfile = sourceProfileEvidence(
+    input.chosenRegime,
+    input.structuredImport?.fields?.orgHeader1?.value,
+    input.structuredImport?.fields?.orgHeader2?.value,
+  );
   const profileMismatch = Boolean(
-    input.hasImportedFile && input.structuredImport && sourceLooksCompany !== input.isCompanyProfile,
+    input.hasImportedFile && (sourceProfile === "company") !== input.isCompanyProfile,
   );
 
   const appliedTemplateRegime = appliedTemplate?.type ?? null;
   const templateMismatch = Boolean(appliedTemplateRegime && appliedTemplateRegime !== input.chosenRegime);
 
-  return { sourceDocType, chosenDocType, docTypeMismatch, profileMismatch, templateMismatch };
+  return { sourceDocType, chosenDocType, docTypeMismatch, sourceProfile, profileMismatch, templateMismatch };
 }
 
 /** Quyết định override chỉ có hiệu lực cho đúng cặp nguồn/loại/hệ đã được xác nhận. */

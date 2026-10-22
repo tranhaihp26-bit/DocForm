@@ -8,9 +8,12 @@ test("full-text review panel shows exact local extraction inventory and separate
   assert.match(source, /Kiểm kê văn bản trích xuất trên máy/u);
   assert.match(source, /Không gửi tệp DOCX, PDF, ảnh/u);
   assert.match(source, /data-testid="full-text-provider-consent"/u);
+  assert.match(source, /data-testid="full-text-technical-details"/u);
+  assert.match(source, /Không gửi tệp DOCX, PDF, ảnh trang/u);
+  assert.match(source, /Mỗi lần gửi hoặc thử lại đều do bạn nhấn nút/u);
   assert.match(source, /excluded\.map/u);
   assert.match(source, /part\.partUri/u);
-  assert.match(source, /Gemini.*chưa được xác minh là Free Tier/iu);
+  assert.match(source, /providerTierNotice/u);
 });
 
 test("full-text review UI offers per-chunk progress, cancellation and failed-segment-only retry", () => {
