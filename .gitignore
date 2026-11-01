@@ -11,6 +11,13 @@ coverage/
 .vite-test-cache*/
 .antigravity/
 .nd30-overlay-backup/
+
+# Local Graphify index and optional agent hook configuration
+graphify-out/
+.codex/hooks.json
+.agents/skills/graphify/
+.codex/skills/graphify/
+.hermes/skills/graphify/
 group-b-evidence/
 test/experiments/
 

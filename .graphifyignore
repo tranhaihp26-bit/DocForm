@@ -1,0 +1,5 @@
+# Third-party vendored SDK is not part of DocForm's first-party code graph.
+vendor/
+
+# Generated graph output must not be fed back into extraction.
+graphify-out/
