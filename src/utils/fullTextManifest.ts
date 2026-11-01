@@ -532,13 +532,14 @@ export async function buildFullTextManifest(
     anchor: SegmentAnchor,
     namespaceProfile: WordNamespaceProfile,
     depth = 0,
+    ancestorUnsafe: { code: FullTextIssueCode; reason: string } | null = null,
   ): Promise<void> => {
     xml = escapeXmlCdataSectionsForParsing(normalizeWordprocessingMlElements(xml, namespaceProfile));
     if (hasAmbiguousWordTextTag(xml, namespaceProfile)) {
       addIssue("unsupported_text_part", anchor.packagePartUri, anchor.anchor,
         "Có phần tử text thuộc namespace WordprocessingML nhưng prefix bị khai báo không nhất quán; đoạn chưa được kiểm kê đầy đủ.");
     }
-    const unsafe = paragraphUnsafeCode(xml, namespaceProfile);
+    const unsafe = ancestorUnsafe ?? paragraphUnsafeCode(xml, namespaceProfile);
     if (unsafe) {
       addIssue(unsafe.code, anchor.packagePartUri, anchor.anchor, unsafe.reason);
     } else {
@@ -557,6 +558,7 @@ export async function buildFullTextManifest(
     }
     for (let textboxIndex = 0; textboxIndex < textboxes.length; textboxIndex++) {
       const textboxXml = textboxes[textboxIndex];
+      const textboxUnsafe = unsafe ?? paragraphUnsafeCode(textboxXml, namespaceProfile);
       const children = getSupportedDirectChildren(textboxXml, "w:txbxContent", TEXTBOX_CHILDREN,
         anchor.packagePartUri, `${anchor.anchor}/textbox[${textboxIndex}]`);
       let paragraphIndex = 0;
@@ -577,7 +579,7 @@ export async function buildFullTextManifest(
           paragraphIndex,
           relationshipId: anchor.relationshipId,
           noteId: anchor.noteId,
-        }, namespaceProfile, depth + 1);
+        }, namespaceProfile, depth + 1, textboxUnsafe);
         paragraphIndex++;
       }
     }

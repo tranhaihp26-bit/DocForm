@@ -1,4 +1,5 @@
 import { COMPANY_HEADER_PROFILE_ID } from "../canonical/nd30/companyHeader.ts";
+import { COMPANY_HEADER_HD05_PROFILE_ID } from "../canonical/hd05/companyHeaderHD05.ts";
 
 export type SemanticRuleRegime = "state" | "party";
 export type SemanticLineSpacing = "1.15" | "18pt" | "19pt";
@@ -32,12 +33,13 @@ export function resolveSemanticRuleFormatting(
   const expected = regime === "state" ? new Set([STATE_LINE, STATE_INDENT]) : new Set([PARTY_LINE, PARTY_INDENT]);
   if (ruleIds.some(ruleId => !expected.has(ruleId))) throw new Error("rule_regime_mismatch");
   const companyStateProfile = regime === "state" && profile === COMPANY_HEADER_PROFILE_ID;
+  const companyPartyProfile = regime === "party" && profile === COMPANY_HEADER_HD05_PROFILE_ID;
   return {
     ...(ruleIds.includes(regime === "state" ? STATE_LINE : PARTY_LINE)
-      ? { lineSpacing: regime === "party" ? "18pt" as const : companyStateProfile ? "19pt" as const : "1.15" as const }
+      ? { lineSpacing: companyPartyProfile ? "19pt" as const : regime === "party" ? "18pt" as const : companyStateProfile ? "19pt" as const : "1.15" as const }
       : {}),
     ...(ruleIds.includes(regime === "state" ? STATE_INDENT : PARTY_INDENT)
-      ? { firstLineIndent: regime === "party" ? "1cm" as const : companyStateProfile ? "0.5in" as const : "1.27cm" as const }
+      ? { firstLineIndent: companyPartyProfile ? "0.5in" as const : regime === "party" ? "1cm" as const : companyStateProfile ? "0.5in" as const : "1.27cm" as const }
       : {}),
   };
 }

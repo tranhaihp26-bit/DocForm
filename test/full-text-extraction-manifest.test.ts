@@ -319,3 +319,71 @@ test("reads CDATA as literal Word text without parsing tag-shaped CDATA content"
   assert.equal(manifest.coverage.status, "complete");
   assert.deepEqual(manifest.excluded, []);
 });
+
+test("Task 5: excludes textboxes nested in hidden, tracked deletion/moveFrom, or field unsafe ancestors while extracting visible control textbox", async () => {
+  assert.ok(manifestApi?.buildFullTextManifest, "full-text manifest builder must exist");
+  const zip = new JSZip();
+  zip.file("word/document.xml", `<?xml version="1.0" encoding="UTF-8"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:x="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+ <w:body>
+  <!-- 1. Hidden parent -> textbox -->
+  <w:p><w:r><w:rPr><w:vanish/></w:rPr><w:drawing><w:txbxContent><w:p><w:r><w:t>HIDDEN_PARENT_TEXTBOX_SECRET</w:t></w:r></w:p></w:txbxContent></w:drawing></w:r></w:p>
+
+  <!-- 2. Tracked deletion ancestor -> textbox -->
+  <w:p><w:del><w:r><w:drawing><w:txbxContent><w:p><w:r><w:t>DELETED_ANCESTOR_TEXTBOX_SECRET</w:t></w:r></w:p></w:txbxContent></w:drawing></w:r></w:del></w:p>
+
+  <!-- 3. Tracked moveFrom ancestor -> textbox -->
+  <w:p><w:moveFrom><w:r><w:drawing><w:txbxContent><w:p><w:r><w:t>MOVEFROM_ANCESTOR_TEXTBOX_SECRET</w:t></w:r></w:p></w:txbxContent></w:drawing></w:r></w:moveFrom></w:p>
+
+  <!-- 4. Field unsafe parent -> textbox -->
+  <w:p><w:fldSimple w:instr="MERGEFIELD SecretField"><w:r><w:drawing><w:txbxContent><w:p><w:r><w:t>FIELD_ANCESTOR_TEXTBOX_SECRET</w:t></w:r></w:p></w:txbxContent></w:drawing></w:r></w:fldSimple></w:p>
+
+  <!-- 5. Namespace alias on tracked deletion -> textbox -->
+  <x:p><x:del><x:r><x:drawing><x:txbxContent><x:p><x:r><x:t>ALIASED_DELETED_TEXTBOX_SECRET</x:t></x:r></x:p></x:txbxContent></x:drawing></x:r></x:del></x:p>
+
+  <!-- 6. Control visible textbox and paragraph -->
+  <w:p><w:r><w:t>Visible paragraph text</w:t><w:drawing><w:txbxContent><w:p><w:r><w:t>VISIBLE_CONTROL_TEXTBOX_OK</w:t></w:r></w:p></w:txbxContent></w:drawing></w:r></w:p>
+
+  <w:sectPr/>
+ </w:body>
+</w:document>`);
+
+  const bytes = await zip.generateAsync({ type: "uint8array" });
+  const beforeSha = sha256(bytes);
+  const manifest = await manifestApi.buildFullTextManifest(bytes, beforeSha, 19);
+
+  // 1. Verify byte immutability
+  assert.equal(sha256(bytes), beforeSha, "Source bytes must not be mutated");
+
+  // 2. Verify all unsafe sentinels are completely absent from submitted segments
+  const allSubmittedText = manifest.segments.map((segment: any) => segment.text).join(" ");
+  const forbiddenSentinels = [
+    "HIDDEN_PARENT_TEXTBOX_SECRET",
+    "DELETED_ANCESTOR_TEXTBOX_SECRET",
+    "MOVEFROM_ANCESTOR_TEXTBOX_SECRET",
+    "FIELD_ANCESTOR_TEXTBOX_SECRET",
+    "ALIASED_DELETED_TEXTBOX_SECRET",
+  ];
+  for (const sentinel of forbiddenSentinels) {
+    assert.equal(allSubmittedText.includes(sentinel), false, `Unsafe sentinel "${sentinel}" must NOT be in manifest segments`);
+  }
+
+  // 3. Verify control visible items are preserved and extracted
+  assert.ok(allSubmittedText.includes("Visible paragraph text"), "Control visible paragraph must be included");
+  assert.ok(allSubmittedText.includes("VISIBLE_CONTROL_TEXTBOX_OK"), "Control visible textbox must be included");
+
+  // 4. Verify exclusions and coverage
+  assert.equal(manifest.coverage.status, "partial");
+  assert.equal(manifest.coverage.complete, false);
+  const excludedCodes = manifest.excluded.map((item: any) => item.code);
+  assert.ok(excludedCodes.includes("hidden_text"), "Must have hidden_text exclusion code");
+  assert.ok(excludedCodes.includes("tracked_changes"), "Must have tracked_changes exclusion code");
+  assert.ok(excludedCodes.includes("field_instruction"), "Must have field_instruction exclusion code");
+
+  // 5. Verify exclusion reasons never echo sensitive text
+  for (const item of manifest.excluded) {
+    for (const sentinel of forbiddenSentinels) {
+      assert.equal(item.reason.includes(sentinel), false, `Exclusion reason must not echo sensitive text: ${sentinel}`);
+    }
+  }
+});

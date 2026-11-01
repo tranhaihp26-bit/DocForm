@@ -138,7 +138,7 @@ import {createWorkspaceSnapshot,canonicalWorkspaceValue,makePartition,canEnterWo
 import {transactWorkspace,approveWorkspacePartition,stageWorkspacePartition,cancelWorkspacePartition,confirmWorkspacePartition,changeWorkspaceRegime,type WorkspaceAction,type WorkspaceResult} from './utils/workspaceTransactions.ts';
 import {prepareTemplateTables} from './utils/templateWorkspace.ts';
 import {restoreWorkspaceVersion} from './utils/workspacePersistence.ts';
-import {createExportCandidateManager,exportCandidateKey,type ExportCandidate} from './utils/exportCandidate.ts';
+import {createExportCandidateManager,exportCandidateKey,isCandidateEligibleForExport,type ExportCandidate} from './utils/exportCandidate.ts';
 import {createWorkspaceAiTarget,receiveWorkspaceAiResult,applyWorkspaceAiResult,type WorkspaceAiTarget} from './utils/workspaceAiTarget.ts';
 import { ImportStepView, type SemanticReviewRow, type SourceVisualUiState } from "./components/ImportStepView.tsx";
 import type { FullTextManifestUiStatus, FullTextReviewUiStatus } from "./components/FullTextReviewPanel.tsx";
@@ -1263,6 +1263,7 @@ export default function App() {
     fullTextReviewAbortRef.current = null;
     fullTextRequestIdRef.current = null;
     setFullTextConsent(null);
+    setFullTextReviewEvidence(null);
     setFullTextReviewRun(current => ({
       reviewStatus: current.reviewStatus === "reviewing" ? "cancelled" : "idle",
       chunks: [], response: null,
@@ -1444,10 +1445,11 @@ export default function App() {
     const expectedPartition = semanticContext.partitionFingerprint;
     const expectedRegime = workspaceSnapshot.standardType;
     const expectedDocumentType = workspaceSnapshot.doc.documentType;
-    setFullTextReviewEvidence(current => current && current.sourceSha256 === expectedSha &&
+    setFullTextReviewEvidence(current => current && current.provider === partitionAiProvider &&
+      current.sourceSha256 === expectedSha &&
       current.sourceGeneration === expectedGeneration && current.partitionFingerprint === expectedPartition &&
       current.regime === expectedRegime && current.documentType === expectedDocumentType ? current : null);
-  }, [semanticContextKey, semanticContext.sourceSha256, semanticContext.sourceGeneration,
+  }, [partitionAiProvider, semanticContextKey, semanticContext.sourceSha256, semanticContext.sourceGeneration,
     semanticContext.partitionFingerprint, workspaceSnapshot.standardType, workspaceSnapshot.doc.documentType]);
   const localSemanticObservations = useMemo(() => {
     const roleById = new Map(workspaceSnapshot.workspace.partition.roles.map(item => [item.sourceBlockId, item.role]));
@@ -1464,12 +1466,13 @@ export default function App() {
     workspaceSnapshot.doc.documentType, workspaceSnapshot.standardType]);
   const matchingFullTextReview = useMemo(() => {
     const review = fullTextReviewEvidence;
-    return review && review.sourceSha256 === semanticContext.sourceSha256.toLowerCase() &&
+    return review && review.provider === partitionAiProvider &&
+      review.sourceSha256 === semanticContext.sourceSha256.toLowerCase() &&
       review.sourceGeneration === semanticContext.sourceGeneration &&
       review.partitionFingerprint === semanticContext.partitionFingerprint &&
       review.regime === workspaceSnapshot.standardType && review.documentType === workspaceSnapshot.doc.documentType
       ? review : null;
-  }, [fullTextReviewEvidence, semanticContext.sourceSha256, semanticContext.sourceGeneration,
+  }, [fullTextReviewEvidence, partitionAiProvider, semanticContext.sourceSha256, semanticContext.sourceGeneration,
     semanticContext.partitionFingerprint, workspaceSnapshot.standardType, workspaceSnapshot.doc.documentType]);
   const semanticBaseState = useMemo(() => matchingFullTextReview
     ? createFullTextSemanticState(localSemanticObservations, matchingFullTextReview.observations, matchingFullTextReview.coverage, semanticContext)
@@ -2546,7 +2549,7 @@ export default function App() {
   const importMetadataReady=sourceOrigin!=='uploaded_file'||Boolean(doc.documentType?.trim());
   const canExportSource=importMetadataReady&&structureReady&&importReviewSatisfied&&canEnterProfileDecision&&(!sourceMismatch.docTypeMismatch||docTypeDecisionValid)&&canEnterWorkspaceStep(workspaceSnapshot,3);
   const canEnterStep=(step:1|2|3)=>step===1||sourceChosen&&importMetadataReady&&canEnterProfileDecision&&canEnterWorkspaceStep(workspaceSnapshot,step)&&(step!==3||canExportSource);
-  const stepIsComplete=(step:1|2|3)=>step===1?sourceChosen&&importMetadataReady&&canEnterProfileDecision&&canEnterWorkspaceStep(workspaceSnapshot,2):step===2?canExportSource:Boolean(visibleCandidate?.downloadable);
+  const stepIsComplete=(step:1|2|3)=>step===1?sourceChosen&&importMetadataReady&&canEnterProfileDecision&&canEnterWorkspaceStep(workspaceSnapshot,2):step===2?canExportSource:Boolean(isCandidateEligibleForExport(visibleCandidate));
 
   const sidebarItemsByStep: Record<1 | 2 | 3, Array<{ id: string; label: string; selector?: string }>> = {
     1: [
@@ -3510,7 +3513,7 @@ export default function App() {
 
   const exportToDocx = async () => {
     const current=candidateManager.current!.current;
-    if(!current?.downloadable||!candidateManager.current!.isCurrent(current,buildCandidateInput(workspaceSnapshotRef.current))||!canEnterStep(3)){setErrorMsg('DOCX ứng viên đã cũ hoặc không tạo được tệp. Hãy tạo lại ứng viên hiện hành ở Bước 3.');return;}
+    if(!current?.downloadable||!current?.safe||!candidateManager.current!.isCurrent(current,buildCandidateInput(workspaceSnapshotRef.current))||!canEnterStep(3)){setErrorMsg('DOCX ứng viên không tạo được tệp hoặc không vượt qua kiểm tra toàn vẹn (integrity reject). Chức năng tải bị khóa.');return;}
     downloadDocxUint8Array(current.bytes,'Van_Ban_'+(standardType==='party'?'HD05':'ND30')+'.docx');
   };
   const handleDownloadOriginalFile = async () => {
@@ -3532,11 +3535,11 @@ export default function App() {
 
   const handlePrintCandidate=async()=>{
     const current=visibleCandidate;
-    if(!current?.downloadable||!candidateManager.current?.isCurrent(current,buildCandidateInput(workspaceSnapshotRef.current))||!canEnterStep(3)){
-      setErrorMsg('Ứng viên DOCX đã cũ hoặc không tạo được tệp; chưa thể in.');return;
+    if(!current?.downloadable||!current?.safe||!candidateManager.current?.isCurrent(current,buildCandidateInput(workspaceSnapshotRef.current))||!canEnterStep(3)){
+      setErrorMsg('Ứng viên DOCX không tạo được tệp hoặc không vượt qua kiểm tra toàn vẹn (integrity reject); chưa thể in.');return;
     }
     setErrorMsg('');
-    const isCurrent=()=>Boolean(candidateManager.current?.isCurrent(current,buildCandidateInput(workspaceSnapshotRef.current))&&current.downloadable&&canEnterStep(3));
+    const isCurrent=()=>Boolean(candidateManager.current?.isCurrent(current,buildCandidateInput(workspaceSnapshotRef.current))&&current?.downloadable&&current?.safe&&canEnterStep(3));
     const result=await printCandidate(current.bytes,current.sha256,current.instanceId,isCurrent);
     if(result==='stale')setErrorMsg('Ứng viên đã thay đổi trong lúc dựng vùng in; hãy tạo và kiểm ứng viên hiện hành trước khi in.');
     else if(result==='render_error')setErrorMsg('Không dựng được vùng in từ DOCX ứng viên; nội dung soạn và nguồn vẫn giữ nguyên.');
@@ -3656,9 +3659,9 @@ export default function App() {
         }
       : {
           label: "BẢN XUẤT DOCX",
-          title: candidatePending ? "Đang tạo bản xem" : visibleCandidate?.downloadable ? "Có thể tải DOCX" : "Chưa có bản DOCX",
-          detail: candidatePending ? "Đang dựng DOCX từ bản soạn." : visibleCandidate?.downloadable ? visibleCandidate.safe ? "Đối chiếu không ghi nhận cảnh báo." : "Có cảnh báo đối chiếu; tải và in vẫn khả dụng." : "Chưa tạo được bản xuất từ bản soạn.",
-          tone: candidatePending ? "neutral" : visibleCandidate?.downloadable && !visibleCandidate.safe ? "review" : visibleCandidate?.downloadable ? "ready" : "neutral",
+          title: candidatePending ? "Đang tạo bản xem" : isCandidateEligibleForExport(visibleCandidate) ? "Có thể tải DOCX" : visibleCandidate ? "Bản xuất bị khóa" : "Chưa có bản DOCX",
+          detail: candidatePending ? "Đang dựng DOCX từ bản soạn." : isCandidateEligibleForExport(visibleCandidate) ? "Đối chiếu không ghi nhận cảnh báo." : visibleCandidate ? "Bản xuất không vượt qua kiểm tra toàn vẹn; tải và in bị khóa." : "Chưa tạo được bản xuất từ bản soạn.",
+          tone: candidatePending ? "neutral" : isCandidateEligibleForExport(visibleCandidate) ? "ready" : visibleCandidate ? "review" : "neutral",
         };
   const partitionBlocksForProposalReview = reviewBlocks.length > 0 ? reviewBlocks : (structuredImport?.blocks || uploadedBlocks);
   const partitionRegimeForProposalReview = standardType === "party" ? "party" : "administrative";

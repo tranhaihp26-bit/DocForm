@@ -190,6 +190,10 @@ try {
   [ordered]@{ opened = $false; error = $_.Exception.Message } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $Out -Encoding UTF8
   Write-Output ("WORD_ERROR: " + $_.Exception.Message)
 } finally {
-  $word.Quit()
-  [System.Runtime.InteropServices.Marshal]::ReleaseComObject($word) | Out-Null
+  try {
+    if ($word) {
+      $word.Quit()
+      [System.Runtime.InteropServices.Marshal]::ReleaseComObject($word) | Out-Null
+    }
+  } catch {}
 }

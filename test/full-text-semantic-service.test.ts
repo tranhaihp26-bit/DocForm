@@ -203,3 +203,42 @@ test("retry processes only failed segments and preserves validated earlier respo
   assert.deepEqual(retried.coverage.semanticResponse.failedSegmentIds, []);
   assert.deepEqual(retried.coverage.transfer.responseReceivedSegmentIds.sort(), ["s1", "s2"]);
 });
+
+test("Task 7: split recursion guard stops at max depth / max chunks without stack overflow", async () => {
+  assert.ok(api?.reviewFullExtractedText, "full-text semantic review service must exist");
+  // 32 segments: if every call overflows, it would try to split 32 times
+  const segments = Array.from({ length: 32 }, (_, i) => segment(`seg_${i}`, i, `Synthetic paragraph ${i}`));
+  const req = request(segments);
+
+  // Provider that ALWAYS reports context overflow
+  const result = await api.reviewFullExtractedText(req, async () => {
+    throw new Error("Request too large: 413 context limit exceeded");
+  }, { chunkOptions: { maxEstimatedTokens: 8000, promptReserveTokens: 100, contextSegmentLimit: 0 } });
+
+  // Must not throw or crash heap; must complete with partial/failed status
+  assert.equal(result.coverage.status, "partial");
+  assert.ok(result.chunks.length <= 64, `Total chunks (${result.chunks.length}) must be <= 64`);
+  assert.ok(result.chunks.some((c: any) => c.status === "failed" && c.error?.includes("vượt giới hạn phân tách tối đa")));
+});
+
+test("Task 7: rapid cancellation halts chunk execution immediately", async () => {
+  assert.ok(api?.reviewFullExtractedText, "full-text semantic review service must exist");
+  const segments = [segment("s1", 0, "First paragraph."), segment("s2", 1, "Second paragraph.")];
+  const req = request(segments);
+
+  const controller = new AbortController();
+  let providerCalls = 0;
+
+  const promise = api.reviewFullExtractedText(req, async () => {
+    providerCalls++;
+    // Simulate long running provider call
+    await new Promise(r => setTimeout(r, 500));
+    return { text: "{}", model: "mock" };
+  }, { signal: controller.signal });
+
+  // Abort immediately
+  controller.abort();
+
+  await assert.rejects(promise, (err: Error) => err.message.includes("cancelled"));
+  assert.ok(providerCalls <= 1, "Must not continue running future chunks after abort");
+});

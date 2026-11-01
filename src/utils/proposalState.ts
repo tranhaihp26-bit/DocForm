@@ -1,3 +1,4 @@
+import { reconstructAppendixFromReviewedBlocks } from "./importReview.ts";
 /**
  * @file proposalState.ts
  * @description Quản lý trạng thái đề xuất AI và đồng bộ một nguồn chân lý (Single Source of Truth)
@@ -364,6 +365,18 @@ export function applySingleProposal(
     };
   }
 
+  // 0. Nếu đề xuất thông báo trạng thái tài liệu (ví dụ: tài liệu chưa ký)
+  if (proposal.target === "signature" || (proposal.type === "segmentation" && !proposal.targetBlockId && (!proposal.target || !(proposal.target in doc)))) {
+    const nextAccepted = new Set(acceptedProposalIds).add(proposal.id);
+    return {
+      success: true,
+      nextState: {
+        ...currentState,
+        acceptedProposalIds: nextAccepted,
+      },
+    };
+  }
+
   // 1. Nếu đề xuất nhắm tới trường metadata (fields)
   if (proposal.target && ((structuredImport?.fields && proposal.target in structuredImport.fields) || (proposal.target in doc))) {
     const docVal = (doc as any)[proposal.target];
@@ -553,15 +566,14 @@ export function applySingleProposal(
           ? app.blocks.map(b => b.id === targetBlock.id ? updatedBlock : b)
           : app.blocks;
 
-        const nextHtml = nextAppBlocks && nextAppBlocks.length > 0
-          ? nextAppBlocks.map(b => b.html || `<p>${b.text}</p>`).join("")
-          : (app.html && proposal.original ? replaceTextInHtml(app.html, proposal.original, suggestedForHtml) : app.html);
-
-        return {
+        const updatedAppDoc: AppendixDocument = {
           ...app,
           blocks: nextAppBlocks,
-          html: nextHtml,
+          sourceBlockIds: nextAppBlocks ? nextAppBlocks.map(b => b.id) : app.sourceBlockIds,
         };
+        return nextAppBlocks && nextAppBlocks.length > 0
+          ? reconstructAppendixFromReviewedBlocks(updatedAppDoc, nextReviewBlocks)
+          : { ...updatedAppDoc, html: app.html && proposal.original ? replaceTextInHtml(app.html, proposal.original, suggestedForHtml) : app.html };
       });
     }
 
@@ -587,15 +599,14 @@ export function applySingleProposal(
           ? app.blocks.map(b => b.id === targetBlock.id ? updatedBlock : b)
           : app.blocks;
 
-        const nextHtml = nextAppBlocks && nextAppBlocks.length > 0
-          ? nextAppBlocks.map(b => b.html || `<p>${b.text}</p>`).join("")
-          : (app.html && proposal.original ? replaceTextInHtml(app.html, proposal.original, proposal.suggested) : app.html);
-
-        return {
+        const updatedAppDoc: AppendixDocument = {
           ...app,
           blocks: nextAppBlocks,
-          html: nextHtml,
+          sourceBlockIds: nextAppBlocks ? nextAppBlocks.map(b => b.id) : app.sourceBlockIds,
         };
+        return nextAppBlocks && nextAppBlocks.length > 0
+          ? reconstructAppendixFromReviewedBlocks(updatedAppDoc, nextReviewBlocks)
+          : { ...updatedAppDoc, html: app.html && proposal.original ? replaceTextInHtml(app.html, proposal.original, proposal.suggested) : app.html };
       }) : structuredImport.appendices,
     } : structuredImport;
 

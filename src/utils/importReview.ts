@@ -192,6 +192,73 @@ export function validateReviewedBlocks(
  * Không dùng các field cũ của structuredImport cho những khối đã đổi vùng.
  * Mỗi SourceBlock có đúng một vùng sở hữu xác định.
  */
+
+/**
+ * Tách metadata blocks (title, reference) khỏi content blocks của phụ lục theo ID sở hữu.
+ * Luôn phân giải khối mới nhất từ allReviewedBlocks (nếu có) để bảo đảm text thay đổi đi vào candidate.
+ */
+export function reconstructAppendixContentBlocks(
+  app: AppendixDocument,
+  allReviewedBlocks?: SourceBlock[]
+): { contentBlocks: SourceBlock[]; titleBlock?: SourceBlock; refBlock?: SourceBlock } {
+  const sourceBlocks = app.blocks || [];
+  const resolvedBlocks = sourceBlocks.map(b => {
+    if (allReviewedBlocks) {
+      const match = allReviewedBlocks.find(rb => rb.id === b.id);
+      if (match) return match;
+    }
+    return b;
+  });
+
+  let titleBlockId = app.titleBlockId;
+  let referenceBlockId = app.referenceBlockId;
+
+  if (!titleBlockId && resolvedBlocks.length > 0) {
+    // Legacy drafts have no metadata IDs. Only an exact match to their stored
+    // metadata proves ownership; a content sentence can also start "Phụ lục".
+    if (resolvedBlocks[0].kind === "paragraph" && app.title && resolvedBlocks[0].text?.trim() === app.title.trim()) {
+      titleBlockId = resolvedBlocks[0].id;
+      if (resolvedBlocks.length > 1 && resolvedBlocks[1].kind === "paragraph") {
+        const text = resolvedBlocks[1].text?.trim() || "";
+        if (app.referenceText && text === app.referenceText.trim()) {
+          referenceBlockId = resolvedBlocks[1].id;
+        }
+      }
+    }
+  }
+
+  const titleBlock = resolvedBlocks.find(b => b.id === titleBlockId);
+  const refBlock = referenceBlockId ? resolvedBlocks.find(b => b.id === referenceBlockId) : undefined;
+  const metadataIds = new Set([titleBlockId, referenceBlockId].filter(Boolean));
+
+  const contentBlocks = resolvedBlocks.filter(b => !metadataIds.has(b.id));
+  return { contentBlocks, titleBlock, refBlock };
+}
+
+export function reconstructAppendixHtml(
+  app: AppendixDocument,
+  allReviewedBlocks?: SourceBlock[]
+): string {
+  const { contentBlocks } = reconstructAppendixContentBlocks(app, allReviewedBlocks);
+  return contentBlocks.map(b => b.html || `<p>${b.text}</p>`).join("");
+}
+
+/** Keep rendered metadata and content aligned with the same reviewed block versions. */
+export function reconstructAppendixFromReviewedBlocks(
+  app: AppendixDocument,
+  allReviewedBlocks?: SourceBlock[]
+): AppendixDocument {
+  const { contentBlocks, titleBlock, refBlock } = reconstructAppendixContentBlocks(app, allReviewedBlocks);
+  return {
+    ...app,
+    title: titleBlock ? titleBlock.text.trim() : (app.titleBlockId ? "" : app.title),
+    referenceText: refBlock ? refBlock.text.trim() : (app.referenceBlockId ? undefined : app.referenceText),
+    titleBlockId: titleBlock?.id ?? app.titleBlockId,
+    referenceBlockId: refBlock?.id ?? app.referenceBlockId,
+    html: contentBlocks.map(b => b.html || `<p>${b.text}</p>`).join(""),
+  };
+}
+
 export function reconstructFromReviewedBlocks(
   blocks: SourceBlock[],
   standardType: "state" | "party",
@@ -402,7 +469,14 @@ export function reconstructFromReviewedBlocks(
     baseSigBlockIds.size === currentSigBlockIds.size &&
     Array.from(baseSigBlockIds).every(id => currentSigBlockIds.has(id));
 
-  if (isSigUnchanged && baseImport) {
+  const baseBlockMap = new Map((baseImport?.blocks || []).map(b => [b.id, b]));
+  const isSigContentUnchanged = isSigUnchanged && sigBlocks.every(b => {
+    const baseB = baseBlockMap.get(b.id);
+    if (!baseB) return false;
+    return b.text === baseB.text && b.html === baseB.html && JSON.stringify(b.tableData) === JSON.stringify(baseB.tableData);
+  });
+
+  if (isSigContentUnchanged && baseImport) {
     signTitle = baseImport.fields.signTitle?.value || "";
     signName = baseImport.fields.signName?.value || "";
     recipients = baseImport.fields.recipients?.value || "";
@@ -503,16 +577,16 @@ export function reconstructFromReviewedBlocks(
   // 5. RECONSTRUCT APPENDICES
   let appendices: AppendixDocument[] = [];
   if (baseImport && baseImport.appendices && baseImport.appendices.length > 0) {
-    // Preserve base appendices whose blocks are still assigned to appendix
     for (const app of baseImport.appendices) {
-      const stillInApp = app.blocks.filter(b => blocks.some(rb => rb.id === b.id && rb.role === "appendix"));
+      // Resolve latest block versions from blocks by ID
+      const stillInApp = blocks.filter(rb => app.sourceBlockIds.includes(rb.id) && rb.role === "appendix");
       if (stillInApp.length > 0) {
-        appendices.push({
+        const updatedApp: AppendixDocument = {
           ...app,
           blocks: stillInApp,
-          html: stillInApp.map(b => b.html || `<p>${b.text}</p>`).join(""),
           sourceBlockIds: stillInApp.map(b => b.id),
-        });
+        };
+        appendices.push(reconstructAppendixFromReviewedBlocks(updatedApp, blocks));
       }
     }
   }
@@ -521,10 +595,17 @@ export function reconstructFromReviewedBlocks(
   const accountedAppBlockIds = new Set(appendices.flatMap(a => a.sourceBlockIds));
   const newAppBlocks = appendixBlocks.filter(b => !accountedAppBlockIds.has(b.id));
   if (newAppBlocks.length > 0) {
+    const isTitle = newAppBlocks[0].kind === "paragraph" && (/^(Phụ lục|PHỤ LỤC)/i.test(newAppBlocks[0].text?.trim() || ""));
+    const titleBlock = isTitle ? newAppBlocks[0] : undefined;
+    const hasRef = isTitle && newAppBlocks.length > 1 && /^(Kèm theo|Ban hành kèm theo|\(Kèm theo)/i.test(newAppBlocks[1].text?.trim() || "");
+    const contentStart = hasRef ? 2 : (isTitle ? 1 : 0);
     appendices.push({
       id: `appendix-${appendices.length + 1}`,
-      title: `Phụ lục ${appendices.length > 0 ? (appendices.length + 1) : ""}`.trim(),
-      html: newAppBlocks.map(b => b.html || `<p>${b.text}</p>`).join(""),
+      title: titleBlock?.text?.trim() || `Phụ lục ${appendices.length > 0 ? (appendices.length + 1) : ""}`.trim(),
+      referenceText: hasRef ? newAppBlocks[1].text?.trim() : undefined,
+      titleBlockId: titleBlock?.id,
+      referenceBlockId: hasRef ? newAppBlocks[1].id : undefined,
+      html: newAppBlocks.slice(contentStart).map(b => b.html || `<p>${b.text}</p>`).join(""),
       blocks: newAppBlocks,
       sourceBlockIds: newAppBlocks.map(b => b.id),
       extractionStatus: "confirmed",

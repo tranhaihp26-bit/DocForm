@@ -144,7 +144,7 @@ export function FullTextReviewPanel({
       <details className="mt-2 rounded border border-slate-200 p-2" data-testid="full-text-technical-details">
         <summary className="cursor-pointer text-xs font-semibold text-slate-700">Chi tiết kỹ thuật</summary>
         <div className="mt-2 space-y-2 text-[10px] leading-relaxed text-slate-600">
-          <p>Phạm vi: <code>all_extracted_text</code>; SHA: <code>{manifest.sourceSha256}</code>; thế hệ nguồn: {manifest.sourceGeneration}; hash danh mục: <code>{manifest.manifestSha256}</code>.</p>
+          <p>Phạm vi: <code>all_extracted_text</code>; Nhà cung cấp: <strong>{providerName(provider)}</strong>; SHA: <code>{manifest.sourceSha256}</code>; thế hệ nguồn: {manifest.sourceGeneration}; hash danh mục: <code>{manifest.manifestSha256}</code>.</p>
           <h4 className="font-bold text-emerald-800">Package part được gồm</h4>
           <ul className="max-h-40 overflow-auto list-disc pl-5">{manifest.parts.filter(part => part.segmentIds.length > 0).map(part => <li key={part.partUri}><code>{part.partUri}</code> · {part.segmentIds.length} đoạn · {part.status}</li>)}</ul>
           <h4 className="font-bold text-amber-900">Package part bị loại</h4>

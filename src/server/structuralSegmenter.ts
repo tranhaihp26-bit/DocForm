@@ -826,6 +826,8 @@ export function segmentSourceBlocks(
         html: appBlocks.slice(contentStart).map(b => b.html || `<p>${b.text}</p>`).join(""),
         blocks: appBlocks,
         sourceBlockIds: appBlocks.map(b => b.id),
+        titleBlockId: headingBlock.id,
+        referenceBlockId: contentStart === 2 ? appBlocks[1].id : undefined,
         extractionStatus: "confirmed",
         tables: appTables,
       });
@@ -943,8 +945,9 @@ export function segmentSourceBlocks(
           }
 
           if (extractedCols.length > 0) {
-            const titles = extractedCols.map(c => c.title || "").filter(Boolean);
-            const names = extractedCols.map(c => c.name || "").filter(Boolean);
+            // Keep titles and names strictly synchronized at identical indices
+            const titles = extractedCols.map(c => c.title || "");
+            const names = extractedCols.map(c => c.name || "");
 
             fields.signTitle = {
               value: titles.join(" | "),
@@ -972,8 +975,9 @@ export function segmentSourceBlocks(
           }
         } else {
           // Standard 2-column signature table (Recipients left, Signer right)
+          // OR multi-column signature table with Recipients in col 0 and multiple signers in remaining columns
+          const numCols = b.tableShape.columns;
           const leftCol = data.map(r => r[0] || "").join("\n");
-          const rightCol = data.map(r => r[r.length - 1] || "").join("\n");
 
           if (/Nơi nhận\s*:/i.test(leftCol)) {
             fields.recipients = {
@@ -984,15 +988,45 @@ export function segmentSourceBlocks(
             };
           }
 
-          const rightLines = rightCol.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-          // Filter out sign notes like (Ký, đóng dấu) from title/name
-          const cleanRight = rightLines.filter(l => !/^\s*[\(\[](?:k[ýí]|ghi rõ|đóng dấu|chữ ký).*?[\)\]]\s*$/i.test(l));
+          if (numCols > 2) {
+            const extractedCols: Array<{ title: string; name: string }> = [];
+            for (let col = 1; col < numCols; col++) {
+              const colRawLines = data.map(r => (r[col] || "").trim()).filter(Boolean);
+              if (colRawLines.length === 0) continue;
+              const cleanLines = colRawLines.filter(l => !/^\s*[\(\[](?:k[ýí]|ghi rõ|đóng dấu|chữ ký).*?[\)\]]\s*$/i.test(l));
+              let colTitle = "";
+              let colName = "";
+              if (cleanLines.length >= 2) {
+                colTitle = cleanLines.slice(0, -1).join("\n");
+                colName = cleanLines[cleanLines.length - 1];
+              } else if (cleanLines.length === 1) {
+                if (isSignFormula(cleanLines[0]) || cleanLines[0] === cleanLines[0].toUpperCase()) {
+                  colTitle = cleanLines[0];
+                } else {
+                  colName = cleanLines[0];
+                }
+              }
+              if (colTitle || colName) {
+                extractedCols.push({ title: colTitle, name: colName });
+              }
+            }
+            if (extractedCols.length > 0) {
+              const titles = extractedCols.map(c => c.title || "");
+              const names = extractedCols.map(c => c.name || "");
+              fields.signTitle = { value: titles.join(" | "), confidence: "high", status: "extracted", sourceBlockIds: [b.id] };
+              fields.signName = { value: names.join(" | "), confidence: "high", status: "extracted", sourceBlockIds: [b.id] };
+            }
+          } else {
+            const rightCol = data.map(r => r[r.length - 1] || "").join("\n");
+            const rightLines = rightCol.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+            const cleanRight = rightLines.filter(l => !/^\s*[\(\[](?:k[ýí]|ghi rõ|đóng dấu|chữ ký).*?[\)\]]\s*$/i.test(l));
 
-          if (cleanRight.length >= 2) {
-            fields.signTitle = { value: cleanRight.slice(0, -1).join("\n"), confidence: "high", status: "extracted", sourceBlockIds: [b.id] };
-            fields.signName = { value: cleanRight[cleanRight.length - 1], confidence: "high", status: "extracted", sourceBlockIds: [b.id] };
-          } else if (cleanRight.length === 1) {
-            fields.signTitle = { value: cleanRight[0], confidence: "high", status: "extracted", sourceBlockIds: [b.id] };
+            if (cleanRight.length >= 2) {
+              fields.signTitle = { value: cleanRight.slice(0, -1).join("\n"), confidence: "high", status: "extracted", sourceBlockIds: [b.id] };
+              fields.signName = { value: cleanRight[cleanRight.length - 1], confidence: "high", status: "extracted", sourceBlockIds: [b.id] };
+            } else if (cleanRight.length === 1) {
+              fields.signTitle = { value: cleanRight[0], confidence: "high", status: "extracted", sourceBlockIds: [b.id] };
+            }
           }
         }
         break;
@@ -1038,42 +1072,86 @@ export function segmentSourceBlocks(
 
         const parts = text.split(/(?:\t+| {2,}|\s*\|\s*)/).map(s => s.trim()).filter(Boolean);
         if (parts.length >= 2) {
-          if (/^nơi nhận\s*:/i.test(parts[0]) || /^[-*+•]/.test(parts[0])) {
-            recipientLines.push(parts[0]);
+          const left = parts[0];
+          if (/^nơi nhận\s*:/i.test(left) || /^[-*+•]/.test(left) || (recipientLines.length > 0 && !isSignFormula(left) && signTitleLines.length === 0)) {
+            recipientLines.push(left);
             recipientBlockIds.push(b.id);
           }
           const right = parts[parts.length - 1];
-          if (isSignFormula(right)) {
-            signTitleLines.push(right);
+          const rightSubLines = right.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+          const cleanRight = rightSubLines.filter(l => !/^\s*[\(\[](?:k[ýí]|ghi rõ|đóng dấu|chữ ký).*?[\)\]]\s*$/i.test(l));
+          if (cleanRight.length >= 2) {
+            signTitleLines.push(cleanRight.slice(0, -1).join("\n"));
+            if (!signName) signName = cleanRight[cleanRight.length - 1];
             signBlockIds.push(b.id);
-          } else if (!signName && signTitleLines.length > 0 && !/^\s*[\(\[](?:k[ýí]|ghi rõ|đóng dấu|chữ ký).*?[\)\]]\s*$/i.test(right)) {
-            signName = right;
-            signBlockIds.push(b.id);
+          } else if (cleanRight.length === 1) {
+            if (isSignFormula(cleanRight[0])) {
+              signTitleLines.push(cleanRight[0]);
+              signBlockIds.push(b.id);
+            } else if (!signName && signTitleLines.length > 0) {
+              signName = cleanRight[0];
+              signBlockIds.push(b.id);
+            }
           }
           b.role = "signature";
         } else {
-          const part = parts[0];
-          if (/^nơi nhận\s*:/i.test(part) || /^[-*+•]/.test(part)) {
-            recipientLines.push(part);
-            recipientBlockIds.push(b.id);
-            b.role = "recipients";
-          } else if (isSignFormula(part)) {
-            signTitleLines.push(part);
-            signBlockIds.push(b.id);
-            b.role = "signature";
-          } else if (/^\s*[\(\[](?:k[ýí]|ghi rõ|đóng dấu|chữ ký).*?[\)\]]\s*$/i.test(part)) {
-            signBlockIds.push(b.id);
-            b.role = "signature";
-          } else if (!signName && signTitleLines.length > 0 && part.split(/\s+/).length <= 6 && !/[.;]$/.test(part)) {
-            signName = part;
-            signBlockIds.push(b.id);
-            b.role = "signature";
-          } else if (b.html?.includes("text-align: right") && !signName && signTitleLines.length > 0) {
-            signName = part;
-            signBlockIds.push(b.id);
-            b.role = "signature";
+          // Single part: handle logical newlines in paragraph
+          const subLines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+          if (subLines.length >= 2) {
+            const hasRecipInSub = subLines.some(l => /^nơi nhận\s*:/i.test(l));
+            const hasSignFormulaInSub = subLines.some(l => isSignFormula(l));
+            if (hasSignFormulaInSub && !hasRecipInSub) {
+              const cleanSub = subLines.filter(l => !/^\s*[\(\[](?:k[ýí]|ghi rõ|đóng dấu|chữ ký).*?[\)\]]\s*$/i.test(l));
+              if (cleanSub.length >= 2) {
+                signTitleLines.push(cleanSub.slice(0, -1).join("\n"));
+                if (!signName) signName = cleanSub[cleanSub.length - 1];
+              } else if (cleanSub.length === 1) {
+                signTitleLines.push(cleanSub[0]);
+              }
+              signBlockIds.push(b.id);
+              b.role = "signature";
+            } else if (hasRecipInSub) {
+              subLines.forEach(sl => recipientLines.push(sl));
+              recipientBlockIds.push(b.id);
+              b.role = "recipients";
+            } else {
+              if (recipientLines.length > 0 && signTitleLines.length === 0) {
+                subLines.forEach(sl => recipientLines.push(sl));
+                recipientBlockIds.push(b.id);
+                b.role = "recipients";
+              } else {
+                b.role = "signature";
+              }
+            }
           } else {
-            b.role = signTitleLines.length > 0 ? "signature" : "recipients";
+            const part = subLines[0] || parts[0];
+            if (/^nơi nhận\s*:/i.test(part) || /^[-*+•]/.test(part)) {
+              recipientLines.push(part);
+              recipientBlockIds.push(b.id);
+              b.role = "recipients";
+            } else if (isSignFormula(part)) {
+              signTitleLines.push(part);
+              signBlockIds.push(b.id);
+              b.role = "signature";
+            } else if (/^\s*[\(\[](?:k[ýí]|ghi rõ|đóng dấu|chữ ký).*?[\)\]]\s*$/i.test(part)) {
+              signBlockIds.push(b.id);
+              b.role = "signature";
+            } else if (!signName && signTitleLines.length > 0 && part.split(/\s+/).length <= 6 && !/[.;]$/.test(part)) {
+              signName = part;
+              signBlockIds.push(b.id);
+              b.role = "signature";
+            } else if (recipientLines.length > 0 && signTitleLines.length === 0 && !isSignFormula(part) && (/[;,]\s*$/.test(part) || /lưu\s*:/i.test(part) || part.length <= 60)) {
+              // Non-bullet recipient continuation line!
+              recipientLines.push(part);
+              recipientBlockIds.push(b.id);
+              b.role = "recipients";
+            } else if (b.html?.includes("text-align: right") && !signName && signTitleLines.length > 0) {
+              signName = part;
+              signBlockIds.push(b.id);
+              b.role = "signature";
+            } else {
+              b.role = signTitleLines.length > 0 ? "signature" : "recipients";
+            }
           }
         }
       }
@@ -1105,8 +1183,46 @@ export function segmentSourceBlocks(
     }
   }
 
-  // If a signature block was identified, body ends before signature block!
-  if (sigFoundIndex !== -1) {
+  // STEP 5B: Flag ambiguous signing tables after an appendix without changing ownership
+  if (sigFoundIndex === -1 && appendixStartIndices.length > 0 && appendices.length > 0) {
+    const lastAppIdx = appendixStartIndices[appendixStartIndices.length - 1];
+    let termSigFoundIndex = -1;
+
+    for (let i = total - 1; i > lastAppIdx; i--) {
+      const b = blocks[i];
+      if (b.kind === "table" && b.tableShape && b.tableShape.columns >= 2) {
+        if (isActionPlanOrDataTable(b)) continue;
+
+        const data = b.tableData || [];
+        const flatText = data.flat().join(" ");
+        const leftColText = data.map(r => r[0] || "").join("\n");
+        const rightColText = data.map(r => r[r.length - 1] || "").join("\n");
+        const hasRecipients = /Nơi nhận\s*:/i.test(leftColText) || /Nơi nhận\s*:/i.test(flatText);
+        const rightLines = rightColText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+        const hasSign = rightLines.some(l => isSignFormula(l)) ||
+                        isSignFormula(flatText) ||
+                        rightColText.toUpperCase().includes("GIÁM ĐỐC") ||
+                        rightColText.toUpperCase().includes("TRƯỞNG ĐOÀN") ||
+                        /^\s*(?:TM[\.\s]|T\/M[\.\s]|KT[\.\s]|TL[\.\s]|TUQ[\.\s])/i.test(rightColText.trim());
+
+        if ((hasRecipients && hasSign) || (b.tableShape.rows <= 3 && hasSign)) {
+          termSigFoundIndex = i;
+          break;
+        }
+      }
+    }
+
+    if (termSigFoundIndex !== -1) {
+      // A signing table inside an appendix can belong to an attached form rather
+      // than the main document. Labels and row count do not establish ownership.
+      // Preserve all source blocks and ask for partition review instead of
+      // promoting an appendix signer into the main document fields.
+      appendices[appendices.length - 1].extractionStatus = "needs_review";
+    }
+  }
+
+  // If a signature block was identified before appendix, body ends before signature block!
+  if (sigFoundIndex !== -1 && (appendixStartIndices.length === 0 || sigFoundIndex < appendixStartIndices[0])) {
     bodyEndExclusive = sigFoundIndex;
   }
 

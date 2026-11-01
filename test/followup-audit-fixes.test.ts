@@ -357,13 +357,15 @@ describe("Follow-up Audit Fixes: Red -> Green Verification", () => {
 
   describe("P2 - F07 & F08: Báo trạng thái lưu nguồn & đơn vị preview", () => {
     it("7.1 saveSourceBlob trả rõ trạng thái lưu ('indexeddb' hoặc 'memory')", async () => {
+      const bytes = new ArrayBuffer(100);
+      const hash = "cd00e292c5970d3c5e2f0ffa5171e555bc46bfc4faddfb4a418b6840b86e79a3";
       const res = await saveSourceBlob({
-        hash: "dummy_hash_123",
+        hash,
         fileName: "test.docx",
         fileType: "docx",
-        fileSize: 1000,
+        fileSize: 100,
         uploadedAt: new Date().toISOString(),
-        bytes: new ArrayBuffer(100),
+        bytes,
       });
 
       assert.ok(res, "saveSourceBlob phải trả về kết quả trạng thái lưu");

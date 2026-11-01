@@ -483,6 +483,7 @@ export function buildCanonicalRuleRegistry(): CanonicalRuleDef[] {
     { id: "BODY.PARTY.FIVE_HYPHENS", title: "5 dấu gạch nối trước nội dung", regime: "party", prop: "five_hyphens", desc: "Văn bản Đảng có tên loại phải có đúng 5 dấu gạch nối '-----' trước nội dung" },
     { id: "BODY.PARTY.SUBJECT_UPRIGHT_BOLD", title: "Trích yếu đứng đậm", regime: "party", prop: "subject_format", desc: "Trích yếu văn bản Đảng có tên loại in thường, đứng, đậm (không in nghiêng)" },
     { id: "HD05-BODY-LINE-SPACING", title: "Khoảng cách dòng văn bản Đảng", regime: "party", prop: "line_spacing", desc: "Dãn dòng cố định (exactly) từ 18pt đến 22pt" },
+    { id: "HD05-BODY-FIRST-LINE-INDENT", title: "Thụt lề đầu dòng văn bản Đảng", regime: "party", prop: "first_line_indent", desc: "Đầu dòng đoạn văn bản Đảng thụt lề ~10mm theo Hướng dẫn 05; profile Hoa Tiêu MB áp dụng 0.5 inch (720 twips)" },
   ];
 
   for (const b of bodySubRules) {
@@ -1444,11 +1445,19 @@ export function evaluateDocumentRules(
               const min = bEv.firstLineIndentRangeDxa.min;
               const max = bEv.firstLineIndentRangeDxa.max;
               actual = `${min} - ${max} dxa`;
-              const ok = min >= 500 && max <= 650;
-              status = ok ? "PASS" : "FAIL";
-              reason = ok
-                ? `Thụt đầu dòng văn bản Đảng (${min}-${max} dxa) đạt chuẩn ~10mm theo HD 05.`
-                : `Thụt đầu dòng văn bản Đảng (${min}-${max} dxa) không khớp quy chuẩn ~10mm.`;
+              if (isUsingHd05CompanyProfile) {
+                const ok = min >= 700 && max <= 740;
+                status = ok ? "PASS" : "FAIL";
+                reason = ok
+                  ? `Thụt đầu dòng văn bản Đảng profile Hoa Tiêu MB (${min}-${max} dxa) đạt chuẩn 0.5 inch (720 dxa / ~1.27cm).`
+                  : `Thụt đầu dòng văn bản Đảng profile Hoa Tiêu MB (${min}-${max} dxa) không khớp chuẩn profile 0.5 inch (720 dxa).`;
+              } else {
+                const ok = min >= 500 && max <= 650;
+                status = ok ? "PASS" : "FAIL";
+                reason = ok
+                  ? `Thụt đầu dòng văn bản Đảng (${min}-${max} dxa) đạt chuẩn ~10mm theo HD 05.`
+                  : `Thụt đầu dòng văn bản Đảng (${min}-${max} dxa) không khớp quy chuẩn ~10mm.`;
+              }
             }
           }
         } else if (r.id === "HD05-BODY-LINE-SPACING") {
@@ -1462,13 +1471,24 @@ export function evaluateDocumentRules(
               status = "NOT_EVALUATED";
               reason = "Chưa có đoạn thân bài hợp lệ để đo dãn dòng.";
             } else {
-              const lineExact = eligible.filter((p: any) => p.lineRule === "exact" && p.lineSpacingDxa && p.lineSpacingDxa >= 360 && p.lineSpacingDxa <= 440);
-              const allOk = lineExact.length === eligible.length;
-              actual = allOk ? "exact 18-22pt" : `chỉ đạt ${lineExact.length}/${eligible.length} đoạn`;
-              status = allOk ? "PASS" : "FAIL";
-              reason = allOk
-                ? `Toàn bộ ${eligible.length} đoạn thân bài dãn dòng cố định (exactly) từ 18pt đến 22pt đạt chuẩn Hướng dẫn 05.`
-                : `Có ${eligible.length - lineExact.length}/${eligible.length} đoạn thân bài không đạt dãn dòng cố định (exact) 18-22pt theo quy định văn bản Đảng.`;
+              if (isUsingHd05CompanyProfile) {
+                const exactCompanySpacing = eligible.every((p: any) =>
+                  p.lineRule === "exact" && p.lineSpacingDxa === 380
+                );
+                actual = exactCompanySpacing ? "exact 19pt (380 dxa)" : `chưa đạt exactly 19pt`;
+                status = exactCompanySpacing ? "PASS" : "FAIL";
+                reason = exactCompanySpacing
+                  ? "Toàn bộ các đoạn thân bài của profile Đảng ủy Hoa Tiêu MB dùng Exactly 19pt (380 twips)."
+                  : "Profile Đảng ủy Hoa Tiêu MB yêu cầu các đoạn thân bài dùng Exactly 19pt (380 twips).";
+              } else {
+                const lineExact = eligible.filter((p: any) => p.lineRule === "exact" && p.lineSpacingDxa && p.lineSpacingDxa >= 360 && p.lineSpacingDxa <= 440);
+                const allOk = lineExact.length === eligible.length;
+                actual = allOk ? "exact 18-22pt" : `chỉ đạt ${lineExact.length}/${eligible.length} đoạn`;
+                status = allOk ? "PASS" : "FAIL";
+                reason = allOk
+                  ? `Toàn bộ ${eligible.length} đoạn thân bài dãn dòng cố định (exactly) từ 18pt đến 22pt đạt chuẩn Hướng dẫn 05.`
+                  : `Có ${eligible.length - lineExact.length}/${eligible.length} đoạn thân bài không đạt dãn dòng cố định (exact) 18-22pt theo quy định văn bản Đảng.`;
+              }
             }
           }
         } else if (r.id === "HD05-TABLE-CELL-FONT-SIZE") {

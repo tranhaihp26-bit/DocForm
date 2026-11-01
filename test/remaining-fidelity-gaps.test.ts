@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import JSZip from "jszip";
+import { Document, Packer } from "docx";
 import { 
   type TableModel, 
   tableModelToHtmlView 
@@ -292,7 +293,7 @@ describe("Remaining Fidelity Gaps (Post F01-F09): Red Baseline & Verification", 
       }],
     };
 
-    it("1.1 changeBlockRole chuyển bảng giữa body và appendix cập nhật đồng bộ blocks, manifest và reconstruction", () => {
+    it("1.1 changeBlockRole chuyển bảng giữa body và appendix cập nhật đồng bộ blocks, manifest và reconstruction", async () => {
       const initialBlocks: SourceBlock[] = [
         {
           id: "block_tbl_1",
@@ -342,7 +343,23 @@ describe("Remaining Fidelity Gaps (Post F01-F09): Red Baseline & Verification", 
 
       // 2. Chuyển bảng sang signature -> bảng không còn là content table
       const toSig = changeBlockRole(nextBlocks, "block_tbl_1", "signature", nextImport);
-      assert.ok(!toSig.nextImport?.importFidelityManifest?.tableIds.includes("table_mv"), "Bảng ở signature không tính vào manifest nội dung");
+      assert.equal(toSig.nextBlocks[0].role, "signature");
+      assert.ok(
+        toSig.nextImport?.importFidelityManifest?.tableIds.includes("table_mv"),
+        "Manifest nguồn giữ nguyên tableIds bất biến sau khi đổi role signature",
+      );
+      assert.deepEqual(
+        toSig.nextImport?.importFidelityManifest?.sourceBlockIds,
+        initialImport.importFidelityManifest?.sourceBlockIds,
+        "sourceBlockIds trong manifest nguồn không bị xóa hoặc thay đổi thứ tự",
+      );
+      assert.equal(initialBlocks[0].role, "body", "initialBlocks gốc không bị mutate");
+
+      // 3. Candidate test: bảng terminal signature phải được preserve/giải thích hoặc reject, không thể biến mất
+      const emptyDocx = await Packer.toBuffer(new Document({ sections: [{ children: [] }] }));
+      const fidelitySig = await verifyCandidateExportFidelity(emptyDocx, {}, toSig.nextImport?.importFidelityManifest);
+      assert.equal(fidelitySig.safe, false, "Candidate rỗng khi manifest có bảng phải bị reject");
+      assert.equal(fidelitySig.tableDecisions?.[0]?.decision, "FAIL");
     });
 
     it("1.2 applyAllProposalsSequentially áp dụng tuần tự 2 đề xuất AI trên cùng block mà không bị ghi đè", () => {
@@ -556,7 +573,7 @@ describe("Remaining Fidelity Gaps (Post F01-F09): Red Baseline & Verification", 
   describe("Gap 5 (P1): Báo cáo trung thực trạng thái lưu trữ tệp gốc", () => {
     it("5.1 saveSourceBlob trả về storage: 'memory' và persisted: false khi không có IndexedDB", async () => {
       const blobResult = await saveSourceBlob({
-        hash: "dummy_hash_123",
+        hash: "9f64a747e1b97f131fabb6b447296c9b6f0201e79fb3c5356e6c77e89b6a806a",
         fileName: "test_source.docx",
         fileType: "docx",
         fileSize: 4,
@@ -572,6 +589,32 @@ describe("Remaining Fidelity Gaps (Post F01-F09): Red Baseline & Verification", 
         assert.equal(blobResult.storage, "memory");
         assert.equal(blobResult.persisted, false, "Môi trường Node.js/in-memory không được nói dối là đã persist vào IndexedDB");
       }
+
+      await assert.rejects(
+        saveSourceBlob({
+          hash: "corrupted_hash",
+          fileName: "test_corrupted.docx",
+          fileType: "docx",
+          fileSize: 4,
+          uploadedAt: new Date().toISOString(),
+          bytes: new Uint8Array([1, 2, 3, 4]).buffer,
+        }),
+        { name: "SourceBlobIntegrityError" },
+        "Hash sai phải bị reject fail-closed",
+      );
+
+      await assert.rejects(
+        saveSourceBlob({
+          hash: "9f64a747e1b97f131fabb6b447296c9b6f0201e79fb3c5356e6c77e89b6a806a",
+          fileName: "test_size_mismatch.docx",
+          fileType: "docx",
+          fileSize: 999,
+          uploadedAt: new Date().toISOString(),
+          bytes: new Uint8Array([1, 2, 3, 4]).buffer,
+        }),
+        { name: "SourceBlobIntegrityError" },
+        "Size sai phải bị reject fail-closed",
+      );
     });
   });
 });

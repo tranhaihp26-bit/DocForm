@@ -442,6 +442,8 @@ async function processChunkRecursively(
   chunk: FullTextReviewChunk,
   provider: FullTextAiProvider,
   options: FullTextReviewOptions,
+  depth = 0,
+  splitCounter = { count: 0 },
 ): Promise<ProcessedChunk> {
   if (options.signal?.aborted) throw new Error("Full text review was cancelled.");
   if (chunk.status === "preflight_failed") {
@@ -471,6 +473,25 @@ async function processChunkRecursively(
   }
 
   if (problem && isContextOverflow(problem) && chunk.primarySegments.length > 1) {
+    if (depth >= 4 || splitCounter.count >= 64) {
+      const attemptedSegmentIds = chunk.primarySegments.map(segment => segment.id);
+      const failedResult: FullTextChunkResult = {
+        chunkId: chunk.chunkId,
+        status: "failed",
+        primarySegmentIds: attemptedSegmentIds,
+        completedSegmentIds: [],
+        failedSegmentIds: attemptedSegmentIds,
+        error: "Đoạn văn bản vượt giới hạn phân tách tối đa (độ sâu > 4 hoặc > 64 phân đoạn).",
+      };
+      try { options.onChunkResult?.(failedResult); } catch {}
+      return {
+        chunkResults: [failedResult],
+        segmentResults: [],
+        attemptedSegmentIds,
+        responseReceivedSegmentIds: [],
+      };
+    }
+    splitCounter.count += 2;
     const middle = Math.ceil(chunk.primarySegments.length / 2);
     const first = chunk.primarySegments.slice(0, middle);
     const second = chunk.primarySegments.slice(middle);
@@ -481,10 +502,15 @@ async function processChunkRecursively(
       status: "ready",
       estimatedInputTokens: 0,
     });
-    const children = await Promise.all([
-      processChunkRecursively(request, child("a", first), provider, options),
-      processChunkRecursively(request, child("b", second), provider, options),
-    ]);
+    if (options.signal?.aborted) {
+      throw new Error("Full text review was cancelled.");
+    }
+    const resA = await processChunkRecursively(request, child("a", first), provider, options, depth + 1, splitCounter);
+    if (options.signal?.aborted) {
+      throw new Error("Full text review was cancelled.");
+    }
+    const resB = await processChunkRecursively(request, child("b", second), provider, options, depth + 1, splitCounter);
+    const children = [resA, resB];
     return {
       chunkResults: children.flatMap(item => item.chunkResults),
       segmentResults: children.flatMap(item => item.segmentResults),

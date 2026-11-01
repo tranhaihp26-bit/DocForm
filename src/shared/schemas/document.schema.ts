@@ -443,6 +443,8 @@ export interface AppendixDocument {
   html: string;
   blocks: SourceBlock[];
   sourceBlockIds: string[];
+  titleBlockId?: string;
+  referenceBlockId?: string;
   extractionStatus: "confirmed" | "needs_review";
   tables?: Array<{
     rows: number;

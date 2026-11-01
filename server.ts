@@ -110,7 +110,7 @@ async function generateContentWithModelFallback(params: { contents: any; config?
       } else if (statusCode === 503 || msg.includes("503") || msg.includes("UNAVAILABLE")) {
         console.warn(`[GEMINI UNAVAILABLE] model="${modelId}" status=503 duration=${durationMs}ms`);
       } else {
-        console.warn(`[GEMINI FAIL] model="${modelId}" status=${statusCode} duration=${durationMs}ms message="${msg.slice(0, 100)}"`);
+        console.warn(`[GEMINI FAIL] model="${modelId}" status=${statusCode} duration=${durationMs}ms`);
       }
 
       lastError = error;

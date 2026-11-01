@@ -142,9 +142,8 @@ export async function prepareExportCandidate(input: ExportCandidateSnapshot, gen
     documentXml: xml, evidence: freezeWorkspaceValue(evidence), tableFidelity: freezeWorkspaceValue(tableFidelity),
     contentFidelity: freezeWorkspaceValue(contentFidelity), exportSafety: freezeWorkspaceValue(exportSafety),
     profileHeaderLines,
-    downloadable: generatedBytes.length > 0 && Boolean(xml) && !blockers.includes("candidate_unpack_failed") &&
-      !contentFidelity.violations.some(violation => violation.code === "content_invalid_xml"),
     safe: blockers.length === 0 && tableFidelity.safe && contentFidelity.safe && exportSafety.decision === "allow",
+    get downloadable() { return generatedBytes.length > 0 && Boolean(xml) && this.safe; },
     blockers: Object.freeze([...new Set(blockers)]),
   };
   return Object.freeze(candidate);
@@ -174,4 +173,19 @@ export function createExportCandidateManager(generateBytes: CandidateByteGenerat
       return current === candidate && candidate.key === exportCandidateKey(snapshot);
     },
   };
+}
+
+
+export function isCandidateEligibleForExport(candidate: ExportCandidate | null | undefined): boolean {
+  if (!candidate) return false;
+  return (
+    candidate.bytes.length > 0 &&
+    Boolean(candidate.documentXml) &&
+    candidate.safe &&
+    candidate.downloadable &&
+    candidate.blockers.length === 0 &&
+    candidate.tableFidelity.safe &&
+    candidate.contentFidelity.safe &&
+    candidate.exportSafety.decision === "allow"
+  );
 }

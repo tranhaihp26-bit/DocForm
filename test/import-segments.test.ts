@@ -428,14 +428,14 @@ async function main() {
     assert.ok(xml.includes("Lê Thị Lan"), "OOXML chứa tên Lê Thị Lan");
   });
 
-  await runTest("SEP-20", "Tờ trình thực tế có header 2 cấp, số & ngày và chân trang phân cách bằng TAB -> bóc tách đủ 9/9 trường, 0 khối unclassified", async () => {
-    const fixturePath = path.resolve(process.cwd(), "fixtures/pilot_documents/T_TRNH_Can_Bo_Hoa_Tieu_MB.docx");
-    assert.ok(fs.existsSync(fixturePath), "Fixture T_TRNH_Can_Bo_Hoa_Tieu_MB.docx tồn tại");
+  await runTest("SEP-20", "Tờ trình tổng hợp có header 2 cấp, số & ngày và chân trang phân cách bằng TAB -> bóc tách đủ 9/9 trường, 0 khối unclassified", async () => {
+    const fixturePath = path.resolve(process.cwd(), "test/fixtures/synthetic-ttrinh.docx");
+    assert.ok(fs.existsSync(fixturePath), "Fixture synthetic-ttrinh.docx tồn tại");
     const buf = fs.readFileSync(fixturePath);
     const ext = await extractBlocksFromDocx(buf);
     assert.ok(ext.blocks.length >= 25, "Bóc tách được đầy đủ các blocks từ tệp Word");
 
-    const result = segmentSourceBlocks(ext.blocks, { filename: "T_TRNH_Can_Bo_Hoa_Tieu_MB.docx", fileType: "docx" });
+    const result = segmentSourceBlocks(ext.blocks, { filename: "synthetic-ttrinh.docx", fileType: "docx" });
     
     // Header & metadata assertions
     assert.equal(result.fields.orgHeader1.value, "TỔNG CÔNG TY BẢO ĐẢM\nAN TOÀN HÀNG HẢI VIỆT NAM");
@@ -449,7 +449,7 @@ async function main() {
 
     // Signature and recipients assertions
     assert.equal(result.fields.signTitle.value, "GIÁM ĐỐC");
-    assert.equal(result.fields.signName.value, "Nguyễn Đức Thành");
+    assert.equal(result.fields.signName.value, "Người Ký Tổng Hợp");
     assert.ok(result.fields.recipients.value?.includes("Nơi nhận:"));
     assert.ok(result.fields.recipients.value?.includes("- Như trên;"));
     assert.ok(result.fields.recipients.value?.includes("- Các Phó Giám đốc Công ty;"));

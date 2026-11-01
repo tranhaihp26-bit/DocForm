@@ -28,7 +28,7 @@ import { type DocumentFormatType, type SourceBlock, isPlaceholderValue } from ".
 import { containsSeparatorParagraph } from "../shared/separator.ts";
 import type { TableModel } from "../shared/tableModel.ts";
 import { COMPANY_HEADER_PROFILE_ID, createCompanyHeaderTable, COMPANY_HEADER_GEOMETRY_MM } from "../canonical/nd30/companyHeader.ts";
-import { COMPANY_ND30_BODY_PROFILE } from "../canonical/nd30/companyBodyProfile.ts";
+import { COMPANY_ND30_BODY_PROFILE, COMPANY_HD05_BODY_PROFILE, resolveCompanyBodyProfile } from "../canonical/nd30/companyBodyProfile.ts";
 import { COMPANY_HEADER_HD05_PROFILE_ID, createCompanyHeaderHD05Table, COMPANY_HEADER_HD05_GEOMETRY_MM } from "../canonical/hd05/companyHeaderHD05.ts";
 import { readSemanticParagraphFormatting, type SemanticFirstLineIndent, type SemanticLineSpacing } from "./semanticRuleFormatting.ts";
 import { classifyTableMarkup, type TableFormatScope } from "../server/tableRoleClassifier.ts";
@@ -70,7 +70,7 @@ export function getStyleProfile(
   headerProfile?: string
 ): DocumentStyleProfile {
   if (regime === "party") {
-    return {
+    const partyProfile: DocumentStyleProfile = {
       regime: "party",
       bodyFontSize: 14,
       heading1FontSize: 15,
@@ -85,6 +85,16 @@ export function getStyleProfile(
       signNameFontSize: 14, // 14pt cho tên người ký
       pageNumberFontSize: 14, // 14pt cho số trang
     };
+    if (headerProfile === COMPANY_HEADER_HD05_PROFILE_ID) {
+      return {
+        ...partyProfile,
+        bodyFontSize: COMPANY_HD05_BODY_PROFILE.body.fontSizePt,
+        heading1FontSize: COMPANY_HD05_BODY_PROFILE.body.fontSizePt,
+        heading2FontSize: COMPANY_HD05_BODY_PROFILE.body.fontSizePt,
+        heading3FontSize: COMPANY_HD05_BODY_PROFILE.body.fontSizePt,
+      };
+    }
+    return partyProfile;
   }
   const administrativeProfile: DocumentStyleProfile = {
     regime: "administrative",
@@ -308,9 +318,13 @@ function splitCellTextIntoParagraphs(text: string): string[] {
 }
 
 export function buildDocxTableFromModel(model: TableModel, headerProfile?: string): Table {
-  const useCompanyTableFormat = headerProfile === COMPANY_ND30_BODY_PROFILE.id;
+  const companyProfile = resolveCompanyBodyProfile(undefined, headerProfile) ?? (
+    headerProfile === COMPANY_HEADER_PROFILE_ID ? COMPANY_ND30_BODY_PROFILE :
+    headerProfile === COMPANY_HEADER_HD05_PROFILE_ID ? COMPANY_HD05_BODY_PROFILE : null
+  );
+  const useCompanyTableFormat = Boolean(companyProfile);
   const tableFontHalfPoints = useCompanyTableFormat
-    ? COMPANY_ND30_BODY_PROFILE.table.fontSizePt * 2
+    ? companyProfile!.table.fontSizePt * 2
     : undefined;
   const mapBorder = (b?: { style?: string; size?: number; color?: string }) => {
     if (!b || b.style === "none") return { style: BorderStyle.NONE, size: 0, color: "auto" };
@@ -326,7 +340,7 @@ export function buildDocxTableFromModel(model: TableModel, headerProfile?: strin
   };
 
   const tableRows = model.rows.map((row, rowIndex) => {
-    const isHeaderRow = Boolean(row.isHeader || (useCompanyTableFormat && rowIndex === COMPANY_ND30_BODY_PROFILE.table.headerRowIndex));
+    const isHeaderRow = Boolean(row.isHeader || (useCompanyTableFormat && rowIndex === (companyProfile?.table.headerRowIndex ?? 0)));
     return new TableRow({
       cantSplit: row.cantSplit ? true : undefined,
       tableHeader: isHeaderRow ? true : undefined,
@@ -487,7 +501,7 @@ export function createRunsAndTabsFromText(
   rawText: string,
   fontSizeHalfPoints: number,
   format: { bold?: boolean; italics?: boolean; underline?: boolean } = {}
-): (TextRun | Tab)[] {
+): TextRun[] {
   if (!rawText) return [];
 
   // Bước 1: Chuẩn hóa 4 &nbsp; liên tiếp hoặc 4 non-breaking spaces thành \t (nguyên bản là <w:tab/> từ nguồn)
@@ -510,7 +524,7 @@ export function createRunsAndTabsFromText(
   // Chặng 5 / P1: ngắt dòng "\n" phải được xuất thành <w:br/> — nếu đưa thẳng
   // vào <w:t> thì Word sẽ bỏ mất khoảng trắng ở ngắt dòng ("BẢO ĐẢM" +
   // "AN TOÀN" → "BẢO ĐẢMAN TOÀN") và cổng fidelity sẽ từ chối xuất.
-  const result: (TextRun | Tab)[] = [];
+  const result: TextRun[] = [];
   const parts = cleaned.split("\t");
 
   for (let i = 0; i < parts.length; i++) {
@@ -563,11 +577,12 @@ export function convertHtmlToDocxElements(
 ): (Paragraph | Table)[] {
   const elements: (Paragraph | Table)[] = [];
   const profile = getStyleProfile(regime, headerProfile);
-  const useCompanyBodyFormat = regime === "administrative" && headerProfile === COMPANY_ND30_BODY_PROFILE.id;
+  const companyProfile = resolveCompanyBodyProfile(regime, headerProfile);
+  const useCompanyBodyFormat = Boolean(companyProfile);
   const defaultHalfPoints = profile.bodyFontSize * 2;
-  const companyBodyLineTwips = COMPANY_ND30_BODY_PROFILE.body.lineSpacingPt * 20;
-  const companyBodyFirstLineTwips = COMPANY_ND30_BODY_PROFILE.body.firstLineIndentIn * 1440;
-  const companyBodyAfterTwips = COMPANY_ND30_BODY_PROFILE.body.paragraphAfterPt * 20;
+  const companyBodyLineTwips = (companyProfile ?? COMPANY_ND30_BODY_PROFILE).body.lineSpacingPt * 20;
+  const companyBodyFirstLineTwips = (companyProfile ?? COMPANY_ND30_BODY_PROFILE).body.firstLineIndentIn * 1440;
+  const companyBodyAfterTwips = (companyProfile ?? COMPANY_ND30_BODY_PROFILE).body.paragraphAfterPt * 20;
   const bodyInsetTwips = convertMillimetersToTwip(bodyInsetMm);
   const semanticSpacing = (value?: SemanticLineSpacing): { line: number; lineRule?: typeof LineRuleType[keyof typeof LineRuleType] } | undefined => value === "18pt" ? { line: 360, lineRule: LineRuleType.EXACT }
     : value === "19pt" ? { line: 380, lineRule: LineRuleType.EXACT }
@@ -951,7 +966,7 @@ export function convertHtmlToDocxElements(
         };
       }
       const ruleIndent = semanticIndent(semanticFormatting.firstLineIndent);
-      if (ruleIndent !== undefined) pIndent = { ...(pIndent ?? {}), firstLine: ruleIndent };
+      if (ruleIndent !== undefined && !useCompanyBodyFormat) pIndent = { ...(pIndent ?? {}), firstLine: ruleIndent };
       const ruleSpacing = semanticSpacing(semanticFormatting.lineSpacing);
 
       elements.push(
@@ -959,11 +974,11 @@ export function convertHtmlToDocxElements(
           alignment: pAlignment,
           indent: pIndent,
           keepNext: pKeepNext,
-          spacing: ruleSpacing ?? (useCompanyBodyFormat && !isDividerOnly
-            ? { before: pBefore, after: pAfter, line: companyBodyLineTwips, lineRule: LineRuleType.EXACT }
-            : regime === "party"
+          spacing: useCompanyBodyFormat && !isDividerOnly
+            ? { before: pBefore, after: companyBodyAfterTwips, line: companyBodyLineTwips, lineRule: LineRuleType.EXACT }
+            : (ruleSpacing ?? (regime === "party"
               ? { before: pBefore, after: pAfter, line: 360, lineRule: LineRuleType.EXACT }
-              : { before: pBefore, after: pAfter, line: 276 }),
+              : { before: pBefore, after: pAfter, line: 276 })),
           children: runs.length > 0 ? runs : createRunsAndTabsFromText(
             textContent,
             defaultHalfPoints,
@@ -1149,10 +1164,10 @@ export function convertHtmlToDocxElements(
             bullet: !isOl ? { level: 0 } : undefined,
             numbering: isOl ? { reference: "nd30-numbered-list", level: 0 } : undefined,
             indent: { left: 720 },
-            spacing: regime === "party"
-              ? { before: 20, after: 20, line: 360, lineRule: LineRuleType.EXACT }
-              : useCompanyBodyFormat
-                ? { before: 0, after: companyBodyAfterTwips, line: companyBodyLineTwips, lineRule: LineRuleType.EXACT }
+            spacing: useCompanyBodyFormat
+              ? { before: 0, after: companyBodyAfterTwips, line: companyBodyLineTwips, lineRule: LineRuleType.EXACT }
+              : regime === "party"
+                ? { before: 20, after: 20, line: 360, lineRule: LineRuleType.EXACT }
                 : { before: 40, after: 40, line: 276 },
             alignment: useCompanyBodyFormat ? AlignmentType.JUSTIFIED : undefined,
             children: createRunsAndTabsFromText(text, defaultHalfPoints),
@@ -1208,7 +1223,7 @@ export function convertHtmlToDocxElements(
         };
       }
       const ruleIndent = semanticIndent(semanticFormatting.firstLineIndent);
-      if (ruleIndent !== undefined) pIndent = { ...(pIndent ?? {}), firstLine: ruleIndent };
+      if (ruleIndent !== undefined && !useCompanyBodyFormat) pIndent = { ...(pIndent ?? {}), firstLine: ruleIndent };
       const ruleSpacing = semanticSpacing(semanticFormatting.lineSpacing);
 
       elements.push(
@@ -1216,11 +1231,11 @@ export function convertHtmlToDocxElements(
           alignment: pAlignment,
           indent: pIndent,
           keepNext: pKeepNext,
-          spacing: ruleSpacing ?? (useCompanyBodyFormat && !isDividerOnly
-            ? { before: pBefore, after: pAfter, line: companyBodyLineTwips, lineRule: LineRuleType.EXACT }
-            : regime === "party"
+          spacing: useCompanyBodyFormat && !isDividerOnly
+            ? { before: pBefore, after: companyBodyAfterTwips, line: companyBodyLineTwips, lineRule: LineRuleType.EXACT }
+            : (ruleSpacing ?? (regime === "party"
               ? { before: pBefore, after: pAfter, line: 360, lineRule: LineRuleType.EXACT }
-              : { before: pBefore, after: pAfter, line: 276 }),
+              : { before: pBefore, after: pAfter, line: 276 })),
           children: createRunsAndTabsFromText(text, defaultHalfPoints, {
             bold: isArticleHeader || isTableTitle,
             italics: isLegalBasis,
@@ -1240,8 +1255,8 @@ function parseInlineNodes(
   element: Element,
   fontSizeHalfPoints: number = 26,
   options: { forceBold?: boolean } = {}
-): (TextRun | Tab)[] {
-  const runs: (TextRun | Tab)[] = [];
+): TextRun[] {
+  const runs: TextRun[] = [];
 
   const traverse = (node: Node, currentFormat: { bold: boolean; italic: boolean; underline: boolean }) => {
     if (node.nodeType === Node.TEXT_NODE) {
@@ -1533,7 +1548,7 @@ export function generateND30DocxDocument(data: DocumentFormatType): Document {
       page: {
         size: ND30_PAGE_SIZE,
         margin: ND30_PAGE_MARGINS,
-        ...(useCompanyND30Header ? { pageNumbers: { start: COMPANY_ND30_BODY_PROFILE.appendix.pageNumberStart } } : {}),
+        ...(useCompanyHeader ? { pageNumbers: { start: (useCompanyHD05Header ? COMPANY_HD05_BODY_PROFILE : COMPANY_ND30_BODY_PROFILE).appendix.pageNumberStart } } : {}),
       },
     },
     headers: { default: pageHeader },

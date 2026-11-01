@@ -284,8 +284,8 @@ export const A4DocumentPreview: React.FC<A4DocumentPreviewProps> = ({
         paddingLeft: "30mm",
         paddingRight: "15mm",
         fontFamily: "'Times New Roman', Times, serif",
-        fontSize: isParty ? "14pt" : "13pt",
-        lineHeight: "1.4",
+        fontSize: isAnyCompanyHeader || isParty ? "14pt" : "13pt",
+        lineHeight: isAnyCompanyHeader ? "calc(19 / 14)" : "1.4",
         color: "#000000",
         boxSizing: "border-box",
       }}
@@ -478,11 +478,15 @@ export const A4DocumentPreview: React.FC<A4DocumentPreviewProps> = ({
 
       {/* 4. Main Body HTML */}
       <div
-        className="text-justify my-4 space-y-2 [&_p]:my-2 [&_p]:text-justify [&_p]:leading-[1.25] [&_p]:indent-[1.27cm] [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6 [&_td]:indent-0 [&_td_p]:indent-0 [&_td_p]:my-0"
+        className={`text-justify my-4 space-y-2 ${
+          isAnyCompanyHeader
+            ? "[&_p]:my-0 [&_p]:mb-[6pt] [&_p]:text-justify [&_p]:leading-[calc(19/14)] [&_p]:indent-[1.27cm]"
+            : "[&_p]:my-2 [&_p]:text-justify [&_p]:leading-[1.25] [&_p]:indent-[1.27cm]"
+        } [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6 [&_td]:indent-0 [&_td_p]:indent-0 [&_td_p]:my-0`}
         style={{
-          fontSize: isParty ? "14pt" : "13pt",
+          fontSize: isAnyCompanyHeader || isParty ? "14pt" : "13pt",
           fontFamily: "'Times New Roman', Times, serif",
-          lineHeight: "1.25",
+          lineHeight: isAnyCompanyHeader ? "calc(19 / 14)" : "1.25",
         }}
         dangerouslySetInnerHTML={{
           __html: DOMPurify.sanitize(optimizeTableHtml(bodyHtml || (isImported ? "" : "<p>[Chưa có nội dung văn bản]</p>"), {
@@ -571,11 +575,15 @@ export const A4DocumentPreview: React.FC<A4DocumentPreviewProps> = ({
                 )}
               </div>
               <div
-                className="text-justify space-y-2 [&_p]:my-2 [&_p]:text-justify [&_p]:leading-[1.25] [&_p]:indent-[1.27cm] [&_td]:indent-0 [&_td_p]:indent-0 [&_td_p]:my-0"
+                className={`text-justify space-y-2 ${
+                  isAnyCompanyHeader
+                    ? "[&_p]:my-0 [&_p]:mb-[6pt] [&_p]:text-justify [&_p]:leading-[calc(19/14)] [&_p]:indent-[1.27cm]"
+                    : "[&_p]:my-2 [&_p]:text-justify [&_p]:leading-[1.25] [&_p]:indent-[1.27cm]"
+                } [&_td]:indent-0 [&_td_p]:indent-0 [&_td_p]:my-0`}
                 style={{
-                  fontSize: isParty ? "14pt" : "13pt",
+                  fontSize: isAnyCompanyHeader || isParty ? "14pt" : "13pt",
                   fontFamily: "'Times New Roman', Times, serif",
-                  lineHeight: "1.25",
+                  lineHeight: isAnyCompanyHeader ? "calc(19 / 14)" : "1.25",
                 }}
                 dangerouslySetInnerHTML={{
                   __html: DOMPurify.sanitize(optimizeTableHtml(app.html || "", {

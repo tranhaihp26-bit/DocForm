@@ -72,4 +72,47 @@ describe("Task 4: Export Candidate Gate Contract (C01, B05, B06)", () => {
     const r = await verifyCandidateExportFidelity(bytes, {}, { tableIds: [] });
     assert.equal(r.safe, false, "Gate must reject unclosed/truncated OOXML");
   });
+  it("Task 2: candidate with valid XML but missing content has downloadable: false and blocks download", async () => {
+    const validXmlMissingContent = '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Only part of content</w:t></w:r></w:p></w:body></w:document>';
+    const payload = await makeZipBytes("word/document.xml", validXmlMissingContent);
+
+    const input: ExportCandidateSnapshot = {
+      doc: {
+        orgHeader1: "", orgHeader2: "", nationalHeader1: "", nationalHeader2: "",
+        locationAndDate: "", documentType: "KẾ HOẠCH", referenceNumber: "",
+        subject: "Tiêu đề", bodyHtml: "<p>Đoạn văn quan trọng bị mất hoàn toàn trong candidate</p>", signTitle: "", signName: "", recipients: "",
+      },
+      standardType: "state",
+      reviewBlocks: [],
+      structuredImport: null,
+    };
+
+    const manager = createExportCandidateManager(async () => payload);
+    const candidate = await manager.prepare(input);
+    assert.ok(candidate);
+    assert.equal(candidate.safe, false, "Candidate missing content must be marked safe: false");
+    assert.equal(candidate.downloadable, false, "Candidate with safe: false must have downloadable: false");
+
+    const s = fs.readFileSync("src/App.tsx", "utf8");
+    const startExport = s.indexOf("  const exportToDocx = async () => {");
+    const endExport = s.indexOf("  const handleDownloadOriginalFile = async () => {", startExport);
+    const exportCode = transformSync(s.slice(startExport, endExport), { loader: "ts", target: "es2022", format: "esm" }).code;
+
+    const observed = { downloads: 0, error: "" };
+    const deps = {
+      candidateManager: { current: manager },
+      workspaceSnapshotRef: { current: input },
+      uploadedBlocks: [],
+      docTypeOverride: null,
+      canEnterStep: () => true,
+      standardType: "state",
+      downloadDocxUint8Array: () => { observed.downloads++; },
+      setErrorMsg: (msg: string) => { observed.error = msg; },
+    };
+
+    const fnExport = new Function("deps", "const {" + Object.keys(deps).join(",") + "} = deps;\n" + exportCode + "\nreturn exportToDocx;")(deps);
+    await fnExport();
+    assert.equal(observed.downloads, 0, "Blocked candidate must not trigger download");
+    assert.match(observed.error, /không tạo được tệp|không vượt qua kiểm tra toàn vẹn/, "Must report integrity reject");
+  });
 });
