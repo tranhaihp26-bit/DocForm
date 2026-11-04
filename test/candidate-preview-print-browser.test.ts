@@ -44,7 +44,7 @@ test('Candidate preview, isolated print wiring and exact original download',asyn
   assert.equal(await c.waitForFunction(`document.querySelector('[data-wizard-step="1"]')?.getAttribute('data-flow-phase')==='ready'`),true,'Restored approved source should reach the ready phase');
   const stepOneGate=await c.evaluate<any>(`(()=>{const button=document.querySelector('[data-action="wizard-next"]');return{text:button?.textContent?.trim(),disabled:button?.disabled}})()`);
   assert.equal(stepOneGate.disabled,false,`Step 1 transition should be enabled for the restored approved source: ${JSON.stringify(stepOneGate)}`);
-  assert.equal(await c.clickByText('button','Sang Bước 2: Soạn'),true,'Advance through the actual Step 1 primary action');
+  assert.equal(await c.clickByText('button','Tiếp tục đưa vào Studio soạn thảo'),true,'Advance through the actual Step 1 primary action');
   assert.equal(await c.waitForFunction(`document.querySelector('[data-current-step="2"]')!==null`),true,'Application should open Step 2 through the wizard');
   const stepTwoGate=await c.evaluate<any>(`(()=>{const button=document.querySelector('[data-action="workspace-next"]');return{text:button?.textContent?.trim(),disabled:button?.disabled}})()`);
   assert.equal(stepTwoGate.disabled,false,`Step 2 transition should be enabled for the approved workspace: ${JSON.stringify(stepTwoGate)}`);

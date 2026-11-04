@@ -103,3 +103,19 @@ test("provider capability matrix keeps the current ChatGPT-plan adapter text-onl
   assert.equal(chatgpt.features.code_read.status, "BLOCKED_BY_PROVIDER");
   assert.equal(chatgpt.features.all_page_visual_review.status, "BLOCKED_BY_PROVIDER");
 });
+
+test("AI provider capability reports OpenAI text-manifest support but leaves file and visual review unverified", async () => {
+  assert.ok(capabilityApi?.getAiProviderCapabilities);
+  const sentinelSecret = "synthetic-openai-key-must-not-leak";
+  const capabilities = await capabilityApi.getAiProviderCapabilities({ openAiApiKey: sentinelSecret });
+  const openai = capabilities.providers["openai-api"];
+
+  assert.equal(openai.configured, true);
+  assert.equal(openai.textInput.status, "SUPPORTED_BY_ADAPTER");
+  assert.equal(openai.fullTextManifest.status, "SUPPORTED_BY_ADAPTER");
+  assert.equal(openai.features.original_file_transfer.status, "NOT_VERIFIED");
+  assert.equal(openai.features.provider_file_read.status, "NOT_VERIFIED");
+  assert.equal(openai.features.code_read.status, "NOT_VERIFIED");
+  assert.equal(openai.features.all_page_visual_review.status, "NOT_VERIFIED");
+  assert.equal(JSON.stringify(capabilities).includes(sentinelSecret), false);
+});

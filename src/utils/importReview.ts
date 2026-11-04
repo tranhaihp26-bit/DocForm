@@ -283,8 +283,8 @@ export function reconstructFromReviewedBlocks(
   let orgHeader1 = "";
   let orgHeader2 = "";
   let draftNote = "";
-  let nationalHeader1 = standardType === "party" ? "ĐẢNG CỘNG SẢN VIỆT NAM" : "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM";
-  let nationalHeader2 = standardType === "party" ? "" : "Độc lập - Tự do - Hạnh phúc";
+  let nationalHeader1 = "";
+  let nationalHeader2 = "";
   let locationAndDate = "";
   let referenceNumber = "";
 
@@ -309,8 +309,8 @@ export function reconstructFromReviewedBlocks(
     orgHeader1 = baseImport.fields.orgHeader1?.value || "";
     orgHeader2 = baseImport.fields.orgHeader2?.value || "";
     draftNote = baseImport.draftNote || "";
-    nationalHeader1 = baseImport.fields.nationalHeader1?.value || nationalHeader1;
-    nationalHeader2 = baseImport.fields.nationalHeader2?.value ?? nationalHeader2;
+    nationalHeader1 = baseImport.fields.nationalHeader1?.value || "";
+    nationalHeader2 = baseImport.fields.nationalHeader2?.value || "";
     locationAndDate = baseImport.fields.locationAndDate?.value || "";
     referenceNumber = baseImport.fields.referenceNumber?.value || "";
   } else if (headerBlocks.length > 0) {
@@ -563,14 +563,14 @@ export function reconstructFromReviewedBlocks(
     }
   }
 
-  // Semantic fields may live in two cells of a single physical Body table.
-  // Preserve that table in Body and derive the fields from the current cells.
-  if (!signTitle && !signName && !recipients) {
+  // Backward compatibility for older imports that kept a mixed footer table
+  // in Body. New imports classify this table into the signature region.
+  if (!signTitle || !signName || !recipients) {
     const embedded = bodyBlocks.map(embeddedRecipientsSignatureTable).find(Boolean);
     if (embedded) {
-      signTitle = embedded.signTitle;
-      signName = embedded.signName;
-      recipients = embedded.recipients;
+      if (!signTitle) signTitle = embedded.signTitle;
+      if (!signName) signName = embedded.signName;
+      if (!recipients) recipients = embedded.recipients;
     }
   }
 

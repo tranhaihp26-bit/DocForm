@@ -466,10 +466,10 @@ test("Chặng 3: wizard ba bước, cổng dữ liệu, bảo toàn nguồn, lư
     // Chỉ báo lưu phải là chữ thật sau khi IndexedDB commit thành công.
     assert.ok(
       await client.waitForFunction(
-        `document.querySelector('[data-save-status]')?.textContent === 'Đã lưu'`,
+        `document.querySelector('[data-save-status]')?.textContent === 'Đã lưu trên trình duyệt này'`,
         5000,
       ),
-      "Chỉ báo phải là 'Đã lưu' sau khi IndexedDB commit thành công",
+      "Chỉ báo phải nói rõ bản nháp đã lưu trên trình duyệt sau khi IndexedDB commit",
     );
 
     // =========================================================================
@@ -562,7 +562,7 @@ test("Chặng 3: wizard ba bước, cổng dữ liệu, bảo toàn nguồn, lư
         btn.focus();
         btn.click();
         return true;
-      })`);
+      })()`);
       assert.equal(opened, true, "Phải mở được hộp thoại khác biệt thể thức");
       assert.ok(
         await client.waitForFunction(`${diffDialogExpr} !== undefined`, 3000),

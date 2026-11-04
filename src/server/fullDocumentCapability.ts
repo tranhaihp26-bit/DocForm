@@ -13,6 +13,8 @@ export interface AiProviderCapabilityOptions {
   chatgptClient?: TextOnlyChatGPTClient;
   /** The key is inspected only to report configuration; it is never returned or logged. */
   geminiApiKey?: string;
+  /** The key is inspected only to report configuration; it is never returned or logged. */
+  openAiApiKey?: string;
 }
 
 const CHATGPT_FEATURES: Record<FullDocumentAiFeature, FullDocumentAiFeatureEvidence> = {
@@ -50,6 +52,25 @@ const GEMINI_FEATURES: Record<FullDocumentAiFeature, FullDocumentAiFeatureEviden
   all_page_visual_review: {
     status: "NOT_VERIFIED",
     reason: "Google có tài liệu về PDF vision nhưng DocForm chưa gửi PDF dựng local hoặc kiểm chứng đủ từng trang.",
+  },
+};
+
+const OPENAI_API_FEATURES: Record<FullDocumentAiFeature, FullDocumentAiFeatureEvidence> = {
+  original_file_transfer: {
+    status: "NOT_VERIFIED",
+    reason: "DocForm chỉ gửi manifest văn bản qua OpenAI Responses API; chưa tích hợp gửi tệp DOCX gốc.",
+  },
+  provider_file_read: {
+    status: "NOT_VERIFIED",
+    reason: "Chưa có luồng gửi hoặc kiểm chứng việc OpenAI đọc tệp DOCX gốc.",
+  },
+  code_read: {
+    status: "NOT_VERIFIED",
+    reason: "DocForm chưa tích hợp công cụ đọc OOXML hoặc thực thi mã trên tệp qua OpenAI API.",
+  },
+  all_page_visual_review: {
+    status: "NOT_VERIFIED",
+    reason: "DocForm chưa gửi trang dựng hình tới OpenAI API hoặc kiểm chứng đủ từng trang.",
   },
 };
 
@@ -121,16 +142,45 @@ function getGeminiCapability(apiKey: string): FullDocumentAiProviderCapability {
   };
 }
 
+function getOpenAiApiCapability(apiKey: string): FullDocumentAiProviderCapability {
+  const configured = apiKey.trim().length > 0;
+  return {
+    provider: "openai-api",
+    transport: "Server-side OpenAI Responses API (API key; text only; store=false)",
+    configured,
+    textInput: {
+      status: "SUPPORTED_BY_ADAPTER",
+      reason: configured
+        ? "DocForm có adapter OpenAI API phía máy chủ; cấu hình khóa không xác nhận API reachability hoặc model khả dụng."
+        : "Adapter OpenAI API tồn tại nhưng máy chủ chưa phát hiện khóa API đã cấu hình.",
+    },
+    fullTextManifest: {
+      status: "SUPPORTED_BY_ADAPTER",
+      reason: "Endpoint local gửi manifest văn bản trích xuất theo consent và báo coverage; không gửi DOCX gốc hoặc xác nhận đã xem bố cục.",
+    },
+    modelAvailable: false,
+    features: structuredClone(OPENAI_API_FEATURES),
+    fullReviewStatus: configured ? "NOT_VERIFIED" : "BLOCKED_BY_PROVIDER",
+    dataUseTier: {
+      status: "NOT_VERIFIED",
+      tier: "unknown",
+      reason: "DocForm không xác định được chính sách lưu giữ hoặc cài đặt dữ liệu của tổ chức gắn với API key.",
+    },
+  };
+}
+
 export async function getAiProviderCapabilities(
   options: AiProviderCapabilityOptions = {},
 ): Promise<FullDocumentAiCapability> {
   const chatgpt = await getChatGPTPlanCapability(options.chatgptClient);
   const gemini = getGeminiCapability(options.geminiApiKey ?? process.env.GEMINI_API_KEY ?? "");
+  const openai = getOpenAiApiCapability(options.openAiApiKey ?? process.env.OPENAI_API_KEY ?? "");
   return {
     ...chatgpt,
     providers: {
       "chatgpt-plan": chatgpt,
       gemini,
+      "openai-api": openai,
     },
   };
 }

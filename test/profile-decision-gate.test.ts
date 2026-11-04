@@ -43,8 +43,8 @@ test("all Step 2 and Step 3 navigation and completion gates include profile reso
   assert.match(app, /const canExportSource\s*=.*canEnterProfileDecision/u);
   assert.match(app, /const canEnterStep\s*=.*canEnterProfileDecision/u);
   assert.match(app, /const stepIsComplete\s*=.*canEnterProfileDecision/u);
-  assert.match(app, /hasImportedFile:\s*Boolean\(sourceOrigin\s*===\s*"uploaded_file"\s*\|\|\s*originalSnapshot\?\.sourceType\s*===\s*"uploaded_file"/u);
-  assert.match(importView, /const hasImportedFile\s*=\s*sourceOrigin\s*===\s*"uploaded_file"\s*\|\|\s*originalSnapshot\?\.sourceType\s*===\s*"uploaded_file"/u);
-  assert.match(app, /const restoredMismatch\s*=\s*deriveSourceMismatch\(\{\s*hasSelectedSource:\s*restoredOrigin\s*!==\s*"none",\s*hasImportedFile:\s*Boolean\(\s*restoredOrigin\s*===\s*"uploaded_file"\s*\|\|\s*savedDraft\.originalSnapshot\?\.sourceType\s*===\s*"uploaded_file"/su);
+  assert.match(app, /hasImportedFile:\s*isImportedFileSource\(\{\s*sourceOrigin,/u);
+  assert.match(importView, /const hasImportedFile\s*=\s*isImportedFileSource\(\{\s*sourceOrigin,/u);
+  assert.match(app, /const restoredMismatch\s*=\s*deriveSourceMismatch\(\{\s*hasSelectedSource:\s*restoredOrigin\s*!==\s*"none",\s*hasImportedFile:\s*isImportedFileSource\(\{\s*sourceOrigin:\s*restoredOrigin/su);
   assert.match(app, /const restoredMaxStep:\s*1\s*\|\s*2\s*\|\s*3\s*=\s*restoredMismatch\.profileMismatch\s*\?\s*1/u);
 });

@@ -5,7 +5,8 @@ import JSZip from "jszip";
 import type { DocumentState, AppendixDocument, SourceBlock } from "../src/shared/schemas/document.schema.ts";
 import { tableModelToHtmlView, type TableModel } from "../src/shared/tableModel.ts";
 import { COMPANY_HEADER_PROFILE_ID } from "../src/canonical/nd30/companyHeader.ts";
-import { COMPANY_HEADER_HD05_PROFILE_ID } from "../src/canonical/hd05/companyHeaderHD05.ts";
+import { applyCompanyProfile } from "../src/canonical/nd30/companyHeader.ts";
+import { COMPANY_HEADER_HD05_PROFILE_ID, applyCompanyHD05Profile } from "../src/canonical/hd05/companyHeaderHD05.ts";
 import { composeDocumentFormatData } from "../src/utils/documentComposer.ts";
 import { createExportCandidateManager, exportCandidateKey, prepareExportCandidate, type ExportCandidateSnapshot } from "../src/utils/exportCandidate.ts";
 import { generateND30DocxUint8Array, candidateSectionName } from "../src/utils/docxExport.ts";
@@ -25,6 +26,9 @@ const model: TableModel = { tableId: "block-table", rowsCount: 1, columnsCount: 
 const tableBlock = (role: SourceBlock["role"]): SourceBlock => ({ id: "block-table", index: 0, kind: "table", text: "0007 A B", role, tableModel: model, html: tableModelToHtmlView(model), rawXml: "<w:tbl><w:tr><w:tc><w:p><w:r><w:t>0007 A B</w:t></w:r></w:p></w:tc></w:tr></w:tbl>", unsupportedFeatures: [] });
 function approvedTable(role: SourceBlock["role"] = "body") {
   const block = tableBlock(role), d = doc(); d.bodyHtml = role === "body" ? block.html! : "<p>Nội dung.</p>";
+  if (role === "header") d.orgHeader1 = "0007 A B";
+  if (role === "signature") d.signName = "0007 A B";
+  if (role === "recipients") d.recipients = "0007 A B";
   const blocks: SourceBlock[] = role === "body" ? [block] : [block, { id: "body-source", index: 1, kind: "paragraph", text: "Nội dung.", html: d.bodyHtml, role: "body" }];
   const pending = createWorkspaceSnapshot({ doc: d, standardType: "state", reviewBlocks: blocks, structuredImport: null }, { blobHash: "synthetic-sha", generation: 1 });
   const result = approveWorkspacePartition(pending); assert.ok(result.ok); return result.snapshot;
@@ -34,7 +38,13 @@ describe("Workspace A: real composer and immutable candidate", () => {
   it("both regimes and generic/company profiles use the real product composer", async () => {
     for (const standardType of ["state", "party"] as const) for (const company of [false, true]) {
       const s = snapshot(); s.standardType = standardType;
-      if (company) s.doc.headerProfile = standardType === "party" ? COMPANY_HEADER_HD05_PROFILE_ID : COMPANY_HEADER_PROFILE_ID;
+      if (company) {
+        const profileInput = { ...s.doc, orgHeader1: "", orgHeader2: "" };
+        s.doc = standardType === "party"
+          ? applyCompanyHD05Profile(profileInput)
+          : applyCompanyProfile(profileInput);
+      }
+      else s.doc.headerProfile = "generic";
       if (standardType === "party") s.doc.referenceNumber = "Số 01-KH/TN";
       const composed = composeDocumentFormatData(s), candidate = await prepareExportCandidate(s);
       assert.deepEqual(candidate.formatData, composed);

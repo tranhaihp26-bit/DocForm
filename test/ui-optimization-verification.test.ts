@@ -33,13 +33,19 @@ test('Workspace UI: nhập, duyệt, xem ở bảy độ rộng và tải đúng
     assert.equal(await browser.evaluate(`document.querySelector('header .df-stepper') === null`), true);
     assert.equal(await browser.evaluate(`document.querySelectorAll('.df-workspace-sidebar button[data-step]').length`), 3);
 
+    assert.equal(await browser.clickByText('button', 'Tải tài liệu có sẵn'), true);
     await browser.uploadFile('input[type="file"]', file);
-    assert.equal(await browser.waitForFunction(`document.body.textContent.includes('Đối Chiếu & Phân Vùng Tài Liệu Tải Lên')`, 15000), true);
+    assert.equal(await browser.waitForFunction(`document.querySelector('[data-testid="side-by-side-modal"]') !== null`, 20000), true,
+      `Recognized DOCX should open source review. UI: ${(await browser.evaluate<string>(`document.body.innerText`)).slice(0, 1800)}`);
     assert.equal(await browser.evaluate(`document.body.textContent.includes(${JSON.stringify(SOURCE_TEXT)})`), true);
     assert.equal(await browser.evaluate(`document.querySelector('[data-step="2"]')?.getAttribute('data-step-allowed')`), 'false');
-    assert.equal(await browser.clickByText('button', 'Đồng Ý Đưa Vào Studio Soạn Thảo'), true);
+    assert.equal(await browser.clickByText('button', 'Tiếp tục đưa vào Studio soạn thảo'), true);
     assert.equal(await browser.waitForFunction(`document.querySelector('[data-current-step="2"]') !== null`, 8000), true);
-    assert.equal(await browser.evaluate(`document.querySelectorAll('[data-workspace-group]').length`), 9);
+    const workspaceGroups = await browser.evaluate<string[]>(`Array.from(document.querySelectorAll('[data-workspace-group]')).map(node => node.getAttribute('data-workspace-group') || '')`);
+    assert.deepEqual(workspaceGroups, ['2', '1', '3', '4', '5', '7', '8', '9'],
+      'The eight non-body groups should be present; the body is rendered as its own editable canvas');
+    assert.equal(await browser.evaluate(`Boolean(document.querySelector('[data-canvas-id="body"]'))`), true,
+      'Main group 6 (document body) should be present in the editable canvas');
     assert.equal(await browser.evaluate(`document.querySelector('[data-canvas-id="body"]')?.textContent.includes(${JSON.stringify(SOURCE_TEXT)})`), true);
 
     for (const width of [1920, 1440, 1366, 1280, 1024, 768, 390]) {
@@ -81,7 +87,7 @@ test('Workspace UI: nhập, duyệt, xem ở bảy độ rộng và tải đúng
         return original(blob);
       };
     })()`);
-    assert.equal(await browser.clickByText('[data-candidate-download]', 'Tải Word'), true);
+    assert.equal(await browser.clickByText('[data-candidate-download]', 'Tải xuống DOCX'), true);
     assert.equal(await browser.waitForFunction(`window.__candidateBytes !== null`, 5000), true);
     const bytes = Buffer.from(await browser.evaluate<string>('window.__candidateBytes'), 'base64');
     const zip = await JSZip.loadAsync(bytes);

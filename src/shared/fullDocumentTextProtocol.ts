@@ -71,7 +71,7 @@ export interface FullTextManifest {
 
 export const FULL_TEXT_REVIEW_SCHEMA_VERSION = 1 as const;
 export const FULL_TEXT_MAX_EVIDENCE_QUOTE_CHARS = 320 as const;
-export type FullTextAiProviderKind = "gemini" | "chatgpt";
+export type FullTextAiProviderKind = "gemini" | "openai_api" | "chatgpt";
 export type FullTextReviewTextScope = "all_extracted_text";
 export type FullTextSegmentReviewStatus = "reviewed" | "no_finding" | "unsupported";
 export type FullTextSemanticScope = "body" | "appendix" | "other";

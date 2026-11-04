@@ -27,15 +27,13 @@ test("S3-F02: bản nháp mẫu kiểu cũ vẫn xuất được sau khi tải l
     );
 
     // -----------------------------------------------------------------------
-    // 1) Tạo bản nháp mẫu thật (như Chặng 3 đang lưu).
+    // 1) Tạo bản nháp mẫu qua wizard hiện hành: bắt đầu mới → chọn loại → mẫu.
     // -----------------------------------------------------------------------
-    assert.ok(await client.clickByText("button", "Dùng mẫu"), "Phải có lối bắt đầu từ mẫu");
-    await new Promise((r) => setTimeout(r, 350));
-    await client.evaluate(`(() => {
-      const btn = Array.from(document.querySelectorAll('button'))
-        .find(b => (b.textContent || '').trim() === 'Đổi mẫu');
-      if (btn) btn.click();
-    })()`);
+    assert.ok(await client.clickByText("button", "Tạo văn bản mới"), "Phải có lựa chọn tạo văn bản mới");
+    assert.ok(await client.clickByText("button", "Chọn loại văn bản"), "Phải chuyển từ hệ thể thức sang loại văn bản");
+    assert.ok(await client.clickByText("button", "KẾ HOẠCH"), "Phải chọn được loại Kế hoạch");
+    assert.ok(await client.clickByText("button", "Chọn mẫu"), "Phải chuyển sang lựa chọn mẫu");
+    assert.ok(await client.clickByText("button", "Dùng mẫu"), "Phải có mẫu Kế hoạch để bắt đầu");
 
     const templatePersisted = await client.waitForPersisted(
       (rec) => rec.sourceOrigin === "system_template",
@@ -96,14 +94,18 @@ test("S3-F02: bản nháp mẫu kiểu cũ vẫn xuất được sau khi tải l
       "Không được báo thiếu nguồn khi nội dung mẫu vẫn còn",
     );
     assert.equal(
+      await client.evaluate<string>(`document.querySelector('.df-workspace-sidebar button[data-step="2"]')?.getAttribute('data-step-allowed')`),
+      "true",
+      "Bản nháp mẫu cũ phải cho phép tiếp tục soạn sau khi tải lại",
+    );
+    assert.equal(
       await client.evaluate<string>(`document.querySelector('.df-workspace-sidebar button[data-step="3"]')?.getAttribute('data-step-allowed')`),
       "true",
-      "Bản nháp mẫu cũ phải còn xuất được sau khi tải lại (S3-F02)",
+      "Bản nháp mẫu đã có nội dung phải tiếp tục mở được Bước Xuất sau khi khôi phục",
     );
-    const previewText = await client.evaluate<string>(
-      `document.querySelector('[data-testid="wizard-source-preview"]')?.textContent || ""`,
-    );
-    assert.ok(previewText.length > 40, "Nội dung mẫu phải được khôi phục nguyên vẹn");
+    const restoredDraft = await client.readRawDraft();
+    assert.ok(restoredDraft.doc?.bodyHtml && restoredDraft.doc.bodyHtml.length > 100,
+      "Nội dung mẫu phải còn trong bản nháp sau migration và tải lại");
 
     // Nguồn phải được ghi lại đúng loại (migration) chứ không chỉ đúng trong RAM.
     const migrated = await client.waitForPersisted(
@@ -126,7 +128,7 @@ test("S3-F02: bản nháp mẫu kiểu cũ vẫn xuất được sau khi tải l
     );
 
     // -----------------------------------------------------------------------
-    // 4) Vào thẳng bước Xuất và kiểm tra nội dung mẫu còn nguyên.
+    // 4) Vào Bước Xuất bằng lối hợp lệ của nguồn mẫu và kiểm tra nội dung.
     // -----------------------------------------------------------------------
     await client.clickStep(3);
     await new Promise((r) => setTimeout(r, 500));
@@ -135,10 +137,8 @@ test("S3-F02: bản nháp mẫu kiểu cũ vẫn xuất được sau khi tải l
       "3",
       "Bước Xuất phải mở được từ bản nháp mẫu cũ",
     );
-    assert.ok(
-      await client.waitForFunction(`document.querySelector('[data-wizard-step="3"]') !== null`, 3000),
-      "Bước Xuất phải được render",
-    );
+    assert.ok(await client.waitForFunction(`document.querySelector('[data-wizard-step="3"]') !== null`, 3000));
+    assert.ok(await client.evaluate<boolean>(`document.body.textContent.includes('Hội nghị Tổng kết')`));
     assert.ok(
       await client.evaluate<boolean>(`document.body.textContent.includes('Hội nghị Tổng kết')`),
       "Nội dung mẫu phải còn ở bước Xuất",

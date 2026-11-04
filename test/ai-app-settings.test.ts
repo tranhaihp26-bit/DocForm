@@ -25,6 +25,21 @@ test("AI application settings persist only the default provider across sessions"
   assert.equal("sourceConsent" in saved, false);
 });
 
+test("AI application settings allow the OpenAI API without persisting credentials or consent", () => {
+  const storage = createStorage();
+
+  assert.equal(saveAiDefaultProvider("openai_api" as any, storage), true);
+  assert.deepEqual(loadAiApplicationSettings(storage), {
+    defaultProvider: "openai_api",
+    preferencePersisted: true,
+    storageAvailable: true,
+  });
+  const saved = JSON.parse(storage.getItem("docform.ai-settings.v1") ?? "null");
+  assert.deepEqual(saved, { version: 1, defaultProvider: "openai_api" });
+  assert.equal(JSON.stringify(saved).includes("API_KEY"), false);
+  assert.equal("consent" in saved, false, "a provider preference is not operation consent");
+});
+
 test("AI application settings ignore unknown versions/providers and keep Gemini as the safe default", () => {
   const futureVersion = createStorage({
     "docform.ai-settings.v1": JSON.stringify({ version: 2, defaultProvider: "chatgpt" }),

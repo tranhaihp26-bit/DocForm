@@ -25,7 +25,7 @@ import {
 import JSZip from "jszip";
 import { stampHoaTieuHeader } from "./hoaTieuHeaderStamp.ts";
 import { type DocumentFormatType, type SourceBlock, isPlaceholderValue } from "../shared/schemas/document.schema.ts";
-import { containsSeparatorParagraph } from "../shared/separator.ts";
+import { containsSeparatorParagraph, startsWithSeparatorParagraph } from "../shared/separator.ts";
 import type { TableModel } from "../shared/tableModel.ts";
 import { COMPANY_HEADER_PROFILE_ID, createCompanyHeaderTable, COMPANY_HEADER_GEOMETRY_MM } from "../canonical/nd30/companyHeader.ts";
 import { COMPANY_ND30_BODY_PROFILE, COMPANY_HD05_BODY_PROFILE, resolveCompanyBodyProfile } from "../canonical/nd30/companyBodyProfile.ts";
@@ -608,7 +608,8 @@ export function convertHtmlToDocxElements(
       const styleAttr = child.getAttribute("style") || "";
       const semanticFormatting = readSemanticParagraphFormatting(child.outerHTML);
       const textContent = child.textContent?.trim() || "";
-      if (!textContent && tagName !== "table") return;
+      const hasPageBreak = child.querySelector('span[data-page-break="true"]') !== null;
+      if (!textContent && tagName !== "table" && !hasPageBreak) return;
 
       const isCentered = styleAttr.includes("center") || /^(QUYẾT ĐỊNH:|NGHỊ QUYẾT:|BAN HÀNH:)/i.test(textContent);
       const isRight = styleAttr.includes("right");
@@ -1179,7 +1180,8 @@ export function convertHtmlToDocxElements(
 
     // 3. Xử lý Đoạn văn
     const text = extractHtmlTextWithBreaks(trimmed);
-    if (text) {
+    const hasPageBreak = /<span\b(?=[^>]*\bdata-page-break\s*=\s*(["'])true\1)[^>]*>[\s\S]*?<\/span\s*>/i.test(trimmed);
+    if (text || hasPageBreak) {
       const semanticFormatting = readSemanticParagraphFormatting(trimmed);
       const isDividerOnly = text.length >= 3 && /^[-—–_.\s]+$/.test(text);
       const isCenteredBlock = /text-align\s*:\s*center/i.test(trimmed) || isDividerOnly;
@@ -1236,7 +1238,7 @@ export function convertHtmlToDocxElements(
             : (ruleSpacing ?? (regime === "party"
               ? { before: pBefore, after: pAfter, line: 360, lineRule: LineRuleType.EXACT }
               : { before: pBefore, after: pAfter, line: 276 })),
-          children: createRunsAndTabsFromText(text, defaultHalfPoints, {
+          children: hasPageBreak ? parseFallbackInlineNodes(trimmed, defaultHalfPoints) : createRunsAndTabsFromText(text, defaultHalfPoints, {
             bold: isArticleHeader || isTableTitle,
             italics: isLegalBasis,
           }),
@@ -1255,8 +1257,8 @@ function parseInlineNodes(
   element: Element,
   fontSizeHalfPoints: number = 26,
   options: { forceBold?: boolean } = {}
-): TextRun[] {
-  const runs: TextRun[] = [];
+): Array<TextRun | PageBreak> {
+  const runs: Array<TextRun | PageBreak> = [];
 
   const traverse = (node: Node, currentFormat: { bold: boolean; italic: boolean; underline: boolean }) => {
     if (node.nodeType === Node.TEXT_NODE) {
@@ -1277,6 +1279,10 @@ function parseInlineNodes(
       const el = node as HTMLElement;
       const tag = el.tagName.toLowerCase();
       if (DANGEROUS_HTML_TAGS.has(tag)) return;
+      if (tag === "span" && el.getAttribute("data-page-break") === "true") {
+        runs.push(new PageBreak());
+        return;
+      }
       // Chặng 5 / P1: ngắt dòng `<br>` phải được giữ thành `<w:br/>` trong
       // Word, nếu không hai từ ở hai đầu ngắt dòng sẽ bị dính liền.
       if (tag === "br") {
@@ -1300,6 +1306,22 @@ function parseInlineNodes(
   });
 
   return runs;
+}
+
+function parseFallbackInlineNodes(html: string, fontSizeHalfPoints: number): Array<TextRun | PageBreak> {
+  const marker = /<span\b(?=[^>]*\bdata-page-break\s*=\s*(["'])true\1)[^>]*>[\s\S]*?<\/span\s*>/gi;
+  const children: Array<TextRun | PageBreak> = [];
+  let cursor = 0;
+  for (const match of html.matchAll(marker)) {
+    const index = match.index ?? cursor;
+    const precedingText = extractHtmlTextWithBreaks(html.slice(cursor, index));
+    if (precedingText) children.push(...createRunsAndTabsFromText(precedingText, fontSizeHalfPoints));
+    children.push(new PageBreak());
+    cursor = index + match[0].length;
+  }
+  const trailingText = extractHtmlTextWithBreaks(html.slice(cursor));
+  if (trailingText) children.push(...createRunsAndTabsFromText(trailingText, fontSizeHalfPoints));
+  return children;
 }
 
 /**
@@ -1352,7 +1374,7 @@ export function getHeaderRenderPlan(data:DocumentFormatType):HeaderRenderPlan{
   const renderSystemHeader=!hasEmbeddedHeader&&(company||hasOfficeReference);
   const renderType=Boolean(data.documentType&&!isCongVanParty&&!isCongVanState&&!detectEmbeddedHeaderField(data.bodyHtml??"",data.documentType));
   const renderSubject=Boolean(data.subject&&!detectEmbeddedHeaderField(data.bodyHtml??"",data.subject));
-  const renderPartySeparator=Boolean(isParty&&!isCongVanParty&&renderSubject&&data.subject&&!containsSeparatorParagraph(data.bodyHtml??""));
+  const renderPartySeparator=Boolean(isParty&&!isCongVanParty&&renderSubject&&data.subject&&!startsWithSeparatorParagraph(data.bodyHtml??""));
   return{renderSystemHeader,renderType,renderSubject,renderPartySeparator,isCongVanParty,isCongVanState};
 }
 

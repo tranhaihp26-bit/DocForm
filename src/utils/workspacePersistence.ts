@@ -74,7 +74,7 @@ export function createWorkspaceVersion(snapshot: WorkspaceSnapshot, metadata: {
 export function restoreWorkspaceVersion(version: WorkspaceVersion): WorkspaceSnapshot {
   const content: SnapshotContent = structuredClone({ doc: version.data, standardType: version.standardType,
     reviewBlocks: version.reviewBlocks ?? [], structuredImport: version.structuredImport ?? null });
-  if (version.workspace !== undefined) {
+  if (version.workspace !== undefined && version.workspace !== null) {
     if (!isWorkspaceStateValid(version.workspace, content)) throw new Error('invalid_workspace_version');
     const snapshot = { ...content, workspace: structuredClone(version.workspace) };
     if (snapshot.workspace.source && !snapshot.workspace.partition.approval) snapshot.workspace.legacyNeedsApproval = true;

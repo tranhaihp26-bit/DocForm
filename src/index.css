@@ -950,7 +950,8 @@
 /* Three-step navigation lives in the sidebar; the header keeps document controls. */
 .df-header-save-status {
   box-sizing: border-box;
-  width: 108px;
+  min-width: 108px;
+  width: auto;
   justify-content: center;
   white-space: nowrap;
 }
@@ -1121,9 +1122,44 @@
   border-radius: 50%;
   background: #bdc8da;
 }
+.df-step-toc button[data-step1-phase] { align-items: center; padding-top: 7px; padding-bottom: 7px; }
+.df-step-toc button[data-step1-phase] > span:first-child {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  margin: 0;
+  border-radius: 50%;
+  background: #eef1f7;
+  color: #7a88a0;
+  font-size: 10px;
+  font-weight: 800;
+}
+.df-step-toc button[data-step1-status="current"] { background: #f0eeff; color: #5548d3; }
+.df-step-toc button[data-step1-status="current"] > span:first-child { background: #6255e8; color: #fff; }
+.df-step-toc button[data-step1-status="done"] > span:first-child { background: #e7f7f0; color: #168365; }
+.df-step-toc button[data-step1-phase]:disabled { color: #a2acbd; cursor: not-allowed; }
 .df-step-toc button:hover,
 .df-step-toc button[aria-current="location"] { background: #f0eeff; color: #5548d3; }
 .df-step-toc button[aria-current="location"] > span:first-child { background: #6255e8; }
+.df-step1-change-flow {
+  display: flex;
+  align-items: center;
+  width: calc(100% - 16px);
+  min-height: 34px;
+  margin: -3px 8px 9px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #6255e8;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.df-step1-change-flow:hover { background: #f7f6ff; }
 .df-sidebar-current {
   display: grid;
   gap: 4px;

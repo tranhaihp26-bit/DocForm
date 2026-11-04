@@ -2,7 +2,7 @@
 
 ## Phạm vi
 
-Tích hợp Sign in with ChatGPT (SIWC) cho ba thao tác AI trong DocForm Local trên Windows: **rà soát phân vùng nguồn**, **rà soát tài liệu** và **rà chính tả/nâng văn phong đoạn đang chọn**. Mặc định provider được chọn trong **Cài đặt chung**; lựa chọn Gemini hoặc ChatGPT plan được lưu ở trình duyệt theo origin/profile. ONLYOFFICE plugin chưa được tích hợp.
+Tích hợp Sign in with ChatGPT (SIWC) cho các thao tác AI trong DocForm Local trên Windows: **rà soát phân vùng nguồn**, **rà soát tài liệu**, **rà soát toàn văn đã trích xuất** và **rà chính tả/nâng văn phong đoạn đang chọn**. Rà soát toàn văn là luồng riêng, có consent và manifest/chunk coverage riêng. Mặc định provider được chọn trong **Cài đặt chung**; lựa chọn Gemini hoặc ChatGPT plan được lưu ở trình duyệt theo origin/profile. ONLYOFFICE plugin chưa được tích hợp.
 
 ## Bật tính năng
 
@@ -36,7 +36,7 @@ Chưa thực hiện đăng nhập tài khoản thật hoặc kiểm tra luồng 
 
 `/api/ai/full-document-capability` trả trạng thái riêng cho Gemini API và ChatGPT plan. Trạng thái `SUPPORTED_BY_ADAPTER` chỉ nói rằng adapter có thể nhận nội dung văn bản; không có nghĩa manifest đầy đủ đã được gửi hoặc mọi đoạn đã được AI phản hồi. `configured` chỉ phản ánh khóa Gemini có mặt trong cấu hình máy chủ hoặc ChatGPT đang kết nối/chia sẻ; đây không phải kiểm tra API thành công.
 
-- **Gemini API:** DocForm có tích hợp `@google/genai` phía máy chủ cho sinh văn bản, dùng `GEMINI_API_KEY`. Tình trạng khóa chỉ được báo có/không; khóa không được trả về giao diện. Endpoint cùng UI rà soát manifest toàn văn đã được nối; chưa có provider request thật trong lượt triển khai này. DOCX transfer, provider read, code read và visual review vẫn `NOT_VERIFIED`. Tier dữ liệu luôn `unknown` đến khi người dùng xác minh dự án Google gắn với khóa.
+- **Gemini API:** DocForm có tích hợp `@google/genai` phía máy chủ cho sinh văn bản, dùng `GEMINI_API_KEY`. Tình trạng khóa chỉ được báo có/không; khóa không được trả về giao diện. Endpoint và UI rà soát manifest toàn văn đã được nối; lời gọi provider thật chưa được xác minh bằng tài khoản/key trong hồ sơ này. DOCX transfer, provider read, code read và visual review vẫn `NOT_VERIFIED`. Tier dữ liệu luôn `unknown` đến khi người dùng xác minh dự án Google gắn với khóa.
 - **ChatGPT plan:** SIWC `streamResponse` nhận văn bản. Endpoint toàn văn có thể gửi manifest text theo chunk qua adapter này, nhưng file transfer, provider file read, code/OOXML và visual input vẫn `BLOCKED_BY_PROVIDER`.
 - **Đồng ý:** lựa chọn provider trong Cài đặt chung không tự gửi dữ liệu. Đồng ý hiện hữu vẫn riêng theo từng tệp và thao tác; nó không được lưu cùng provider preference.
 

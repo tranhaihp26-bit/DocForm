@@ -85,6 +85,24 @@ export interface SourceMismatchResult {
   templateMismatch: boolean;
 }
 
+/**
+ * Resolve whether the selected source is an imported file. Explicit source types
+ * take precedence over legacy display names because older template drafts stored
+ * the template title in `uploadedFileName`.
+ */
+export function isImportedFileSource(input: {
+  sourceOrigin: SourceOrigin;
+  originalSnapshot?: OriginalDocumentSnapshot | null;
+  fileName?: string | null;
+  uploadedBlockCount?: number;
+}): boolean {
+  if (input.sourceOrigin === "uploaded_file") return true;
+  if (input.sourceOrigin === "system_template") return false;
+  if (input.originalSnapshot?.sourceType === "uploaded_file") return true;
+  if (input.originalSnapshot?.sourceType === "system_template") return false;
+  return Boolean(input.fileName?.trim() || (input.uploadedBlockCount ?? 0) > 0);
+}
+
 /** Mẫu hệ thống đang là nguồn (suy từ snapshot, không suy từ tên tệp). */
 export function findAppliedTemplate<T extends SourceTemplateLike>(
   templates: readonly T[],

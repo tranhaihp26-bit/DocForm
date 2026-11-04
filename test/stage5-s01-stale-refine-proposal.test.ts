@@ -195,8 +195,9 @@ async function startTestServer(port: number) {
 }
 
 const REFINE_MARKER = "REFINED_FROM_ALPHA";
+const REGIME_REFINE_MARKER = "REFINED_FROM_OLD_REGIME";
 
-test("AUDIT PROBE: stale AI-refine proposal for source A must not be applied to source B", async () => {
+test("AUDIT PROBE: stale AI refine must be rejected after source replacement or regime change", async () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "docform-audit-d1-fix-"));
 
   const mk = (name: string, subject: string, bodyHtml: string) =>
@@ -278,7 +279,12 @@ test("AUDIT PROBE: stale AI-refine proposal for source A must not be applied to 
     console.log("[probe] A visible after upload:", aCommitted);
 
     // Workspace requires an explicit source approval before Body AI can run.
-    await client.clickByText("button", "Đồng Ý Đưa Vào Studio Soạn Thảo");
+    await client.clickByText("button", "Tiếp tục đưa vào Studio soạn thảo");
+    await new Promise((r) => setTimeout(r, 500));
+    if (await client.evaluate<boolean>(`Boolean(document.querySelector('[data-action="confirm-generic-profile"]'))`)) {
+      await client.evaluate(`document.querySelector('[data-action="confirm-generic-profile"]')?.click()`);
+      await new Promise((r) => setTimeout(r, 400));
+    }
     await client.waitForFunction(`document.querySelector('[data-current-step="2"]') !== null`, 8000);
 
     // ---- 2. start AI refine on A (delayed mock) --------------------------
@@ -288,14 +294,16 @@ test("AUDIT PROBE: stale AI-refine proposal for source A must not be applied to 
     );
     console.log("[probe] current step:", stepNow);
 
-    const refineClicked = await client.clickByText("button", "Rà chính tả Body");
-    console.log("[probe] 'Sửa chính tả' clicked:", refineClicked);
-    if (!refineClicked) {
-      const btnTexts = await client.evaluate<string[]>(
-        `Array.from(document.querySelectorAll("button")).map(b => (b.textContent||"").trim()).filter(Boolean).slice(0, 60)`
-      );
-      console.log("[probe] visible buttons:", JSON.stringify(btnTexts));
-    }
+    await client.evaluate(`document.querySelector('.df-step-context-toggle')?.click()`);
+    assert.ok(await client.waitForFunction(`(() => { const el = document.querySelector('[data-workspace-node-capability="editable"] [contenteditable="true"]'); return Boolean(el && el.getClientRects().length); })()`, 10000),
+      "Editor phải hoàn tất kiểm tra khả năng sửa trước khi chọn đoạn");
+    const editorPoint = await client.evaluate<any>(`(() => { const r = document.querySelector('[data-workspace-node-capability="editable"] [contenteditable="true"]')?.getBoundingClientRect(); return r ? { x: r.left + Math.min(24, r.width / 2), y: r.top + Math.min(16, r.height / 2) } : null; })()`);
+    assert.ok(editorPoint, "Phải tìm thấy vị trí đoạn Body có thể sửa");
+    await client.send("Input.dispatchMouseEvent", { type: "mousePressed", x: editorPoint.x, y: editorPoint.y, button: "left", clickCount: 1 });
+    await client.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: editorPoint.x, y: editorPoint.y, button: "left", clickCount: 1 });
+    const refineEnabled = await client.waitForFunction(`document.querySelector('button[data-ai-action="proofread"]')?.disabled === false`, 8000);
+    assert.ok(refineEnabled, "Phải chọn được một đoạn Body trước khi rà chính tả");
+    await client.evaluate(`document.querySelector('button[data-ai-action="proofread"]')?.click()`);
     const refineRequested = await client.waitForFunction(`window.__refineCalls.length === 1`, 8000);
     assert.ok(refineRequested, "AI refine request for source A must have been issued");
 
@@ -311,7 +319,12 @@ test("AUDIT PROBE: stale AI-refine proposal for source A must not be applied to 
     await client.waitForFunction(
       `document.body.textContent.includes("Audit_Beta.docx")`, 15000
     );
-    await client.clickByText("button", "Đồng Ý Đưa Vào Studio Soạn Thảo");
+    await client.clickByText("button", "Tiếp tục đưa vào Studio soạn thảo");
+    await new Promise((r) => setTimeout(r, 500));
+    if (await client.evaluate<boolean>(`Boolean(document.querySelector('[data-action="confirm-generic-profile"]'))`)) {
+      await client.evaluate(`document.querySelector('[data-action="confirm-generic-profile"]')?.click()`);
+      await new Promise((r) => setTimeout(r, 400));
+    }
     await client.waitForFunction(`document.querySelector('[data-current-step="2"]') !== null`, 8000);
     await new Promise((r) => setTimeout(r, 2500));
 
@@ -373,6 +386,71 @@ test("AUDIT PROBE: stale AI-refine proposal for source A must not be applied to 
       !String(draft?.bodyHtml || "").includes(REFINE_MARKER),
       `CONTRACT VIOLATION: body of the ACTIVE source (${draft?.fileName}) was overwritten by the stale AI-refine proposal captured for source A. bodyHtml=${String(draft?.bodyHtml).slice(0, 300)}`
     );
+
+    // ---- 6. change regime while a refine response is pending -------------
+    // Same source, different regime: this separately checks the standardType
+    // part of RefineProposalContext and the Studio's safe-switch confirmation.
+    await client.evaluate(`document.querySelector('.df-step-context-toggle')?.click()`);
+    assert.ok(await client.waitForFunction(`(() => { const el = document.querySelector('[data-workspace-node-capability="editable"] [contenteditable="true"]'); return Boolean(el && el.getClientRects().length); })()`, 8000),
+      "Editor phải sẵn sàng cho ca kiểm tra đổi hệ");
+    const regimeEditorPoint = await client.evaluate<any>(`(() => { const r = document.querySelector('[data-workspace-node-capability="editable"] [contenteditable="true"]')?.getBoundingClientRect(); return r ? { x: r.left + Math.min(24, r.width / 2), y: r.top + Math.min(16, r.height / 2) } : null; })()`);
+    assert.ok(regimeEditorPoint, "Phải tìm thấy đoạn Body để gửi yêu cầu AI thứ hai");
+    await client.send("Input.dispatchMouseEvent", { type: "mousePressed", x: regimeEditorPoint.x, y: regimeEditorPoint.y, button: "left", clickCount: 1 });
+    await client.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: regimeEditorPoint.x, y: regimeEditorPoint.y, button: "left", clickCount: 1 });
+    assert.ok(await client.waitForFunction(`document.querySelector('button[data-ai-action="proofread"]')?.disabled === false`, 8000),
+      "Phải chọn được đoạn Body trước khi gửi yêu cầu AI thứ hai");
+    await client.evaluate(`document.querySelector('button[data-ai-action="proofread"]')?.click()`);
+    assert.ok(await client.waitForFunction(`window.__refineCalls.length === 2`, 8000),
+      "Yêu cầu AI tinh chỉnh thứ hai phải ở trạng thái đang chờ");
+
+    await client.evaluate(`document.querySelector('#df-step2-group-1 .df-ws-component-preview')?.click()`);
+    assert.ok(await client.waitForFunction(`document.querySelector('[role="dialog"] input[name="national-header-choice"]') !== null`, 5000),
+      "Có thể mở phần chọn hệ thể thức trong Studio");
+    await client.evaluate(`(() => {
+      const radio = document.querySelector('[role="dialog"] input[name="national-header-choice"][value="party"]')
+        || Array.from(document.querySelectorAll('[role="dialog"] input[name="national-header-choice"]')).find(input => input.parentElement?.textContent?.includes('HD05'));
+      radio?.click();
+      const save = Array.from(document.querySelectorAll('[role="dialog"] button')).find(button => button.textContent?.includes('Lưu') && button.textContent?.includes('đóng'));
+      save?.click();
+    })()`);
+    assert.ok(await client.waitForFunction(`Array.from(document.querySelectorAll('[role="dialog"]')).some(dialog => dialog.textContent?.includes('Xác Nhận Chuyển Đổi Hệ Quy Chuẩn'))`, 5000),
+      "Đổi hệ khi tài liệu có nội dung phải mở hộp thoại xác nhận");
+    await client.evaluate(`(() => Array.from(document.querySelectorAll('[role="dialog"] button')).find(button => button.textContent?.includes('Xác Nhận Chuyển Đổi'))?.click())()`);
+    assert.ok(await client.waitForFunction(`document.querySelector('[role="dialog"]')?.textContent?.includes('Xác Nhận Chuyển Đổi Hệ Quy Chuẩn') !== true`, 8000),
+      "Hộp thoại đổi hệ phải đóng sau khi xác nhận");
+
+    await client.evaluate(`window.__refineCalls[1].resolveJson({
+      success: true,
+      source: "mock_audit",
+      refined: "<p>${REGIME_REFINE_MARKER}</p>"
+    })`);
+    await new Promise((r) => setTimeout(r, 1200));
+    const regimeProposalShown = await client.evaluate<boolean>(`document.body.textContent.includes("${REGIME_REFINE_MARKER}")`);
+    assert.equal(regimeProposalShown, false,
+      "Phản hồi AI của hệ hành chính cũ không được hiện sau khi chuyển sang hệ Đảng");
+
+    const afterRegimeSwitch = await client.evaluate<any>(`(async () => {
+      const db = await new Promise((res, rej) => {
+        const r = indexedDB.open("DocForm30_DB");
+        r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+      });
+      const rec = await new Promise((res, rej) => {
+        const tx = db.transaction("drafts", "readonly");
+        const g = tx.objectStore("drafts").get("current_active_draft");
+        g.onsuccess = () => res(g.result); g.onerror = () => rej(g.error);
+      });
+      return {
+        standardType: rec?.workspace?.standardType ?? rec?.standardType ?? null,
+        bodyHtml: rec?.doc?.bodyHtml ?? null,
+        versionTitles: (rec?.versions || []).map(v => v.title),
+      };
+    })()`);
+    assert.equal(afterRegimeSwitch.standardType, "party",
+      "Draft phải giữ hệ Đảng sau khi phản hồi cũ đến muộn");
+    assert.ok(!String(afterRegimeSwitch.bodyHtml || "").includes(REGIME_REFINE_MARKER),
+      "Nội dung đã chuyển hệ không được ghi đè bằng phản hồi AI cũ");
+    assert.ok(!(afterRegimeSwitch.versionTitles || []).some((title: string) => title.includes("AI:")),
+      "Phản hồi bị loại không được tạo phiên bản AI trong lịch sử");
   } finally {
     client.close();
     serverProc.kill();

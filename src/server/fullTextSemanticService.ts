@@ -134,7 +134,7 @@ export function validateFullTextReviewRequest(value: unknown): { valid: boolean;
   if (!isRecord(value) || !onlyKeys(value, REQUEST_KEYS)) return reject("Yêu cầu rà soát toàn văn có trường ngoài schema hoặc không phải object.");
   if (value.schemaVersion !== FULL_TEXT_REVIEW_SCHEMA_VERSION) return reject("Phiên bản schema rà soát toàn văn không được hỗ trợ.");
   if (typeof value.requestId !== "string" || !value.requestId.trim() || value.requestId.length > 128) return reject("Mã yêu cầu rà soát toàn văn không hợp lệ.");
-  if (value.provider !== "gemini" && value.provider !== "chatgpt") return reject("Nhà cung cấp AI không hợp lệ.");
+  if (value.provider !== "gemini" && value.provider !== "openai_api" && value.provider !== "chatgpt") return reject("Nhà cung cấp AI không hợp lệ.");
   if (!safeHash(value.sourceSha256) || !safeHash(value.manifestSha256) || !Number.isSafeInteger(value.sourceGeneration) || (value.sourceGeneration as number) < 0) {
     return reject("SHA nguồn, manifest hoặc thế hệ nguồn không hợp lệ.");
   }

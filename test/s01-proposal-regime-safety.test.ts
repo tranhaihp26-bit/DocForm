@@ -7,6 +7,22 @@ import path from "node:path";
 import { startTestServer } from "./support/browserHarness.ts";
 import { generateND30DocxBuffer } from "../src/utils/docxExport.ts";
 
+async function authorizeReviewAi(client: CdpClient): Promise<void> {
+  await client.evaluate(`(() => {
+    const panel = document.querySelector('[data-testid="optional-ai-review"]');
+    if (!panel) throw new Error('Missing optional AI review panel');
+    panel.open = true;
+    const checkbox = panel.querySelector('input[type="checkbox"]');
+    if (!checkbox) throw new Error('Missing review consent checkbox');
+    if (!checkbox.checked) checkbox.click();
+  })()`);
+  await client.waitForFunction(`(() => {
+    const panel = document.querySelector('[data-testid="optional-ai-review"]');
+    const button = Array.from(panel?.querySelectorAll('button') || []).find(b => b.textContent?.includes('Rà soát AI (Gemini)'));
+    return button && !button.disabled;
+  })()`, 5000);
+}
+
 function getBrowserExecutablePath(): string {
   const chromePath = "C:/Program Files/Google/Chrome/Application/chrome.exe";
   const edgePath = "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe";
@@ -96,7 +112,7 @@ class CdpClient {
 
   async navigate(url: string): Promise<void> {
     await this.send("Page.navigate", { url });
-    await this.waitForFunction(`document.readyState === "complete"`, 15000);
+    await this.waitForFunction(`document.querySelector('[data-wizard-step="1"]') !== null`, 30000);
   }
 
   async evaluate<T = any>(expression: string): Promise<T> {
@@ -245,13 +261,15 @@ test("Chặng 1 S01: AI review proposals completed under NĐ 30 (state) must NOT
     await client.waitForFunction(`document.querySelector('[data-wizard-step="1"]') !== null`, 5000);
 
     // Upload Synthetic_Alpha_S01.docx
+    assert.equal(await client.clickByText("button", "Tải tài liệu có sẵn"), true);
     await client.uploadFile('input[type="file"]', fileAlphaPath);
     await client.waitForFunction(
-      `document.body.textContent.includes("Đối Chiếu & Phân Vùng Tài Liệu Tải Lên") && document.body.textContent.includes("Synthetic_Alpha_S01.docx")`,
+      `document.body.textContent.includes("Kiểm tra nội dung tài liệu") && document.body.textContent.includes("Synthetic_Alpha_S01.docx")`,
       10000
     );
 
     // Click "Rà soát AI (Gemini)" to fetch proposals under "state" (NĐ 30)
+    await authorizeReviewAi(client);
     await client.clickByText("button", "Rà soát AI (Gemini)");
     await client.waitForFunction(
       `document.body.textContent.includes("S01_ND30_SUBJECT_PROPOSAL")`,
@@ -266,21 +284,33 @@ test("Chặng 1 S01: AI review proposals completed under NĐ 30 (state) must NOT
     await client.waitForFunction(`document.querySelector('[data-wizard-step="1"]') !== null`, 5000);
 
     // Switch regime from "state" (NĐ 30) to "party" (HD 05)
-    await client.clickByText("button", "Văn bản Đảng");
+    const phaseAfterReview = await client.evaluate<string>(`document.querySelector('.df-import-step')?.getAttribute('data-flow-phase') || ''`);
+    if (phaseAfterReview === "choice") await client.clickByText("button", "Tiếp tục tài liệu hiện tại");
+    const phaseBeforeRegime = await client.evaluate<string>(`document.querySelector('.df-import-step')?.getAttribute('data-flow-phase') || ''`);
+    if (phaseBeforeRegime === "upload") await client.clickByText("button", "Xem kết quả nhận diện");
+    const clickedMetadata = phaseBeforeRegime === "metadata" || await client.clickByText("button", "Xác nhận thông tin");
+    const phaseAfterNavigation = await client.evaluate<string>(`document.querySelector('.df-import-step')?.getAttribute('data-flow-phase') || ''`);
+    const modalStillOpen = await client.evaluate<boolean>(`Boolean(document.querySelector('[data-testid="side-by-side-modal"]'))`);
+    const actionLabels = await client.evaluate<string[]>(`Array.from(document.querySelectorAll('.df-import-actions button')).map(b => b.textContent?.trim() || '')`);
+    assert.equal(phaseAfterNavigation, "metadata", `Expected metadata after ${phaseAfterReview} -> ${phaseBeforeRegime}; clicked=${clickedMetadata}, modal=${modalStillOpen}, actions=${JSON.stringify(actionLabels)}`);
+    await client.waitForFunction(`document.querySelector('#df-step1-regime button') !== null`, 5000);
+    assert.equal(await client.clickByText("#df-step1-regime button", "Văn bản Đảng"), true);
     await new Promise((r) => setTimeout(r, 200));
-    await client.clickByText("button", "Xác Nhận Chuyển Đổi");
-    await new Promise((r) => setTimeout(r, 300));
+    assert.equal(await client.clickByText("button", "Xác Nhận Chuyển Đổi"), true);
+    await client.waitForFunction(`Boolean(Array.from(document.querySelectorAll("#df-step1-regime button")).find(b => b.textContent && b.textContent.includes("Văn bản Đảng"))?.getAttribute("aria-pressed") === "true")`, 5000);
 
     // Verify current regime is now "party"
     const isPartyActive = await client.evaluate<boolean>(
-      `Boolean(Array.from(document.querySelectorAll("button")).find(b => b.textContent && b.textContent.includes("Văn bản Đảng"))?.getAttribute("aria-pressed") === "true")`
+      `Boolean(Array.from(document.querySelectorAll("#df-step1-regime button")).find(b => b.textContent && b.textContent.includes("Văn bản Đảng"))?.getAttribute("aria-pressed") === "true")`
     );
     assert.equal(isPartyActive, true, "Regime must be switched to 'party'");
 
-    // Reopen "Đối chiếu nguồn" (vẫn ở Bước 1 sau khi chuyển hệ)
-    await client.clickByText("button", "Đối chiếu nguồn");
+    // Reopen source review through the current Step 1 upload screen.
+    await client.clickByText("button", "Quay lại");
+    await client.clickByText("button", "Quay lại");
+    await client.clickByText("button", "Rà soát phân vùng nội dung");
     await client.waitForFunction(
-      `document.body.textContent.includes("Đối Chiếu & Phân Vùng Tài Liệu Tải Lên")`,
+      `document.body.textContent.includes("Kiểm tra nội dung tài liệu")`,
       5000
     );
 
@@ -412,18 +442,21 @@ test("Chặng 1 S01: AI review proposals completed under NĐ 30 (state) must NOT
     );
 
     // Duyệt lại bản nhập A rồi mới kiểm nút "Tải tệp gốc" vẫn trỏ về Alpha
-    await client.clickByText("button", "Đối chiếu nguồn");
+    await client.clickByText("button", "Xem kết quả nhận diện");
+    const reopenedFromImport = await client.clickByText("button", "Mở rà soát phân vùng");
+    assert.ok(reopenedFromImport, `Missing source review action: ${JSON.stringify(await client.evaluate(`Array.from(document.querySelectorAll('button')).map(b => b.textContent?.trim()).filter(Boolean)`))}`);
     const reviewReopened = await client.waitForFunction(
-      `document.body.textContent.includes("Đối Chiếu & Phân Vùng Tài Liệu Tải Lên")`,
+      `document.body.textContent.includes("Kiểm tra nội dung tài liệu")`,
       5000
     );
     assert.ok(reviewReopened, "Hộp thoại đối chiếu nguồn phải mở lại được");
-    await client.clickByText("button", "Đồng Ý Đưa Vào Studio Soạn Thảo");
+    await client.clickByText("button", "Tiếp tục đưa vào Studio soạn thảo");
     await new Promise((r) => setTimeout(r, 500));
 
     // The original download belongs to Step 1 in Workspace.
     await client.clickByText('[data-step="1"]', "Tải");
     await client.waitForFunction(`document.querySelector('[data-wizard-step="1"]') !== null`, 5000);
+    await client.clickByText("button", "Tải tài liệu có sẵn");
     const sourceAfterInvalidB = await client.evaluate<{ hasAlphaSource: boolean; hasDownloadBtn: boolean }>(`({
       hasAlphaSource: document.body.textContent.includes("Synthetic_Alpha_S01.docx"),
       hasDownloadBtn: Array.from(document.querySelectorAll("button")).some(b => b.textContent && b.textContent.includes("Tải tệp gốc"))
@@ -508,13 +541,15 @@ test("Chặng 1 S01: Partition role roundtrip A -> B -> A must permanently inval
     await client.waitForFunction(`document.querySelector('[data-wizard-step="1"]') !== null`, 5000);
 
     // Upload file
+    assert.equal(await client.clickByText("button", "Tải tài liệu có sẵn"), true);
     await client.uploadFile('input[type="file"]', fileAlphaPath);
     await client.waitForFunction(
-      `document.body.textContent.includes("Đối Chiếu & Phân Vùng Tài Liệu Tải Lên") && document.body.textContent.includes("Synthetic_Alpha_S01.docx")`,
+      `document.body.textContent.includes("Kiểm tra nội dung tài liệu") && document.body.textContent.includes("Synthetic_Alpha_S01.docx")`,
       10000
     );
 
     // Fetch AI proposals
+    await authorizeReviewAi(client);
     await client.clickByText("button", "Rà soát AI (Gemini)");
     await client.waitForFunction(
       `document.body.textContent.includes("S01_PROPOSAL_ROUNDTRIP")`,
@@ -721,13 +756,15 @@ test("Chặng 1 S01: Refreshing AI review failure preserves existing accepted pr
 
     // Navigate to Step 1 & Upload
     await client.waitForFunction(`document.querySelector('[data-wizard-step="1"]') !== null`, 5000);
+    assert.equal(await client.clickByText("button", "Tải tài liệu có sẵn"), true);
     await client.uploadFile('input[type="file"]', fileAlphaPath);
     await client.waitForFunction(
-      `document.body.textContent.includes("Đối Chiếu & Phân Vùng Tài Liệu Tải Lên") && document.body.textContent.includes("Synthetic_Alpha_S01.docx")`,
+      `document.body.textContent.includes("Kiểm tra nội dung tài liệu") && document.body.textContent.includes("Synthetic_Alpha_S01.docx")`,
       10000
     );
 
     // Initial AI Review
+    await authorizeReviewAi(client);
     await client.clickByText("button", "Rà soát AI (Gemini)");
     await client.waitForFunction(`document.body.textContent.includes("S01_PROPOSAL_REFRESH_TEST")`, 10000);
 
@@ -751,6 +788,7 @@ test("Chặng 1 S01: Refreshing AI review failure preserves existing accepted pr
     assert.equal(subjectBeforeRefresh, "V/v đề xuất sửa subject theo chuẩn NĐ 30");
 
     // Click "Rà soát AI (Gemini)" again - this second call will fail with 500
+    await authorizeReviewAi(client);
     await client.clickByText("button", "Rà soát AI (Gemini)");
     await client.waitForFunction(
       `document.body.textContent.includes("Lỗi kết nối AI") || document.body.textContent.includes("500")`,

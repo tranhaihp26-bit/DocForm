@@ -136,6 +136,25 @@ test("AI request schema rejects parser role and non-source payload fields", () =
   }).valid, false, "Heavy or source markup fields must be rejected at the server boundary");
 });
 
+test("partition AI provider validation accepts openai_api and preserves provider-bound consent", () => {
+  const request: PartitionAiRequest = {
+    schemaVersion: PARTITION_AI_SCHEMA_VERSION,
+    consent: true,
+    provider: "openai_api" as any,
+    requestId: "req-openai",
+    regime: "administrative",
+    sourceGeneration: 2,
+    partitionRevision: 3,
+    blocks: [{ id: "p-1", index: 0, kind: "paragraph", text: "Synthetic source text" }],
+  };
+
+  const validation = validatePartitionAiRequest(request);
+  assert.equal(validation.valid, true);
+  assert.equal(validation.request?.provider, "openai_api");
+  assert.equal(validatePartitionAiRequest({ ...request, consent: false }).valid, false);
+  assert.equal(validatePartitionAiRequest({ ...request, provider: "unknown" as any }).valid, false);
+});
+
 test("AI service reports completed, invalid and failed chunks independently", async () => {
   const request: PartitionAiRequest = {
     schemaVersion: PARTITION_AI_SCHEMA_VERSION,

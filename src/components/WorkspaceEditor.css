@@ -1151,3 +1151,105 @@
 .df-workspace-prose p[data-df-first-line-indent="1cm"] { text-indent: 1cm; }
 .df-workspace-prose p[data-df-first-line-indent="1.27cm"] { text-indent: 1.27cm; }
 .df-workspace-prose p[data-df-first-line-indent="0.5in"] { text-indent: 0.5in; }
+
+/* Action Items card in Step 2 sidebar */
+.df-ws-actions-card {
+  padding: 14px;
+  border: 1px solid #dfe5f0;
+  border-radius: 12px;
+  background: #fff;
+  margin-bottom: 14px;
+}
+.df-ws-actions-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.df-ws-actions-card-header h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: #1e293b;
+}
+.df-ws-actions-pill {
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 999px;
+}
+.df-ws-actions-pill.is-clean {
+  background: #eaf9f2;
+  color: #16815d;
+}
+.df-ws-actions-pill.is-attention {
+  background: #fff6e9;
+  color: #a85b14;
+}
+.df-ws-actions-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+.df-ws-action-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #f8faff;
+}
+.df-ws-action-item.is-blocked {
+  border-color: #fbd5c6;
+  background: #fff5f2;
+}
+.df-ws-action-item.is-warning {
+  border-color: #fed7aa;
+  background: #fffaf0;
+}
+.df-ws-action-item.is-optional {
+  border-color: #e0e7ff;
+  background: #f5f7ff;
+}
+.df-ws-action-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.df-ws-action-item-info strong {
+  font-size: 11.5px;
+  color: #1e293b;
+  line-height: 1.3;
+}
+.df-ws-action-impact {
+  font-size: 10px;
+  color: #64748b;
+}
+.df-ws-action-btn {
+  flex-shrink: 0;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 6px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #334155;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.df-ws-action-btn:hover {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+}
+.df-ws-actions-empty {
+  font-size: 11.5px;
+  color: #64748b;
+  margin: 4px 0;
+  line-height: 1.4;
+}

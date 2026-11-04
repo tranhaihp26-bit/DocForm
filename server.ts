@@ -3,7 +3,7 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
-import type { Server } from "node:http";
+import { createServer as createHttpServer, type Server } from "node:http";
 import multer from "multer";
 import mammoth from "mammoth";
 import cors from "cors";
@@ -18,6 +18,12 @@ import { ChatGPTPlanProviderError, createChatGPTPlanProvider, isLocalChatGPTActi
 import { buildAiRefinePrompt } from "./src/server/aiRefinePrompt.ts";
 import { safeChatGPTError, type ChatGPTLocalStatus, type ChatGPTSafeSessionState } from "./src/shared/chatgptPlanProtocol.ts";
 import { getAiProviderCapabilities } from "./src/server/fullDocumentCapability.ts";
+import {
+  createOpenAiApiProvider,
+  OpenAiApiProviderError,
+  testOpenAiApiConnection,
+  type OpenAiResponsesClient,
+} from "./src/server/openAiApiProvider.ts";
 import { renderSourceDocx, type SourceVisualRenderResult } from "./src/server/sourceVisualRenderer.ts";
 import { validateLocalSourceVisualRequest } from "./src/server/localSourceVisualRequest.ts";
 import type { ChatGPTClient, SessionState } from "./vendor/openai/sign-in-with-chatgpt-devkit/packages/local/src/types.ts";
@@ -146,6 +152,8 @@ export interface ServerOptions {
   partitionAiProviderFactory?: (request: express.Request) => PartitionAiProvider | undefined;
   /** Injected provider seam for synthetic full-text review endpoint tests. */
   fullTextAiProviderFactory?: (request: express.Request) => FullTextAiProvider | undefined;
+  /** Injected Responses API client for synthetic server/provider tests only. */
+  openAiResponsesClient?: OpenAiResponsesClient;
   /** Local-only renderer seam for synthetic endpoint tests. */
   sourceVisualRenderer?: (sourceBytes: Uint8Array, expectedSha256: string, signal: AbortSignal) => Promise<SourceVisualRenderResult>;
   /** Optional listener controls for local integration tests. */
@@ -171,28 +179,43 @@ export async function startServer(options: ServerOptions = {}): Promise<Server> 
   const cliPort = portArgIndex !== -1 ? Number(process.argv[portArgIndex + 1]) : null;
   let PORT = options.port ?? cliPort ?? (Number(process.env.PORT) || 5050);
 
+  const hostArgIndex = process.argv.findIndex(arg => arg === "--host" || arg === "-h");
+  const cliHost = hostArgIndex !== -1 ? process.argv[hostArgIndex + 1] : null;
+  const explicitHost = options.bindHost ?? cliHost ?? process.env.DOCFORM_BIND_HOST ?? process.env.HOST;
   const cloudRun = Boolean(process.env.K_SERVICE || process.env.K_REVISION);
+  const listenHost = explicitHost ?? (cloudRun ? "0.0.0.0" : "127.0.0.1");
+
+  const isLoopbackAddress = (address: string | undefined) => {
+    if (!address) return false;
+    const normalized = address.toLowerCase().replace(/^::ffff:/, "");
+    return normalized === "::1" || /^127(?:\.\d{1,3}){3}$/.test(normalized);
+  };
+  const isExplicitNonLoopback = Boolean(explicitHost && !isLoopbackAddress(explicitHost) && explicitHost !== "localhost");
+
   const siwcRequested = process.env.DOCFORM_SIWC_ENABLED === "true";
   const localAppData = process.env.LOCALAPPDATA;
   const localOnlyMode = siwcRequested && !cloudRun;
-  const localAuthHosts = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`]);
+  const localAuthHosts = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`, "127.0.0.1", "localhost"]);
   const localAuthOrigins = new Set([...localAuthHosts].map(host => `http://${host}`));
-  const isLocalHostRequest = (req: express.Request) => localAuthHosts.has(req.get("host") || "");
+
+  const isLocalHostRequest = (req: express.Request) => {
+    const host = req.get("host") || "";
+    const effectivePort = req.socket.localPort ?? PORT;
+    return localAuthHosts.has(host) || host === `127.0.0.1:${effectivePort}` || host === `localhost:${effectivePort}`;
+  };
+
   const isLocalAuthRequest = (req: express.Request) => {
     const origin = req.get("origin");
     const host = req.get("host");
-    if (!origin || !localAuthOrigins.has(origin) || !host || !localAuthHosts.has(host)) return false;
+    const effectivePort = req.socket.localPort ?? PORT;
+    const validOrigins = new Set([...localAuthOrigins, `http://127.0.0.1:${effectivePort}`, `http://localhost:${effectivePort}`]);
+    if (!origin || !validOrigins.has(origin) || !host || !isLocalHostRequest(req)) return false;
     try {
       const parsedOrigin = new URL(origin);
       return parsedOrigin.protocol === "http:" && parsedOrigin.host === host;
     } catch {
       return false;
     }
-  };
-  const isLoopbackAddress = (address: string | undefined) => {
-    if (!address) return false;
-    const normalized = address.toLowerCase().replace(/^::ffff:/, "");
-    return normalized === "::1" || /^127(?:\.\d{1,3}){3}$/.test(normalized);
   };
 
   let siwcReason: string | undefined;
@@ -244,22 +267,40 @@ export async function startServer(options: ServerOptions = {}): Promise<Server> 
     ? process.env.ALLOWED_ORIGINS.split(",").map((o) => o.trim())
     : null;
 
+  // Binding/CORS configuration is not authentication for credential-backed AI.
+  // Keep these operations local until a separate remote authorization exists.
+  const isTrustedLocalAiRequest = (req: express.Request): boolean =>
+    isLocalLoopbackRequest(req) && (!req.get("origin") || isLocalAuthRequest(req));
+
   app.use(
     cors({
       origin: (origin, callback) => {
         if (!origin) return callback(null, true);
-        if (localOnlyMode) return callback(null, localAuthOrigins.has(origin));
         if (allowedOrigins) {
           if (allowedOrigins.includes(origin) || allowedOrigins.includes("*")) {
             return callback(null, true);
           }
-          return callback(new Error("CORS policy violation: Origin not allowed"));
+          return callback(null, false);
+        }
+        if (!cloudRun && !isExplicitNonLoopback) {
+          const effectivePort = PORT;
+          const validOrigins = new Set([...localAuthOrigins, `http://127.0.0.1:${effectivePort}`, `http://localhost:${effectivePort}`]);
+          if (validOrigins.has(origin)) {
+            return callback(null, true);
+          }
+          return callback(null, false);
         }
         return callback(null, true);
       },
       credentials: true
     })
   );
+  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (err && typeof err.message === "string" && err.message.includes("CORS")) {
+      return res.status(403).json({ error: "Chỉ cho phép yêu cầu từ DocForm local hợp lệ." });
+    }
+    next(err);
+  });
   app.use(express.json({ limit: "10mb" }));
   app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
@@ -310,6 +351,51 @@ export async function startServer(options: ServerOptions = {}): Promise<Server> 
     }
     res.setHeader("Cache-Control", "no-store");
     return res.json(await getAiProviderCapabilities({ chatgptClient: chatGPTClient }));
+  });
+
+  const connectionProbeLimiter = rateLimit({
+    windowMs: 60_000,
+    limit: 5,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { ok: false, errorCode: "rate_limited" },
+  });
+  app.post("/api/ai/test-connection", connectionProbeLimiter, async (req, res) => {
+    if (!isTrustedLocalAiRequest(req)) {
+      return res.status(403).json({ ok: false, errorCode: "local_only" });
+    }
+    const body = req.body;
+    if (!body || typeof body !== "object" || Array.isArray(body) ||
+        Object.keys(body).length !== 1 || !Object.hasOwn(body, "provider") ||
+        (body.provider !== "gemini" && body.provider !== "openai_api")) {
+      return res.status(400).json({ ok: false, errorCode: "invalid_request" });
+    }
+
+    const provider = body.provider as "gemini" | "openai_api";
+    const apiKey = provider === "openai_api" ? process.env.OPENAI_API_KEY : process.env.GEMINI_API_KEY;
+    if (!apiKey?.trim()) {
+      return res.status(503).json({ ok: false, provider, errorCode: "not_configured" });
+    }
+
+    try {
+      if (provider === "openai_api") {
+        const result = await testOpenAiApiConnection({ apiKey, client: options.openAiResponsesClient });
+        return res.json({ ok: true, provider, model: result.model, latencyMs: result.latencyMs });
+      }
+      const result = await generateContentWithModelFallback({
+        contents: "Reply with exactly DOCFORM_API_CONNECTION_OK.",
+        config: { abortSignal: AbortSignal.timeout(15_000) },
+      });
+      return res.json({ ok: true, provider, model: result.activeModel, latencyMs: result.durationMs });
+    } catch (error) {
+      const errorCode = provider === "openai_api" && error instanceof OpenAiApiProviderError
+        ? error.code
+        : error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")
+          ? "timeout"
+          : "provider_unavailable";
+      return res.status(error instanceof OpenAiApiProviderError ? error.statusCode : 503)
+        .json({ ok: false, provider, errorCode });
+    }
   });
 
   app.post(
@@ -548,6 +634,9 @@ export async function startServer(options: ServerOptions = {}): Promise<Server> 
 
   // API to format and structure document using Gemini AI according to Nghị định 30 or Hướng dẫn 05
   app.post("/api/ai/format-document", async (req, res) => {
+    if (!isTrustedLocalAiRequest(req)) {
+      return res.status(403).json({ error: "Chỉ cho phép yêu cầu từ DocForm local hợp lệ." });
+    }
     const { rawText, standardType, customInstructions } = req.body;
 
     if (!rawText || !rawText.trim()) {
@@ -661,28 +750,34 @@ Hãy trả về kết quả dưới dạng JSON (chính xác định dạng JSON
 
   // API for AI text refinement (proofreading, legal polishing, expanding clauses)
   app.post("/api/ai/refine-text", async (req, res) => {
+    if (!isTrustedLocalAiRequest(req)) {
+      return res.status(403).json({ error: "Chỉ cho phép yêu cầu từ DocForm local hợp lệ." });
+    }
     const { text, action } = req.body;
     if (!text) {
       return res.status(400).json({ error: "Thiếu nội dung cần xử lý." });
     }
 
     const requestedProvider = req.body?.provider ?? "gemini";
-    if (requestedProvider !== "gemini" && requestedProvider !== "chatgpt") {
+    if (requestedProvider !== "gemini" && requestedProvider !== "openai_api" && requestedProvider !== "chatgpt") {
       return res.status(400).json({ error: "Nhà cung cấp AI không hợp lệ." });
+    }
+    if (req.body?.consent !== true) {
+      return res.status(403).json({ error: "Cần xác nhận gửi đoạn văn cho lượt tinh chỉnh AI này." });
+    }
+    if (typeof text !== "string" || !["proofread", "formalize"].includes(action)) {
+      return res.status(400).json({ error: "Đoạn văn hoặc thao tác tinh chỉnh không hợp lệ." });
     }
     if (requestedProvider === "chatgpt") {
       if (!isLocalChatGPTActionRequest({ host: req.get("host"), origin: req.get("origin"), port: PORT, consent: req.body?.consent })) {
         return res.status(403).json({ error: "Cần xác nhận gửi đoạn văn từ ứng dụng DocForm local." });
       }
       if (!siwcEnabled || !chatGPTClient) return res.status(503).json({ error: siwcReason ?? "ChatGPT plan đang tắt trên máy này." });
-      if (typeof text !== "string" || !["proofread", "formalize"].includes(action)) {
-        return res.status(400).json({ error: "Đoạn văn hoặc thao tác ChatGPT không hợp lệ." });
-      }
     }
 
     const abortController = new AbortController();
     const abortOnDisconnect = () => abortController.abort();
-    if (requestedProvider === "chatgpt") {
+    if (requestedProvider !== "gemini") {
       req.on("aborted", abortOnDisconnect);
       res.on("close", abortOnDisconnect);
     }
@@ -698,7 +793,11 @@ Hãy trả về kết quả dưới dạng JSON (chính xác định dạng JSON
         ? await (await createChatGPTPlanProvider(chatGPTClient!, abortController.signal))(
           prompt, AbortSignal.any([abortController.signal, AbortSignal.timeout(120_000)]),
         )
-        : await generateContentWithModelFallback({ contents: prompt }).then(({ response, activeModel }) => ({ text: response.text || "", model: activeModel }));
+        : requestedProvider === "openai_api"
+          ? await createOpenAiApiProvider({ client: options.openAiResponsesClient })(
+            prompt, AbortSignal.any([abortController.signal, AbortSignal.timeout(120_000)]),
+          )
+          : await generateContentWithModelFallback({ contents: prompt }).then(({ response, activeModel }) => ({ text: response.text || "", model: activeModel }));
 
       if (requestedProvider === "chatgpt" && !generated.text?.trim()) {
         throw new ChatGPTPlanProviderError("empty_response", 502);
@@ -706,7 +805,7 @@ Hãy trả về kết quả dưới dạng JSON (chính xác định dạng JSON
       const refined = generated.text || text;
       return res.json({
         success: true, 
-        source: requestedProvider === "chatgpt" ? "chatgpt_ai" : "gemini_ai",
+        source: requestedProvider === "chatgpt" ? "chatgpt_ai" : requestedProvider === "openai_api" ? "openai_api_ai" : "gemini_ai",
         model: generated.model,
         isFallback: false,
         refined: refined.replace(/```html/g, "").replace(/```/g, "").trim() 
@@ -716,6 +815,10 @@ Hãy trả về kết quả dưới dạng JSON (chính xác định dạng JSON
         if (res.destroyed) return;
         const code = error instanceof ChatGPTPlanProviderError ? error.code : (typeof error?.code === "string" ? error.code : "chatgpt_error");
         return res.status(error instanceof ChatGPTPlanProviderError ? error.statusCode : 503).json({ error: safeChatGPTError(code).message });
+      }
+      if (requestedProvider === "openai_api") {
+        const providerError = error instanceof OpenAiApiProviderError ? error : new OpenAiApiProviderError("provider_error", 503);
+        return res.status(providerError.statusCode).json({ error: providerError.message });
       }
       const is503 = error?.status === 503 || String(error?.message || '').includes("503") || String(error?.message || '').includes("UNAVAILABLE");
       const statusNotice = is503 ? "GEMINI UNAVAILABLE" : "AI ERROR";
@@ -729,7 +832,7 @@ Hãy trả về kết quả dưới dạng JSON (chính xác định dạng JSON
         notice: is503 ? "GEMINI UNAVAILABLE — Giữ nguyên nội dung gốc." : "Không thể kết nối AI, giữ nguyên nội dung gốc." 
       });
     } finally {
-      if (requestedProvider === "chatgpt") {
+      if (requestedProvider !== "gemini") {
         req.off("aborted", abortOnDisconnect);
         res.off("close", abortOnDisconnect);
       }
@@ -737,10 +840,13 @@ Hãy trả về kết quả dưới dạng JSON (chính xác định dạng JSON
   });
 
   // API for AI-assisted structural and formatting review (Zero Data Loss Proposals)
-  app.post("/api/ai/review-document", async (req, res) => {
+  const handleReviewDocument = async (req: express.Request, res: express.Response) => {
+    if (!isTrustedLocalAiRequest(req)) {
+      return res.status(403).json({ error: "Chỉ cho phép yêu cầu từ DocForm local hợp lệ." });
+    }
     const { structured, standardType, rawText, blocks, layoutInfo, mode } = req.body;
     const requestedProvider = req.body?.provider ?? "gemini";
-    if (requestedProvider !== "gemini" && requestedProvider !== "chatgpt") {
+    if (requestedProvider !== "gemini" && requestedProvider !== "openai_api" && requestedProvider !== "chatgpt") {
       return res.status(400).json({ error: "Nhà cung cấp AI không hợp lệ." });
     }
 
@@ -757,6 +863,9 @@ Hãy trả về kết quả dưới dạng JSON (chính xác định dạng JSON
         Array.isArray(row) && row.every((cell: unknown) => typeof cell === "string"))))));
     if (!validFields || !validBody || !validBlocks) {
       return res.status(400).json({ error: "Thiếu dữ liệu cấu trúc tài liệu (structured import)." });
+    }
+    if (mode !== "local_only" && req.body?.consent !== true) {
+      return res.status(403).json({ error: "Cần xác nhận gửi nội dung tài liệu cho lượt rà soát AI này." });
     }
 
     const regime = standardType === "party" ? "party" : "administrative";
@@ -780,6 +889,9 @@ Hãy trả về kết quả dưới dạng JSON (chính xác định dạng JSON
         return res.status(403).json({ error: "Cần xác nhận gửi tài liệu từ ứng dụng DocForm local." });
       }
       if (!siwcEnabled || !chatGPTClient) return res.status(503).json({ error: siwcReason ?? "ChatGPT plan đang tắt trên máy này." });
+    }
+    if (requestedProvider === "openai_api" && !process.env.OPENAI_API_KEY?.trim()) {
+      return res.status(503).json({ error: "OpenAI API chưa được cấu hình trên máy chủ local." });
     }
 
     const standardDesc = regime === "party"
@@ -838,7 +950,7 @@ Hãy trả về JSON thuần túy (không markdown bao quanh) với cấu trúc:
 
     const abortController = new AbortController();
     const abortOnDisconnect = () => abortController.abort();
-    if (requestedProvider === "chatgpt") {
+    if (requestedProvider !== "gemini") {
       req.on("aborted", abortOnDisconnect);
       res.on("close", abortOnDisconnect);
     }
@@ -847,7 +959,11 @@ Hãy trả về JSON thuần túy (không markdown bao quanh) với cấu trúc:
         ? await (await createChatGPTPlanProvider(chatGPTClient!, abortController.signal))(
           prompt, AbortSignal.any([abortController.signal, AbortSignal.timeout(120_000)]),
         )
-        : await generateContentWithModelFallback({
+        : requestedProvider === "openai_api"
+          ? await createOpenAiApiProvider({ client: options.openAiResponsesClient, format: "json" })(
+            prompt, AbortSignal.any([abortController.signal, AbortSignal.timeout(120_000)]),
+          )
+          : await generateContentWithModelFallback({
           contents: prompt,
           config: { responseMimeType: "application/json", temperature: 0.1 },
         }).then(({ response, activeModel }) => ({ text: response.text || "", model: activeModel }));
@@ -868,7 +984,7 @@ Hãy trả về JSON thuần túy (không markdown bao quanh) với cấu trúc:
       const validAiProposals = aiProposals.filter(p => {
         if (!p || typeof p.original !== "string" || typeof p.suggested !== "string") return false;
         if (p.original.length > 100) return false;
-        if (requestedProvider === "chatgpt" && (typeof p.targetBlockId !== "string" || !p.targetBlockId)) return false;
+        if (requestedProvider !== "gemini" && (typeof p.targetBlockId !== "string" || !p.targetBlockId)) return false;
         if (Array.isArray(blocks) && blocks.length > 0 && p.targetBlockId) {
           const targetBlock = blocks.find((b: any) => b.id === p.targetBlockId);
           if (!targetBlock) return false;
@@ -892,14 +1008,14 @@ Hãy trả về JSON thuần túy (không markdown bao quanh) với cấu trúc:
             suggested: ap.suggested,
             reason: ap.reason || "Đề xuất tối ưu hóa ngôn ngữ pháp lý",
             confidence: ap.confidence === "high" ? "high" : "medium",
-            source: requestedProvider === "chatgpt" ? "chatgpt_ai" : "gemini_ai",
+            source: requestedProvider === "chatgpt" ? "chatgpt_ai" : requestedProvider === "openai_api" ? "openai_api_ai" : "gemini_ai",
           });
         }
       }
 
       return res.json({
         success: true,
-        source: requestedProvider === "chatgpt" ? "chatgpt_ai" : "gemini_ai",
+        source: requestedProvider === "chatgpt" ? "chatgpt_ai" : requestedProvider === "openai_api" ? "openai_api_ai" : "gemini_ai",
         model: generated.model,
         isFallback: false,
         proposals: mergedProposals,
@@ -911,6 +1027,10 @@ Hãy trả về JSON thuần túy (không markdown bao quanh) với cấu trúc:
         const code = error instanceof ChatGPTPlanProviderError ? error.code : (typeof error?.code === "string" ? error.code : "chatgpt_error");
         return res.status(error instanceof ChatGPTPlanProviderError ? error.statusCode : 503).json({ error: safeChatGPTError(code).message });
       }
+      if (requestedProvider === "openai_api") {
+        const providerError = error instanceof OpenAiApiProviderError ? error : new OpenAiApiProviderError("provider_error", 503);
+        return res.status(providerError.statusCode).json({ error: providerError.message });
+      }
       console.warn("[AI REVIEW FALLBACK] Using deterministic rule proposals:", error?.message?.slice(0, 100));
       return res.json({
         success: true,
@@ -921,22 +1041,27 @@ Hãy trả về JSON thuần túy (không markdown bao quanh) với cấu trúc:
         notice: "Dịch vụ AI đang bận hoặc không khả dụng. Đã chuyển sang bộ quy tắc kiểm định chuẩn thể thức ngoại tuyến."
       });
     } finally {
-      if (requestedProvider === "chatgpt") {
+      if (requestedProvider !== "gemini") {
         req.off("aborted", abortOnDisconnect);
         res.off("close", abortOnDisconnect);
       }
     }
-  });
+  };
+  app.post("/api/ai/review-document", handleReviewDocument);
+  app.post("/api/ai/review-proposals", handleReviewDocument);
 
   // API for AI-assisted partition review (Zero Data Loss Proposals)
   app.post("/api/ai/check-partitions", async (req, res) => {
+    if (!isTrustedLocalAiRequest(req)) {
+      return res.status(403).json({ error: "Chỉ cho phép yêu cầu từ DocForm local hợp lệ." });
+    }
     const abortController = new AbortController();
     const abortOnDisconnect = () => {
       if (!res.writableEnded) abortController.abort();
     };
     req.on("aborted", abortOnDisconnect);
     res.on("close", abortOnDisconnect);
-    let requestedProvider: "gemini" | "chatgpt" = "gemini";
+    let requestedProvider: "gemini" | "openai_api" | "chatgpt" = "gemini";
     try {
       const requestValidation = validatePartitionAiRequest(req.body);
       if (!requestValidation.valid) {
@@ -962,6 +1087,12 @@ Hãy trả về JSON thuần túy (không markdown bao quanh) với cấu trúc:
         provider = await createChatGPTPlanProvider(chatGPTClient, abortController.signal);
         timeoutMs = 120000;
         concurrency = 1;
+      } else if (requestedProvider === "openai_api") {
+        if (!process.env.OPENAI_API_KEY?.trim()) {
+          return res.status(503).json({ error: "OpenAI API chưa được cấu hình; hãy chọn nhà cung cấp khác hoặc cấu hình khóa trên máy chủ local." });
+        }
+        provider = createOpenAiApiProvider({ client: options.openAiResponsesClient, format: "json" });
+        timeoutMs = 120_000;
       } else {
         if (!process.env.GEMINI_API_KEY) {
           return res.status(503).json({ error: "Dịch vụ Gemini chưa được cấu hình; phân vùng quy tắc vẫn hoạt động trong ứng dụng." });
@@ -1008,6 +1139,10 @@ Hãy trả về JSON thuần túy (không markdown bao quanh) với cấu trúc:
         const code = error instanceof ChatGPTPlanProviderError ? error.code : (typeof error?.code === "string" ? error.code : "chatgpt_error");
         return res.status(error instanceof ChatGPTPlanProviderError ? error.statusCode : 503).json({ error: safeChatGPTError(code).message });
       }
+      if (requestedProvider === "openai_api") {
+        const providerError = error instanceof OpenAiApiProviderError ? error : new OpenAiApiProviderError("provider_error", 503);
+        return res.status(providerError.statusCode).json({ error: providerError.message });
+      }
       console.warn("[AI PARTITION ERROR] AI partition service did not complete:", error?.message?.slice(0, 100));
       return res.status(503).json({ error: "AI phân vùng hiện không khả dụng; phân vùng quy tắc vẫn hoạt động trong ứng dụng." });
     } finally {
@@ -1017,27 +1152,17 @@ Hãy trả về JSON thuần túy (không markdown bao quanh) với cấu trúc:
   });
 
   // Full extracted-text semantic review is a separate consented operation from coarse block review.
-  app.post("/api/ai/review-full-text", async (req, res) => {
+  const handleReviewFullText = async (req: express.Request, res: express.Response) => {
     const abortController = new AbortController();
     const abortOnDisconnect = () => {
       if (!res.writableEnded) abortController.abort();
     };
     req.on("aborted", abortOnDisconnect);
     res.on("close", abortOnDisconnect);
-    let requestedProvider: "gemini" | "chatgpt" = "gemini";
+    let requestedProvider: "gemini" | "openai_api" | "chatgpt" = "gemini";
     try {
-      if (!isLocalLoopbackRequest(req)) {
+      if (!isTrustedLocalAiRequest(req)) {
         return res.status(403).json({ error: "Chỉ DocForm local mới được gửi đoạn văn bản đã trích xuất lên AI." });
-      }
-      const origin = req.get("origin");
-      if (origin) {
-        try {
-          if (!localAuthOrigins.has(origin) || new URL(origin).host !== req.get("host")) {
-            return res.status(403).json({ error: "Yêu cầu phải cùng nguồn gốc với DocForm local." });
-          }
-        } catch {
-          return res.status(403).json({ error: "Origin của yêu cầu không hợp lệ." });
-        }
       }
       const validation = validateFullTextReviewRequest(req.body);
       if (!validation.valid || !validation.request) {
@@ -1063,6 +1188,12 @@ Hãy trả về JSON thuần túy (không markdown bao quanh) với cấu trúc:
         provider = await createChatGPTPlanProvider(chatGPTClient, abortController.signal);
         timeoutMs = 120_000;
         concurrency = 1;
+      } else if (requestedProvider === "openai_api") {
+        if (!process.env.OPENAI_API_KEY?.trim()) {
+          return res.status(503).json({ error: "OpenAI API chưa được cấu hình; không có nhà cung cấp dự phòng tự động." });
+        }
+        provider = createOpenAiApiProvider({ client: options.openAiResponsesClient, format: "json" });
+        timeoutMs = 120_000;
       } else {
         if (!process.env.GEMINI_API_KEY) {
           return res.status(503).json({ error: "Gemini chưa được cấu hình; không có nhà cung cấp dự phòng tự động." });
@@ -1105,17 +1236,24 @@ Hãy trả về JSON thuần túy (không markdown bao quanh) với cấu trúc:
         const code = error instanceof ChatGPTPlanProviderError ? error.code : (typeof error?.code === "string" ? error.code : "chatgpt_error");
         return res.status(error instanceof ChatGPTPlanProviderError ? error.statusCode : 503).json({ error: safeChatGPTError(code).message });
       }
+      if (requestedProvider === "openai_api") {
+        const providerError = error instanceof OpenAiApiProviderError ? error : new OpenAiApiProviderError("provider_error", 503);
+        return res.status(providerError.statusCode).json({ error: providerError.message });
+      }
       console.warn("[FULL TEXT AI ERROR] Full-text review did not complete.");
       return res.status(503).json({ error: "Không thể khởi tạo rà soát toàn văn; không tự chuyển nhà cung cấp." });
     } finally {
       req.off("aborted", abortOnDisconnect);
       res.off("close", abortOnDisconnect);
     }
-  });
+  };
+  app.post("/api/ai/review-full-text", handleReviewFullText);
+  app.post("/api/ai/full-text-review", handleReviewFullText);
 
   // Vite middleware for development
+  let vite: any = null;
   if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
+    vite = await createViteServer({
       ...(process.env.DOCFORM_TEST_NO_VITE_CONFIG === "true" ? {
         configFile: false,
         plugins: [react(), tailwindcss()],
@@ -1135,19 +1273,31 @@ Hãy trả về JSON thuần túy (không markdown bao quanh) với cấu trúc:
     });
   }
 
-  const listenHost = options.bindHost ?? (localOnlyMode ? "127.0.0.1" : "0.0.0.0");
-  const server = app.listen(PORT, listenHost, () => {
-    const address = server.address();
-    if (PORT === 0 && address && typeof address === "object") {
-      PORT = address.port;
-      for (const host of [`127.0.0.1:${PORT}`, `localhost:${PORT}`]) {
-        localAuthHosts.add(host);
-        localAuthOrigins.add(`http://${host}`);
+  return new Promise<Server>((resolve, reject) => {
+    const server = createHttpServer(app);
+    let viteClose: Promise<void> | undefined;
+    const closeVite = () => viteClose ??= Promise.resolve().then(() => vite?.close());
+    const onListenError = (error: Error) => {
+      void closeVite().then(() => reject(error), () => reject(error));
+    };
+    server.once("error", onListenError);
+    server.once("listening", () => {
+      server.off("error", onListenError);
+      const address = server.address();
+      if (PORT === 0 && address && typeof address === "object") {
+        PORT = address.port;
+        for (const host of [`127.0.0.1:${PORT}`, `localhost:${PORT}`]) {
+          localAuthHosts.add(host);
+          localAuthOrigins.add(`http://${host}`);
+        }
       }
-    }
-    console.log(`Server running at http://${listenHost}:${PORT}`);
+      console.log(`Server running at http://${listenHost}:${PORT}`);
+      resolve(server);
+    });
+    server.once("close", () => { void closeVite().catch(() => console.error("Vite cleanup failed.")); });
+    try { server.listen(PORT, listenHost); }
+    catch (error) { onListenError(error as Error); }
   });
-  return server;
 }
 
 if (isServerEntryPoint()) {

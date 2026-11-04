@@ -2,6 +2,7 @@ import { createPortal } from "react-dom";
 import { ExternalLink, Settings2, X } from "lucide-react";
 import type { PartitionAiProviderKind } from "../shared/partitionAiProtocol.ts";
 import type { ChatGPTLocalStatus } from "../shared/chatgptPlanProtocol.ts";
+import { aiProviderDisplayName, type AiApiConnectionStatus, type AiApiProviderKind } from "../utils/aiProviderLabels.ts";
 import { useAccessibleDialog } from "../utils/useAccessibleDialog.ts";
 
 interface AppSettingsDrawerProps {
@@ -16,6 +17,8 @@ interface AppSettingsDrawerProps {
   onChatGPTConnect: () => void;
   onChatGPTConnectCancel: () => void;
   onChatGPTDisconnect: () => void;
+  aiConnectionStatus: Record<AiApiProviderKind, AiApiConnectionStatus>;
+  onTestAiConnection: (provider: AiApiProviderKind) => void;
 }
 
 export function AppSettingsDrawer({
@@ -30,6 +33,8 @@ export function AppSettingsDrawer({
   onChatGPTConnect,
   onChatGPTConnectCancel,
   onChatGPTDisconnect,
+  aiConnectionStatus,
+  onTestAiConnection,
 }: AppSettingsDrawerProps) {
   const dialogRef = useAccessibleDialog(isOpen, onClose, { initialFocusSelector: "select" });
   if (!isOpen) return null;
@@ -81,10 +86,35 @@ export function AppSettingsDrawer({
                 onChange={event => onAiProviderChange(event.currentTarget.value as PartitionAiProviderKind)}
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
               >
-                <option value="gemini">Gemini · API máy chủ local</option>
+                <option value="gemini">Gemini API</option>
+                <option value="openai_api">OpenAI API</option>
                 <option value="chatgpt">ChatGPT plan · local</option>
               </select>
             </label>
+
+            <p className="text-xs leading-5 text-slate-600">Kết nối được người phụ trách DocForm thiết lập trên máy này. Không nhập mật khẩu tại đây. Nút kiểm tra chỉ gửi câu thử, không gửi tài liệu.</p>
+
+            {(["gemini", "openai_api"] as const).map(provider => {
+              const status = aiConnectionStatus[provider];
+              return <div key={provider} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3" data-testid={`ai-provider-connection-${provider}`}>
+                <div className="min-w-[220px] flex-1">
+                  <h4 className="text-sm font-semibold text-slate-900">{aiProviderDisplayName(provider)}</h4>
+                  <p className="mt-1 text-xs leading-5 text-slate-600">{provider === "gemini" ? "Dùng kết nối Gemini đã thiết lập cho máy này." : "Dùng kết nối OpenAI đã thiết lập; lượt sử dụng có thể phát sinh chi phí."}</p>
+                  <p className={`mt-1 text-xs ${status.state === "connected" ? "font-semibold text-emerald-700" : status.state === "error" ? "text-amber-800" : "text-slate-600"}`} role="status" aria-live="polite" data-testid={`ai-connection-status-${provider}`}>
+                    {status.message}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  data-testid={`ai-provider-test-${provider}`}
+                  onClick={() => onTestAiConnection(provider)}
+                  disabled={status.state === "checking"}
+                  className="rounded-lg border border-violet-200 bg-white px-3 py-2 text-sm font-semibold text-violet-700 hover:bg-violet-50 disabled:cursor-wait disabled:opacity-60"
+                >
+                  {status.state === "checking" ? "Đang kiểm tra…" : "Kiểm tra kết nối"}
+                </button>
+              </div>;
+            })}
 
             <p role="status" data-testid="ai-settings-persistence" className={`text-xs ${storageAvailable ? "text-slate-600" : "text-amber-800"}`}>
               {storageAvailable
@@ -127,17 +157,24 @@ export function AppSettingsDrawer({
             <ul className="mt-2 list-disc space-y-1 pl-5 text-sm leading-6 text-slate-700">
               <li>Chọn nhà cung cấp không tự gửi tài liệu; từng thao tác AI vẫn cần lệnh riêng.</li>
               <li>Cho phép rà soát nguồn được hỏi riêng theo từng tệp và mặc định tắt sau khi tải lại.</li>
-              <li>Chỉ lựa chọn nhà cung cấp được lưu ở trình duyệt. Token ChatGPT và khóa API Gemini không được lưu trong tùy chọn này.</li>
+              <li>Chỉ lựa chọn nhà cung cấp được lưu ở trình duyệt. Thông tin đăng nhập và kết nối AI không được lưu trong tùy chọn này.</li>
             </ul>
-            {aiProvider === "gemini" && <p className="mt-3 text-xs leading-5 text-slate-600">Gemini dùng khóa của máy chủ local. Chính sách dữ liệu tùy Free/Paid tier; Google hiện ghi nội dung gửi qua Free Tier có thể được dùng để cải thiện sản phẩm. Hãy kiểm tra tier của dự án gắn với khóa trước khi gửi tài liệu nhạy cảm.</p>}
-            <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2">
-              <a className="inline-flex items-center gap-1 text-sm font-semibold text-violet-700 hover:underline" href="https://ai.google.dev/gemini-api/docs" target="_blank" rel="noreferrer">
-                Tài liệu Gemini API <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
-              </a>
-              <a className="inline-flex items-center gap-1 text-sm font-semibold text-violet-700 hover:underline" href="https://ai.google.dev/gemini-api/docs/pricing" target="_blank" rel="noreferrer">
-                Hạn mức và chính sách dữ liệu <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
-              </a>
-            </div>
+            {aiProvider === "gemini" && <p className="mt-3 text-xs leading-5 text-slate-600">Chính sách sử dụng dữ liệu Gemini tùy cấu hình tài khoản. Hãy nhờ người phụ trách kiểm tra trước khi gửi tài liệu nội bộ.</p>}
+            {aiProvider === "openai_api" && <p className="mt-3 text-xs leading-5 text-slate-600">Chính sách dữ liệu và chi phí OpenAI tùy tài khoản. Hãy nhờ người phụ trách kiểm tra trước khi gửi tài liệu nội bộ.</p>}
+            <details className="mt-3 text-sm">
+              <summary className="cursor-pointer font-semibold text-violet-700">Tìm hiểu thêm về dữ liệu và chi phí</summary>
+              <div className="mt-2 flex flex-wrap gap-x-5 gap-y-2">
+                <a className="inline-flex items-center gap-1 text-sm font-semibold text-violet-700 hover:underline" href="https://ai.google.dev/gemini-api/docs" target="_blank" rel="noreferrer">
+                  Tài liệu Gemini API <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+                </a>
+                <a className="inline-flex items-center gap-1 text-sm font-semibold text-violet-700 hover:underline" href="https://ai.google.dev/gemini-api/docs/pricing" target="_blank" rel="noreferrer">
+                  Hạn mức và chính sách dữ liệu <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+                </a>
+                <a className="inline-flex items-center gap-1 text-sm font-semibold text-violet-700 hover:underline" href="https://developers.openai.com/api/docs/guides/your-data" target="_blank" rel="noreferrer">
+                  Dữ liệu API OpenAI <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+                </a>
+              </div>
+            </details>
           </section>
         </div>
 

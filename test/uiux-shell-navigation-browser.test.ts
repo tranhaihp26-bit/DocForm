@@ -31,7 +31,7 @@ test('M1 shell keeps all steps reachable and switches to natural page scrolling 
   assert.match(await c.evaluate(`document.querySelector('header [aria-label^="Tài liệu:"]')?.textContent||''`),/Văn bản mới · chưa chọn nguồn/);
   assert.match(await c.evaluate(`document.querySelector('.df-workspace-sidebar button[data-step="3"]')?.textContent||''`),/Xem & xuất/);
   await pointerClick(c,'.df-workspace-sidebar button[data-step="2"]');
-  assert.match(await c.evaluate(`document.body.innerText`),/Cần một nguồn tài liệu/);
+  assert.match(await c.evaluate(`document.body.innerText`),/Cần chọn tệp Word\/TXT hoặc mẫu chuẩn trước khi sang bước soạn thảo/);
   assert.equal(await c.evaluate(`document.querySelector('[data-current-step]')?.getAttribute('data-current-step')`),'1');
   assert.equal(await seedLongTemplate(c),true);await c.reload();
   assert.equal(await c.waitForFunction(`document.querySelector('[data-step="2"]')?.getAttribute('data-step-allowed')==='true'`),true);
@@ -40,7 +40,7 @@ test('M1 shell keeps all steps reachable and switches to natural page scrolling 
   for(const [width,height] of [[1366,768],[768,900],[390,844]] as const){
    await c.setViewport(width,height);
    assert.equal(await c.evaluate(`document.documentElement.scrollWidth<=innerWidth+2`),true,`no horizontal overflow at ${width}`);
-   const before=await c.evaluate<any>(`(()=>{const main=document.querySelector('.df-workspace-main'),r=main.getBoundingClientRect();return{y:document.scrollingElement?.scrollTop||0,main:main?.scrollTop,mainHeight:main.clientHeight,mainScrollHeight:main.scrollHeight,mainOverflow:getComputedStyle(main).overflowY,shellOverflow:getComputedStyle(document.querySelector('.df-app-shell')).overflow,hit:document.elementFromPoint(r.left+r.width/2,r.top+r.height/2)?.className}})()`);
+   const before=await c.evaluate<any>(`(()=>{const main=document.querySelector('.df-step-content')||document.querySelector('.df-workspace-main'),r=main.getBoundingClientRect();return{y:document.scrollingElement?.scrollTop||0,main:main?.scrollTop,mainHeight:main.clientHeight,mainScrollHeight:main.scrollHeight,mainOverflow:getComputedStyle(main).overflowY,shellOverflow:getComputedStyle(document.querySelector('.df-app-shell')).overflow,hit:document.elementFromPoint(r.left+r.width/2,r.top+r.height/2)?.className}})()`);
    const shot=await c.send('Page.captureScreenshot',{format:'png'});
    fs.writeFileSync(`${evidence}/g1-${width}-before.png`,Buffer.from(shot.result?.data??shot.data,'base64'));
    const box=await c.evaluate<any>(`(()=>{const r=document.querySelector('.df-workspace-main').getBoundingClientRect();return{x:r.left+r.width/2,y:r.top+r.height/2}})()`),x=box.x,y=box.y;
@@ -49,28 +49,23 @@ test('M1 shell keeps all steps reachable and switches to natural page scrolling 
    await c.send('Input.synthesizeScrollGesture',{x,y,xDistance:0,yDistance:-620,speed:900,gestureSourceType:'mouse'});
    await c.send('Input.dispatchKeyEvent',{type:'keyDown',key:'PageDown',code:'PageDown'});
    await c.send('Input.dispatchKeyEvent',{type:'keyUp',key:'PageDown',code:'PageDown'});
-   const after=await c.evaluate<any>(`(()=>{const main=document.querySelector('.df-workspace-main');return{y:document.scrollingElement?.scrollTop||0,main:main?.scrollTop,mainHeight:main.clientHeight,mainScrollHeight:main.scrollHeight,mainOverflow:getComputedStyle(main).overflowY,shellOverflow:getComputedStyle(document.querySelector('.df-app-shell')).overflow}})()`);
+   const after=await c.evaluate<any>(`(()=>{const main=document.querySelector('.df-step-content')||document.querySelector('.df-workspace-main');return{y:document.scrollingElement?.scrollTop||0,main:main?.scrollTop,mainHeight:main.clientHeight,mainScrollHeight:main.scrollHeight,mainOverflow:getComputedStyle(main).overflowY,shellOverflow:getComputedStyle(document.querySelector('.df-app-shell')).overflow}})()`);
    assert.ok(after.y>before.y||after.main>before.main,`wheel and PageDown move visible content at ${width}: ${JSON.stringify({before,after})}`);
-   if(width>1000)assert.equal(after.mainOverflow,'auto',`desktop main is its own scroller at ${width}`);
+   if(width>1000)assert.equal(after.mainOverflow,'auto',`desktop workspace content is scrollable at ${width}`);
    else assert.notEqual(after.shellOverflow,'hidden',`tablet/mobile shell does not trap document scroll at ${width}`);
    const afterShot=await c.send('Page.captureScreenshot',{format:'png'});
    fs.writeFileSync(`${evidence}/g1-${width}-after.png`,Buffer.from(afterShot.result?.data??afterShot.data,'base64'));
   }
   await c.setViewport(1366,768);
-  const links=await c.evaluate<any>(`(()=>{const e=document.querySelector('.df-ws-group-links'),r=e.getBoundingClientRect();return{x:r.left+r.width/2,y:r.top+r.height/2}})()`);
-  await c.send('Input.synthesizeScrollGesture',{x:links.x,y:links.y,xDistance:0,yDistance:-720,speed:850,gestureSourceType:'mouse'});
-  assert.equal(await c.waitForFunction(`(()=>{const e=document.querySelector('[data-workspace-group-link="9"]'),r=e?.getBoundingClientRect();return Boolean(r&&r.top>=0&&r.bottom<=innerHeight)})()`),true,'group 9 can be brought into the sidebar viewport');
-  await pointerClick(c,'[data-workspace-group-link="9"]');
-  assert.equal(await c.waitForFunction(`document.querySelector('[data-workspace-group="9"]')?.open===true`),true);
-  assert.equal(await c.waitForFunction(`document.querySelector('.df-workspace-main').scrollTop>100`),true,'group link scrolls the main pane to group 9');
+  await pointerClick(c,'[data-toc-target="df-step2-groups-after"]');
+  assert.equal(await c.waitForFunction(`(()=>{const e=document.querySelector('[data-workspace-group="9"]'),r=e?.getBoundingClientRect();return Boolean(r&&r.top>=0&&r.bottom<=innerHeight)})()`),true,'the current sidebar item scrolls the final group into view');
+  assert.equal(await c.evaluate(`document.querySelector('[data-toc-target="df-step2-groups-after"]')?.getAttribute('aria-current')`),'location');
+  assert.equal(await c.waitForFunction(`document.querySelector('.df-step-content').scrollTop>100`),true,'group link scrolls the workspace content to group 9');
   const group9=await c.send('Page.captureScreenshot',{format:'png'});fs.writeFileSync(`${evidence}/g1-1366-group9.png`,Buffer.from(group9.result?.data??group9.data,'base64'));
   await c.setViewport(390,844);
-  for(let i=0;i<8;i++){
-   await c.send('Input.dispatchMouseEvent',{type:'mouseWheel',x:195,y:700,deltaX:0,deltaY:1200});
-   await c.send('Input.synthesizeScrollGesture',{x:195,y:700,xDistance:0,yDistance:-1500,speed:900,gestureSourceType:'mouse'});
-  }
+  await c.evaluate(`document.scrollingElement?.scrollTo(0,0)`);
   assert.equal(await c.waitForFunction(`document.querySelector('[data-action="workspace-next"]')?.disabled===false`),true,'step 2 continue action is enabled for approved template');
-  assert.equal(await c.waitForFunction(`(()=>{const e=document.querySelector('[data-action="workspace-next"]'),r=e?.getBoundingClientRect();return Boolean(r&&r.top>=0&&r.bottom<=innerHeight)})()`),true,`mobile continue action is brought into view: ${JSON.stringify(await c.evaluate<any>(`(()=>{const e=document.querySelector('[data-action="workspace-next"]'),r=e?.getBoundingClientRect();return{scroll:document.scrollingElement?.scrollTop,scrollHeight:document.scrollingElement?.scrollHeight,rect:r&&{top:r.top,bottom:r.bottom},height:innerHeight}})()`))}`);
+  assert.equal(await c.waitForFunction(`(()=>{const e=document.querySelector('[data-action="workspace-next"]'),r=e?.getBoundingClientRect();return Boolean(r&&r.top>=0&&r.bottom<=innerHeight)})()`),true,'mobile continue action is visible at the top of the editing step');
   const mobileCta=await c.send('Page.captureScreenshot',{format:'png'});fs.writeFileSync(`${evidence}/g1-390-cta.png`,Buffer.from(mobileCta.result?.data??mobileCta.data,'base64'));
   await pointerClick(c,'[data-action="workspace-next"]');
   assert.equal(await c.waitForFunction(`document.querySelector('[data-current-step]')?.getAttribute('data-current-step')==='3'`),true,'step 2 CTA uses the export gate');

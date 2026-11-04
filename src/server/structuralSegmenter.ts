@@ -11,7 +11,7 @@ import type {
   AppendixDocument,
   SourceRegion,
 } from "../shared/schemas/document.schema.ts";
-import { classifyTable, type TableClassificationResult, type TableOwner, type TableRole } from "./tableRoleClassifier.ts";
+import { classifyTable, HEADER_MARKER_REGEX, type TableClassificationResult, type TableOwner, type TableRole } from "./tableRoleClassifier.ts";
 import { isSeparatorParagraph } from "../shared/separator.ts";
 import { embeddedRecipientsSignatureTable } from "../shared/embeddedSignatureTable.ts";
 export { classifyTable, type TableClassificationResult, type TableOwner, type TableRole };
@@ -336,6 +336,32 @@ export function isActionPlanOrDataTable(b: SourceBlock): boolean {
 /**
  * Main Structural Segmentation function
  */
+function isSignatureOrRecipientsBlock(b: SourceBlock): boolean {
+  if (b.kind === "table" && b.tableShape && b.tableShape.columns >= 2) {
+    if (embeddedRecipientsSignatureTable(b)) return false;
+    if (isActionPlanOrDataTable(b)) return false;
+    const data = b.tableData || [];
+    const flatText = data.flat().join(" ");
+    const leftColText = data.map(r => r[0] || "").join("\n");
+    const rightColText = data.map(r => r[r.length - 1] || "").join("\n");
+    const hasRecipients = /Nơi nhận\s*:/i.test(leftColText) || /Nơi nhận\s*:/i.test(flatText);
+    const rightLines = rightColText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    const hasSign = rightLines.some(l => isSignFormula(l)) ||
+                    isSignFormula(flatText) ||
+                    rightColText.toUpperCase().includes("GIÁM ĐỐC") ||
+                    rightColText.toUpperCase().includes("TRƯỞNG ĐOÀN") ||
+                    /^\s*(?:TM[\.\s]|T\/M[\.\s]|KT[\.\s]|TL[\.\s]|TUQ[\.\s])/i.test(rightColText.trim());
+    return Boolean((hasRecipients && hasSign) || (b.tableShape.rows <= 3 && hasSign) || hasRecipients);
+  }
+  if (b.kind === "paragraph") {
+    const text = b.text.trim();
+    if (/^Nơi nhận\s*:/i.test(text)) return true;
+    if (isSignFormula(text)) return true;
+    if (/^\s*(?:TM[\.\s]|T\/M[\.\s]|KT[\.\s]|TL[\.\s]|TUQ[\.\s])\b/i.test(text)) return true;
+  }
+  return false;
+}
+
 export function segmentSourceBlocks(
   rawBlocks: SourceBlock[],
   options: {
@@ -390,11 +416,24 @@ export function segmentSourceBlocks(
   let nextStartIndex = 0;
   let headerTableIdx = -1;
 
+  const markerBlockIds: string[] = [];
+  let markerDraftNote: string | undefined;
+
   for (let i = 0; i < Math.min(total, 4); i++) {
     const b = blocks[i];
-    if (b.kind === "paragraph" && !b.text.trim()) {
-      b.role = "separator";
-      continue;
+    if (b.kind === "paragraph") {
+      const cleanText = b.text.trim();
+      if (!cleanText || /^[---_\s*]{3,}$/.test(cleanText)) {
+        b.role = "separator";
+        continue;
+      }
+      if (cleanText.length <= 60 && HEADER_MARKER_REGEX.test(cleanText)) {
+        b.role = "header";
+        markerBlockIds.push(b.id);
+        if (!markerDraftNote) markerDraftNote = cleanText;
+        continue;
+      }
+      break;
     }
     if (b.kind === "table" && b.tableShape && b.tableShape.columns >= 2) {
       const classification = classifyTable(b, blocks.slice(0, i), options.standardType === "party" ? "party" : "administrative");
@@ -409,9 +448,12 @@ export function segmentSourceBlocks(
   }
 
   if (headerTableIdx !== -1) {
+    if (markerDraftNote && !draftNote) {
+      draftNote = markerDraftNote;
+    }
     const headerBlock = blocks[headerTableIdx];
     headerBlock.role = "header";
-    headerBlockIds.push(headerBlock.id);
+    headerBlockIds.push(...markerBlockIds, headerBlock.id);
     nextStartIndex = headerTableIdx + 1;
 
     const tableData = headerBlock.tableData || [];
@@ -542,6 +584,10 @@ export function segmentSourceBlocks(
       }
     }
   } else {
+    for (const bId of markerBlockIds) {
+      const b = blocks.find(x => x.id === bId);
+      if (b && b.role === "header") b.role = "unclassified";
+    }
     // Header in top paragraphs
     let pIdx = 0;
     while (pIdx < Math.min(total, 8)) {
@@ -555,6 +601,33 @@ export function segmentSourceBlocks(
       }
       if (DOC_TYPE_KEYWORDS.some(kw => text.toUpperCase() === kw || text.toUpperCase().startsWith(kw + " ") || text.toUpperCase().startsWith(kw + ":"))) {
         break;
+      }
+
+      // Hướng dẫn 05 uses a standalone asterisk beneath the issuing unit.
+      // It is part of the party header only when embedded within the party header cluster
+      // (preceded by issuing unit lines and followed by reference number, Party title, date, or doc type).
+      if (options.standardType === "party" && (text === "*" || text === "***")) {
+        const hasPrecedingOrg = pIdx > 0 && headerBlockIds.length > 0;
+        const remainingBlocks = blocks.slice(pIdx + 1, Math.min(total, 8));
+        const hasFollowingPartyContext = remainingBlocks.some(nextB => {
+          if (nextB.kind !== "paragraph") return false;
+          const nextText = nextB.text.trim();
+          return NATIONAL_HEADER_1_REGEX.test(nextText) ||
+                 REF_NUMBER_REGEX.test(nextText) ||
+                 extractHeaderDate(nextText) !== null ||
+                 DOC_TYPE_KEYWORDS.some(kw => nextText.toUpperCase() === kw || nextText.toUpperCase().startsWith(kw + " "));
+        });
+
+        if (hasPrecedingOrg && hasFollowingPartyContext) {
+          b.role = "header";
+          headerBlockIds.push(b.id);
+          nextStartIndex = pIdx + 1;
+          pIdx++;
+          continue;
+        } else {
+          // Without preceding party organ and following party context, do not classify as party header.
+          break;
+        }
       }
 
       let isHeaderPart = false;
@@ -747,15 +820,20 @@ export function segmentSourceBlocks(
     (fields.documentType?.value || "").trim().toUpperCase() !== "CÔNG VĂN" && 
     Boolean(fields.subject?.value);
 
+  let partySubjectSeparatorMapped = false;
   while (nextStartIndex < total) {
     const b = blocks[nextStartIndex];
     if (b.kind === "paragraph" && isSeparatorParagraph(b.text)) {
-      if (exporterWillRenderSeparator) {
+      if (exporterWillRenderSeparator && !partySubjectSeparatorMapped) {
         b.role = "separator";
+        partySubjectSeparatorMapped = true;
+        nextStartIndex++;
+        break; // Only the first separator under subject is mapped to profile separator!
       } else {
-        b.role = "body";
+        // Administrative regime (NĐ30) or additional separator:
+        // Do NOT consume here; let Step 6 extract it as Body!
+        break;
       }
-      nextStartIndex++;
     } else {
       break;
     }
@@ -783,7 +861,40 @@ export function segmentSourceBlocks(
 
     for (let aIdx = 0; aIdx < appendixStartIndices.length; aIdx++) {
       const startIdx = appendixStartIndices[aIdx];
-      const endIdx = aIdx + 1 < appendixStartIndices.length ? appendixStartIndices[aIdx + 1] : total;
+      let endIdx = aIdx + 1 < appendixStartIndices.length ? appendixStartIndices[aIdx + 1] : total;
+
+      if (aIdx + 1 === appendixStartIndices.length) {
+        // Do not absorb trailing signature / recipients blocks into the last appendix!
+        let trailingSigStart = -1;
+        for (let i = total - 1; i > startIdx; i--) {
+          // A signer-like table after an appendix is ambiguous: it may be a
+          // form contained in the appendix. Keep its physical source ownership
+          // with the appendix and let STEP 5B request review rather than
+          // promoting it to the main document footer.
+          if (blocks[i].kind !== "table" && isSignatureOrRecipientsBlock(blocks[i])) {
+            trailingSigStart = i;
+          } else if (trailingSigStart !== -1 && blocks[i].kind === "paragraph" && !blocks[i].text.trim()) {
+            trailingSigStart = i;
+          } else if (trailingSigStart !== -1) {
+            break;
+          }
+        }
+        if (trailingSigStart !== -1) {
+          // A recipients list immediately before a signer is part of the same
+          // uncertain footer cluster. Do not assign it to an appendix by default.
+          for (let i = trailingSigStart - 1; i > startIdx && i >= trailingSigStart - 10; i--) {
+            const text = blocks[i].text.trim();
+            if (blocks[i].kind !== "paragraph") break;
+            if (/^Nơi nhận\s*:/i.test(text)) {
+              trailingSigStart = i;
+              break;
+            }
+            if (text && !/^(?:[-–•]\s*|Kính gửi\s*:)/i.test(text)) break;
+          }
+          endIdx = trailingSigStart;
+        }
+      }
+
       const appBlocks = blocks.slice(startIdx, endIdx);
 
       // Mark roles as appendix
@@ -828,7 +939,7 @@ export function segmentSourceBlocks(
         sourceBlockIds: appBlocks.map(b => b.id),
         titleBlockId: headingBlock.id,
         referenceBlockId: contentStart === 2 ? appBlocks[1].id : undefined,
-        extractionStatus: "confirmed",
+        extractionStatus: endIdx < total && aIdx + 1 === appendixStartIndices.length ? "needs_review" : "confirmed",
         tables: appTables,
       });
     }
@@ -1034,7 +1145,85 @@ export function segmentSourceBlocks(
     }
   }
 
-  // If no signature table was found, search for paragraph footer cluster (recipients and signature paragraphs)
+  // If no signature table was found before appendix, search trailing blocks after last appendix
+  if (sigFoundIndex === -1 && appendixStartIndices.length > 0 && appendices.length > 0) {
+    const lastApp = appendices[appendices.length - 1];
+    const postAppStart = lastApp.blocks.length > 0
+      ? blocks.findIndex(b => b.id === lastApp.blocks[lastApp.blocks.length - 1].id) + 1
+      : total;
+
+    for (let i = total - 1; i >= postAppStart; i--) {
+      const b = blocks[i];
+      if (b.kind === "table" && b.tableShape && b.tableShape.columns >= 2) {
+        if (embeddedRecipientsSignatureTable(b)) continue;
+        if (isActionPlanOrDataTable(b)) continue;
+        const data = b.tableData || [];
+        const flatText = data.flat().join(" ");
+        const leftColText = data.map(r => r[0] || "").join("\n");
+        const rightColText = data.map(r => r[r.length - 1] || "").join("\n");
+        const hasRecipients = /Nơi nhận\s*:/i.test(leftColText) || /Nơi nhận\s*:/i.test(flatText);
+        const rightLines = rightColText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+        const hasSign = rightLines.some(l => isSignFormula(l)) ||
+                        isSignFormula(flatText) ||
+                        rightColText.toUpperCase().includes("GIÁM ĐỐC") ||
+                        rightColText.toUpperCase().includes("TRƯỞNG ĐOÀN") ||
+                        /^\s*(?:TM[\.\s]|T\/M[\.\s]|KT[\.\s]|TL[\.\s]|TUQ[\.\s])/i.test(rightColText.trim());
+
+        if ((hasRecipients && hasSign) || (b.tableShape.rows <= 3 && hasSign)) {
+          sigFoundIndex = i;
+          b.role = "signature";
+          const leftCol = data.map(r => r[0] || "").join("\n");
+          if (/Nơi nhận\s*:/i.test(leftCol)) {
+            fields.recipients = {
+              value: leftCol.trim(),
+              confidence: "high",
+              status: "extracted",
+              sourceBlockIds: [b.id],
+            };
+          }
+          const rightCol = data.map(r => r[r.length - 1] || "").join("\n");
+          const cleanRight = rightCol.split(/\r?\n/).map(l => l.trim()).filter(Boolean)
+            .filter(l => !/^\s*[\(\[](?:k[ýí]|ghi rõ|đóng dấu|chữ ký).*?[\)\]]\s*$/i.test(l));
+          if (cleanRight.length >= 2) {
+            fields.signTitle = { value: cleanRight.slice(0, -1).join("\n"), confidence: "high", status: "extracted", sourceBlockIds: [b.id] };
+            fields.signName = { value: cleanRight[cleanRight.length - 1], confidence: "high", status: "extracted", sourceBlockIds: [b.id] };
+          } else if (cleanRight.length === 1) {
+            fields.signTitle = { value: cleanRight[0], confidence: "high", status: "extracted", sourceBlockIds: [b.id] };
+          }
+          break;
+        }
+      }
+    }
+  }
+
+  // A confidently recognized mixed recipients/signer table is a footer source
+  // block. Extract its cell fields and assign it to the signature region so it
+  // is not included in Body; the original source block and cell references stay
+  // available for provenance and the footer fields are rendered separately.
+  const embeddedFooterBlock = sigFoundIndex === -1
+    ? blocks.slice(nextStartIndex, Math.min(bodyEndExclusive, appendixStartIndices[0] ?? total))
+      .reverse().find(block => embeddedRecipientsSignatureTable(block))
+    : undefined;
+  const embeddedFooter = embeddedFooterBlock && embeddedRecipientsSignatureTable(embeddedFooterBlock);
+  if (embeddedFooterBlock && embeddedFooter) {
+    embeddedFooterBlock.role = "signature";
+    if (!fields.recipients.value) {
+      fields.recipients = { value: embeddedFooter.recipients, confidence: "high", status: "extracted",
+        sourceBlockIds: [embeddedFooterBlock.id], sourceCell: { rowIndex: 0, colIndex: 0 }, exactQuote: embeddedFooter.recipients };
+    }
+    if (!fields.signTitle.value) {
+      fields.signTitle = { value: embeddedFooter.signTitle, confidence: "high", status: "extracted",
+        sourceBlockIds: [embeddedFooterBlock.id], sourceCell: { rowIndex: 0, colIndex: 1 }, exactQuote: embeddedFooter.signTitle };
+    }
+    if (!fields.signName.value) {
+      fields.signName = { value: embeddedFooter.signName, confidence: "high", status: "extracted",
+        sourceBlockIds: [embeddedFooterBlock.id], sourceCell: { rowIndex: 0, colIndex: 1 }, exactQuote: embeddedFooter.signName };
+    }
+  }
+
+  // Search paragraph footer clusters even when an embedded physical table was
+  // found; the cluster may contain additional recipient lines. The recognized
+  // table has already been assigned to the signature region above.
   if (sigFoundIndex === -1) {
     let footerStart = -1;
     for (let i = bodyEndExclusive - 1; i >= nextStartIndex; i--) {
@@ -1053,7 +1242,7 @@ export function segmentSourceBlocks(
 
     if (footerStart !== -1) {
       const originalBodyEnd = bodyEndExclusive;
-      bodyEndExclusive = footerStart;
+      if (!embeddedFooterBlock) bodyEndExclusive = footerStart;
       sigFoundIndex = footerStart;
 
       const recipientLines: string[] = [];
@@ -1064,6 +1253,7 @@ export function segmentSourceBlocks(
 
       for (let i = footerStart; i < originalBodyEnd; i++) {
         const b = blocks[i];
+        if (b.kind !== "paragraph") continue;
         const text = b.text.trim();
         if (!text) {
           b.role = "separator";
@@ -1222,26 +1412,8 @@ export function segmentSourceBlocks(
   }
 
   // If a signature block was identified before appendix, body ends before signature block!
-  if (sigFoundIndex !== -1 && (appendixStartIndices.length === 0 || sigFoundIndex < appendixStartIndices[0])) {
+  if (sigFoundIndex !== -1 && !embeddedFooterBlock && (appendixStartIndices.length === 0 || sigFoundIndex < appendixStartIndices[0])) {
     bodyEndExclusive = sigFoundIndex;
-  }
-
-  // A recipients/signer pair can share one physical table. Keep that table in
-  // Body for exact OOXML roundtrip, but record both semantic fields with their
-  // original cell coordinates. Moving the whole table to signature loses the
-  // independent recipients owner and is not supported by candidate export.
-  if (sigFoundIndex === -1 && !fields.signTitle.value && !fields.signName.value && !fields.recipients.value) {
-    const embeddedBlock = blocks.slice(Math.max(nextStartIndex, bodyEndExclusive - 5), bodyEndExclusive)
-      .reverse().find(block => embeddedRecipientsSignatureTable(block));
-    const embedded = embeddedBlock && embeddedRecipientsSignatureTable(embeddedBlock);
-    if (embeddedBlock && embedded) {
-      fields.recipients = { value: embedded.recipients, confidence: "high", status: "extracted",
-        sourceBlockIds: [embeddedBlock.id], sourceCell: { rowIndex: 0, colIndex: 0 }, exactQuote: embedded.recipients };
-      fields.signTitle = { value: embedded.signTitle, confidence: "high", status: "extracted",
-        sourceBlockIds: [embeddedBlock.id], sourceCell: { rowIndex: 0, colIndex: 1 }, exactQuote: embedded.signTitle };
-      fields.signName = { value: embedded.signName, confidence: "high", status: "extracted",
-        sourceBlockIds: [embeddedBlock.id], sourceCell: { rowIndex: 0, colIndex: 1 }, exactQuote: embedded.signName };
-    }
   }
 
   // =========================================================================
@@ -1250,35 +1422,35 @@ export function segmentSourceBlocks(
   const bodyBlockIds: string[] = [];
   const bodyHtmlParts: string[] = [];
 
-  // S2-F02 (tái audit 20/10/2026): khi bộ xuất sẽ tự sinh lại dấu phân cách
-  // "-----" (thể thức Đảng, có trích yếu, không phải công văn), mọi dòng kẻ
-  // dạng dấu gạch trong thân bài phải được loại khỏi body để DOCX chỉ có
-  // **một** dấu phân cách đúng vị trí. Trước đây chỉ dấu nằm ngay sau trích
-  // yếu mới bị loại; dấu nằm ở vị trí khác vẫn nằm trong bodyHtml và bộ xuất
-  // sinh thêm một dấu → Word có hai dấu "-----".
-  if (exporterWillRenderSeparator) {
-    for (let i = nextStartIndex; i < bodyEndExclusive; i++) {
-      const b = blocks[i];
-      if (b.role !== "unclassified") continue;
-      if (b.kind === "paragraph" && isSeparatorParagraph(b.text)) {
-        b.role = "separator";
-      }
-    }
-  }
-
   for (let i = nextStartIndex; i < bodyEndExclusive; i++) {
     const b = blocks[i];
     if (b.role !== "unclassified") continue;
 
-    // Check if empty separator paragraph
+    // Check if empty separator paragraph (spacing only)
     if (b.kind === "paragraph" && !b.text.trim()) {
       b.role = "separator";
+      continue;
+    }
+
+    // If party exporter will render separator, and no separator under subject was mapped yet
+    // (e.g. a preamble paragraph appeared between subject and separator), map the FIRST separator only.
+    if (exporterWillRenderSeparator && !partySubjectSeparatorMapped && b.kind === "paragraph" && isSeparatorParagraph(b.text)) {
+      b.role = "separator";
+      partySubjectSeparatorMapped = true;
       continue;
     }
 
     b.role = "body";
     bodyBlockIds.push(b.id);
     bodyHtmlParts.push(b.html || `<p>${b.text}</p>`);
+  }
+
+  // BẢO ĐẢM NGUYÊN TẮC: Mọi khối có role === 'body' BẮT BUỘC phải nằm trong bodyBlockIds và bodyHtmlParts!
+  for (const b of blocks) {
+    if (b.role === "body" && !bodyBlockIds.includes(b.id)) {
+      bodyBlockIds.push(b.id);
+      bodyHtmlParts.push(b.html || `<p>${b.text}</p>`);
+    }
   }
 
   // Resilient fallback: Chỉ phục hồi các khối thực sự chưa được phân loại (unclassified),

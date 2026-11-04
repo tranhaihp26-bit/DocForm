@@ -71,7 +71,7 @@ export interface ImportSessionState {
   partitionHistory: SourceBlock[][];
   userModifiedBlockIds: string[];
   partitionCheckNotice: string;
-  partitionCheckSource: "gemini_ai" | "chatgpt_ai" | "rule_fallback" | "mixed" | "unverified";
+  partitionCheckSource: "gemini_ai" | "openai_api_ai" | "chatgpt_ai" | "rule_fallback" | "mixed" | "unverified";
   reviewProposals: ReviewProposal[];
   acceptedProposalIds: Set<string>;
 }
@@ -179,14 +179,8 @@ export function prepareImportedFileBundle(
     orgHeader2: reconstructed.fields.orgHeader2 || "",
     draftNote: reconstructed.draftNote || "",
     includeDraftNoteInExport: Boolean(reconstructed.draftNote),
-    nationalHeader1:
-      reconstructed.fields.nationalHeader1 ||
-      (effectiveRegime === "party"
-        ? "ĐẢNG CỘNG SẢN VIỆT NAM"
-        : "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM"),
-    nationalHeader2:
-      reconstructed.fields.nationalHeader2 ??
-      (effectiveRegime === "party" ? "" : "Độc lập - Tự do - Hạnh phúc"),
+    nationalHeader1: reconstructed.fields.nationalHeader1 || "",
+    nationalHeader2: reconstructed.fields.nationalHeader2 ?? "",
     locationAndDate: reconstructed.fields.locationAndDate || "",
     documentType:
       reconstructed.fields.documentType ||

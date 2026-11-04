@@ -15,7 +15,7 @@ function segment(id: string, order: number, text: string): FullTextSegment {
     sourceBlockId: `block-${order}`, visibilityClass: "visible_text", text, textSha256: sha(text),
   };
 }
-function request(segments: FullTextSegment[]) {
+function request(segments: FullTextSegment[], requestedProvider: "gemini" | "chatgpt" | "openai_api" = "gemini") {
   const parts = [{ partUri: "/word/document.xml", status: "included", segmentIds: segments.map(item => item.id) }];
   const excluded: any[] = [];
   const manifestSha256 = sha(JSON.stringify({
@@ -35,8 +35,8 @@ function request(segments: FullTextSegment[]) {
   return {
     schemaVersion: 1,
     requestId: "synthetic-request-1",
-    provider: "gemini",
-    consent: { scope: "all_extracted_text", accepted: true, consentId: "synthetic-consent-1", provider: "gemini", sourceSha256, sourceGeneration: 7, manifestSha256 },
+    provider: requestedProvider as any,
+    consent: { scope: "all_extracted_text", accepted: true, consentId: "synthetic-consent-1", provider: requestedProvider as any, sourceSha256, sourceGeneration: 7, manifestSha256 },
     sourceSha256, sourceGeneration: 7, manifestSha256,
     regime: "administrative", documentType: "biên bản", textScope: "all_extracted_text",
     extractionCoverage: { status: "complete", totalIncludedSegments: segments.length, excludedCount: 0, includedParts: 1, partialParts: 0, excludedParts: 0 },
@@ -72,6 +72,16 @@ test("full-text request requires provider-bound consent and source-bound segment
   assert.equal(api.validateFullTextReviewRequest({ ...valid, docxBytes: "must-not-be-accepted" }).valid, false);
   assert.equal(api.validateFullTextReviewRequest({ ...valid, segments: [{ ...valid.segments[0], sourceGeneration: 6 }] }).valid, false);
   assert.equal(api.validateFullTextReviewRequest({ ...valid, segments: [{ ...valid.segments[0], textSha256: "c".repeat(64) }] }).valid, false);
+});
+
+test("full-text AI request accepts openai_api only when consent remains provider-bound", () => {
+  assert.ok(api?.validateFullTextReviewRequest);
+  const valid = request([segment("s-openai", 0, "Synthetic source text")], "openai_api");
+  assert.equal(api.validateFullTextReviewRequest(valid).valid, true);
+  assert.equal(api.validateFullTextReviewRequest({
+    ...valid,
+    consent: { ...valid.consent, provider: "gemini" },
+  }).valid, false);
 });
 
 test("chunk planning assigns each selected segment once and reports an oversized segment explicitly", () => {

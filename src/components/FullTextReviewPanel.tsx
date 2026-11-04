@@ -37,8 +37,8 @@ export interface FullTextReviewPanelProps {
 }
 
 const providerName = (provider: FullTextAiProviderKind) => provider === "gemini"
-  ? "Gemini API hiện có"
-  : "ChatGPT plan qua máy chủ local";
+  ? "Gemini API"
+  : provider === "openai_api" ? "OpenAI API" : "ChatGPT plan qua máy chủ local";
 
 const friendlyPartName = (partUri: string) => {
   const normalized = partUri.toLowerCase();

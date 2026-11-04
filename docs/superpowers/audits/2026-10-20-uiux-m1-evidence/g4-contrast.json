@@ -1,0 +1,48 @@
+{
+  "controls": [
+    {
+      "selector": "[data-candidate-download]",
+      "name": "Tải xuống DOCX",
+      "contrast": 5.077301324995386,
+      "color": "rgb(255, 255, 255)",
+      "background": "rgb(100, 89, 232)"
+    },
+    {
+      "selector": "[data-candidate-print]",
+      "name": "In bản xem / Lưu PDF tham khảo",
+      "contrast": 5.693789346954113,
+      "color": "rgb(88, 103, 132)",
+      "background": "rgb(255, 255, 255)"
+    },
+    {
+      "selector": "[data-preview-fit]",
+      "name": "Vừa chiều rộng",
+      "contrast": 5.258342504854841,
+      "color": "rgb(91, 80, 213)",
+      "background": "rgb(242, 240, 255)"
+    },
+    {
+      "selector": "[data-preview-actual]",
+      "name": "100%",
+      "contrast": 6.243144180463094,
+      "color": "rgb(83, 97, 123)",
+      "background": "rgb(255, 255, 255)"
+    }
+  ],
+  "focus": {
+    "matches": true,
+    "width": "3px",
+    "style": "solid",
+    "color": "rgb(81, 67, 199)",
+    "contrast": 7.053057219782611,
+    "measuredAgainst": "rgb(255, 255, 255)"
+  },
+  "thresholds": {
+    "normalText": 4.5,
+    "nonTextAndFocus": 3
+  },
+  "viewport": {
+    "width": 1440,
+    "documentWidth": 1440
+  }
+}

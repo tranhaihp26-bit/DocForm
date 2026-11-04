@@ -35,3 +35,18 @@ export function containsSeparatorParagraph(bodyHtml?: string | null): boolean {
   }
   return false;
 }
+
+/**
+ * True when the first paragraph of the HTML body is a standalone separator paragraph.
+ */
+export function startsWithSeparatorParagraph(bodyHtml?: string | null): boolean {
+  if (!bodyHtml) return false;
+  const match = bodyHtml.match(/<p\b[^>]*>([\s\S]*?)<\/p>/i);
+  if (!match) return false;
+  const text = match[1]
+    .replace(/<[^>]*>/g, "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&#160;/g, " ")
+    .trim();
+  return isSeparatorParagraph(text);
+}

@@ -17,7 +17,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import DOMPurify from "dompurify";
 import { useEditor, EditorContent } from "@tiptap/react";
-import { Extension } from "@tiptap/core";
+import { Extension, Node as TiptapNode } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import {workspaceEditorSafety, type EditorSafety} from '../utils/workspaceProjection.ts';
 import { isSemanticFirstLineIndent, isSemanticLineSpacing } from '../utils/semanticRuleFormatting.ts';
@@ -59,8 +59,23 @@ const DOMPURIFY_CONFIG = {
     "colspan",
     "rowspan",
     "style",
+    "data-page-break",
   ],
 };
+
+const SourcePageBreak = TiptapNode.create({
+  name: "sourcePageBreak",
+  group: "inline",
+  inline: true,
+  atom: true,
+  selectable: false,
+  parseHTML() {
+    return [{ tag: 'span[data-page-break="true"]' }];
+  },
+  renderHTML() {
+    return ["span", { class: "docx-page-break", "data-page-break": "true", style: "display:block; page-break-after:always; border-top:1px dashed #cbd5e1; margin:8px 0;", contenteditable: "false", title: "Ngắt trang" }];
+  },
+});
 
 const PreserveTable = Table.extend({
   addAttributes() {
@@ -187,6 +202,7 @@ export const ND30Editor: React.FC<ND30EditorProps> = ({
           levels: [1, 2, 3],
         },
       }),
+      SourcePageBreak,
       TextAlign.configure({
         types: ["heading", "paragraph"],
         alignments: ["left", "center", "right", "justify"],
@@ -739,9 +755,9 @@ export function WorkspaceCanvasEditor({ariaLabel,content,safety,onChange,onEdito
   const committed=useRef(content);
   const [proof,setProof]=useState<EditorSafety>({editable:false,reasons:['schema_roundtrip_pending']});
   const editor=useEditor({
-    extensions:[StarterKit.configure({underline:false}),Underline,TextAlign.configure({types:['heading','paragraph'],alignments:['left','center','right','justify']}),SemanticParagraphFormatting],
+    extensions:[StarterKit.configure({underline:false}),Underline,TextAlign.configure({types:['heading','paragraph'],alignments:['left','center','right','justify']}),SemanticParagraphFormatting,SourcePageBreak],
     parseOptions:{preserveWhitespace:'full'},
-    content:safety.editable?DOMPurify.sanitize(content||'<p></p>'):'<p></p>',
+    content:safety.editable?DOMPurify.sanitize(content||'<p></p>',{ADD_ATTR:['data-page-break']}):'<p></p>',
     editable:false,
     editorProps:{attributes:{'aria-label':ariaLabel,class:'df-workspace-prose'}},
     onFocus:()=>activeRef.current(),
@@ -763,7 +779,7 @@ export function WorkspaceCanvasEditor({ariaLabel,content,safety,onChange,onEdito
   },[editor,content,safety.editable,safety.reasons.join('|')]);
   const permitted=safety.editable&&proof.editable;
   return <div className="df-workspace-canvas-content">
-    {!permitted&&<div data-editor-readonly role="status"><strong>Chỉ đọc để bảo toàn nội dung.</strong><p>{(safety.editable?proof:safety).reasons.map(readonlyEditorNotice).join(' · ')}</p><div className="df-ws-source-html" dangerouslySetInnerHTML={{__html:DOMPurify.sanitize(content,{ADD_ATTR:['data-cell-id','data-source-table-id','style','colspan','rowspan']})}}/></div>}
+    {!permitted&&<div data-editor-readonly role="status"><strong>Chỉ đọc để bảo toàn nội dung.</strong><p>{(safety.editable?proof:safety).reasons.map(readonlyEditorNotice).join(' · ')}</p><div className="df-ws-source-html" dangerouslySetInnerHTML={{__html:DOMPurify.sanitize(content,{ADD_ATTR:['data-cell-id','data-source-table-id','data-page-break','style','colspan','rowspan']})}}/></div>}
     <div hidden={!permitted}><EditorContent editor={editor}/></div>
   </div>;
 }

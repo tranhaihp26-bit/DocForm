@@ -304,7 +304,7 @@ export function isReviewProposalValid(r: any): r is ReviewProposal {
   if (typeof r.suggested !== "string") return false;
   if (typeof r.reason !== "string") return false;
   if (r.confidence !== "high" && r.confidence !== "medium" && r.confidence !== "low") return false;
-  if (r.source !== undefined && r.source !== "gemini_ai" && r.source !== "chatgpt_ai" && r.source !== "rule_fallback") return false;
+  if (r.source !== undefined && r.source !== "gemini_ai" && r.source !== "openai_api_ai" && r.source !== "chatgpt_ai" && r.source !== "rule_fallback") return false;
   if (r.label !== undefined && typeof r.label !== "string") return false;
   if (r.title !== undefined && typeof r.title !== "string") return false;
   return true;

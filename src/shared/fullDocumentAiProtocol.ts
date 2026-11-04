@@ -1,4 +1,4 @@
-export type FullDocumentAiProvider = "chatgpt-plan" | "gemini";
+export type FullDocumentAiProvider = "chatgpt-plan" | "gemini" | "openai-api";
 
 export type FullDocumentAiFeature =
   | "original_file_transfer"
@@ -50,7 +50,7 @@ export function asFullDocumentAiCapability(value: unknown): FullDocumentAiCapabi
   if (!value || typeof value !== "object") return null;
   const providers = (value as { providers?: unknown }).providers;
   if (!providers || typeof providers !== "object") return null;
-  for (const provider of ["chatgpt-plan", "gemini"] as const) {
+  for (const provider of ["chatgpt-plan", "gemini", "openai-api"] as const) {
     const entry = (providers as Record<string, unknown>)[provider];
     if (!entry || typeof entry !== "object") return null;
     const fields = entry as Record<string, unknown>;

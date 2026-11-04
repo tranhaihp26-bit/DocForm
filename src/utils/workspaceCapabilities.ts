@@ -13,18 +13,24 @@ export function workspaceEditorSafety(html:string):EditorSafety{
  const reasons=new Set<string>();
  for(const match of html.matchAll(/<\s*([a-z][\w:-]*)\b([^>]*)>/gi)){
   const tag=match[1].toLowerCase();let attrs=match[2];
-  if(!ALLOWED_TAGS.has(tag))reasons.add(['table','td','th','tr','tbody','thead','colgroup','col'].includes(tag)?'table_editor_roundtrip_not_verified':`unsupported_editor_element:${tag}`);
+  const isSourcePageBreak=tag==='span'&&/\bdata-page-break\s*=\s*(["'])true\1/i.test(attrs);
+  if(!ALLOWED_TAGS.has(tag)&&!isSourcePageBreak)reasons.add(['table','td','th','tr','tbody','thead','colgroup','col'].includes(tag)?'table_editor_roundtrip_not_verified':`unsupported_editor_element:${tag}`);
   const styleMatch=attrs.match(/\bstyle\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i);
   if(styleMatch){
    const style=(styleMatch[1]??styleMatch[2]??styleMatch[3]??'').trim().toLowerCase();
-   if(!ALIGNABLE_TAGS.has(tag)||!/^text-align\s*:\s*(left|center|right|justify)\s*;?$/.test(style))reasons.add('inline_style_roundtrip_not_verified');
+   const knownPageBreakStyle=isSourcePageBreak&&style==='display:block; page-break-after:always; border-top:1px dashed #cbd5e1; margin:8px 0;';
+   if(!knownPageBreakStyle&&(!ALIGNABLE_TAGS.has(tag)||!/^text-align\s*:\s*(left|center|right|justify)\s*;?$/.test(style)))reasons.add('inline_style_roundtrip_not_verified');
    attrs=attrs.replace(styleMatch[0],'');
   }
   const lineMatch=attrs.match(/\bdata-df-line-spacing\s*=\s*(["'])(.*?)\1/i);
   if(lineMatch){if(tag!=='p'||!isSemanticLineSpacing(lineMatch[2]))reasons.add('semantic_rule_attribute_invalid');attrs=attrs.replace(lineMatch[0],'');}
   const indentMatch=attrs.match(/\bdata-df-first-line-indent\s*=\s*(["'])(.*?)\1/i);
   if(indentMatch){if(tag!=='p'||!isSemanticFirstLineIndent(indentMatch[2]))reasons.add('semantic_rule_attribute_invalid');attrs=attrs.replace(indentMatch[0],'');}
-  attrs=attrs.replace(/\bdata-block-id\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi,'').replace(/\bstart\s*=\s*(?:"\d+"|'\d+'|\d+)/gi,'').trim().replace(/\/$/,'').trim();
+  attrs=attrs.replace(/\bdata-block-id\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi,'').replace(/\bstart\s*=\s*(?:"\d+"|'\d+'|\d+)/gi,'');
+  if(isSourcePageBreak){
+   attrs=attrs.replace(/\bdata-page-break\s*=\s*(?:"true"|'true'|true)/gi,'').replace(/\bclass\s*=\s*(?:"docx-page-break"|'docx-page-break')/gi,'').replace(/\btitle\s*=\s*(?:"Ngắt trang"|'Ngắt trang')/gi,'').replace(/\bcontenteditable\s*=\s*(?:"false"|'false'|false)/gi,'');
+  }
+  attrs=attrs.trim().replace(/\/$/,'').trim();
   if(attrs)reasons.add('editor_attributes_roundtrip_not_verified');
  }
  return{editable:reasons.size===0,reasons:[...reasons]};

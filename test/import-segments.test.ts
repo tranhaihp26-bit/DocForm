@@ -460,6 +460,81 @@ async function main() {
     assert.equal(result.unclassified.length, 0, "Không có bất kỳ khối nào bị rơi vào Chưa phân loại (0 unclassified)");
   });
 
+  await runTest("SEP-21", "Nhận diện đầu trang văn bản Đảng dạng đoạn văn qua dấu hoa thị", () => {
+    const blocks: SourceBlock[] = [
+      { id: "party-org", index: 0, kind: "paragraph", text: "ĐẢNG ỦY XÃ AN BÌNH", role: "unclassified" },
+      { id: "party-unit", index: 1, kind: "paragraph", text: "ĐOÀN GIÁM SÁT SỐ 05-QĐ/ĐU", role: "unclassified" },
+      { id: "party-marker", index: 2, kind: "paragraph", text: "*", role: "unclassified" },
+      { id: "party-number", index: 3, kind: "paragraph", text: "Số: …-BB/ĐGS", role: "unclassified" },
+      { id: "party-title", index: 4, kind: "paragraph", text: "ĐẢNG CỘNG SẢN VIỆT NAM", role: "unclassified" },
+      { id: "party-date", index: 5, kind: "paragraph", text: "Quảng Ninh, ngày 20 tháng 10 năm 2026", role: "unclassified" },
+      { id: "doc-type", index: 6, kind: "paragraph", text: "BIÊN BẢN LÀM VIỆC", role: "unclassified" },
+      { id: "subject", index: 7, kind: "paragraph", text: "Về việc kiểm tra", role: "unclassified" },
+      { id: "body", index: 8, kind: "paragraph", text: "Nội dung biên bản.", role: "unclassified" },
+    ];
+
+    const administrative = segmentSourceBlocks(structuredClone(blocks), { filename: "party-minutes.docx", fileType: "docx", standardType: "administrative" });
+    assert.equal(administrative.fields.nationalHeader1.value, null, "Không áp tiêu đề Đảng sang chế độ hành chính");
+    assert.ok(administrative.unclassified.some(block => block.id === "party-title"), "Giữ nguyên dấu hiệu Đảng để người dùng xử lý đúng hệ");
+
+    const result = segmentSourceBlocks(structuredClone(blocks), { filename: "party-minutes.docx", fileType: "docx", standardType: "party" });
+
+    assert.equal(result.fields.referenceNumber.value, "Số: …-BB/ĐGS", "Không tự sửa dấu hai chấm của số hiệu nguồn");
+    assert.equal(result.fields.nationalHeader1.value, "ĐẢNG CỘNG SẢN VIỆT NAM");
+    assert.equal(result.fields.locationAndDate.value, "Quảng Ninh, ngày 20 tháng 10 năm 2026");
+    assert.equal(result.blocks?.find(block => block.id === "party-marker")?.role, "header");
+    assert.equal(result.unclassified.length, 0, "Mọi dòng đầu trang đã có vùng sở hữu; không làm mất khối nguồn");
+  });
+
+  await runTest("SEP-22", "Giữ chân trang sau phụ lục để người dùng phân định", () => {
+    const lines = [
+      "QUYẾT ĐỊNH", "Về việc ban hành quy định", "Nội dung chính.",
+      "PHỤ LỤC", "Tài liệu đính kèm.", "Nơi nhận:", "- Lưu: VT", "CHỦ TỊCH", "Nguyễn Văn A",
+    ];
+    const blocks: SourceBlock[] = lines.map((text, index) => ({
+      id: `block-${index}`, index, kind: "paragraph", text, html: `<p>${text}</p>`, role: "unclassified",
+    }));
+    const result = segmentSourceBlocks(blocks, { fileType: "docx", standardType: "administrative" });
+    assert.deepEqual(result.appendices[0]?.blocks.map(block => block.text), ["PHỤ LỤC", "Tài liệu đính kèm."],
+      "Recipient lines must not be absorbed into appendix content");
+    assert.equal(result.appendices[0]?.extractionStatus, "needs_review");
+    assert.ok(result.unclassified.some(block => block.text === "Nơi nhận:"));
+    assert.equal(result.fields.signName.value, null, "Signer ownership after appendix needs human review");
+  });
+
+  await runTest("SEP-23", "Ràng buộc ngữ cảnh dấu sao HD05: dấu sao độc lập hoặc ngoài cụm đầu trang không bị ép thành header", () => {
+    // Case 1: Standalone asterisk at the very top (index 0) without issuing org
+    const topAsteriskBlocks: SourceBlock[] = [
+      { id: "b0", index: 0, kind: "paragraph", text: "*", role: "unclassified" },
+      { id: "b1", index: 1, kind: "paragraph", text: "KẾ HOẠCH BỒI DƯỠNG CÁN BỘ", role: "unclassified" },
+      { id: "b2", index: 2, kind: "paragraph", text: "Nội dung kế hoạch chi tiết.", role: "unclassified" },
+    ];
+    const resTop = segmentSourceBlocks(structuredClone(topAsteriskBlocks), { fileType: "docx", standardType: "party" });
+    assert.notEqual(resTop.blocks?.find(b => b.id === "b0")?.role, "header", "Dấu sao đầu văn bản không có cơ quan ban hành phía trước không được nhận diện là header");
+
+    // Case 2: Standalone asterisk in administrative mode (never treated as party header asterisk)
+    const adminAsteriskBlocks: SourceBlock[] = [
+      { id: "b0", index: 0, kind: "paragraph", text: "BỘ TÀI CHÍNH", role: "unclassified" },
+      { id: "b1", index: 1, kind: "paragraph", text: "*", role: "unclassified" },
+      { id: "b2", index: 2, kind: "paragraph", text: "Số: 12/TB-BTC", role: "unclassified" },
+      { id: "b3", index: 3, kind: "paragraph", text: "THÔNG BÁO", role: "unclassified" },
+    ];
+    const resAdmin = segmentSourceBlocks(structuredClone(adminAsteriskBlocks), { fileType: "docx", standardType: "administrative" });
+    assert.notEqual(resAdmin.blocks?.find(b => b.id === "b1")?.role, "header", "Chế độ hành chính không áp dụng quy tắc dấu sao đầu trang của Đảng");
+
+    // Case 3: Standalone asterisk inside body (e.g. footnote or divider)
+    const bodyAsteriskBlocks: SourceBlock[] = [
+      { id: "b0", index: 0, kind: "paragraph", text: "ĐẢNG ỦY KHỐI DOANH NGHIỆP", role: "unclassified" },
+      { id: "b1", index: 1, kind: "paragraph", text: "Số: 09-QĐ/ĐU", role: "unclassified" },
+      { id: "b2", index: 2, kind: "paragraph", text: "QUYẾT ĐỊNH", role: "unclassified" },
+      { id: "b3", index: 3, kind: "paragraph", text: "Ban hành quy chế", role: "unclassified" },
+      { id: "b4", index: 4, kind: "paragraph", text: "*", role: "unclassified" },
+      { id: "b5", index: 5, kind: "paragraph", text: "Điều 1. Phạm vi điều chỉnh", role: "unclassified" },
+    ];
+    const resBody = segmentSourceBlocks(structuredClone(bodyAsteriskBlocks), { fileType: "docx", standardType: "party" });
+    assert.notEqual(resBody.blocks?.find(b => b.id === "b4")?.role, "header", "Dấu sao nằm trong phần thân văn bản không bị kéo vào header");
+  });
+
   console.log("\n==================================================================");
   console.log(" ĐÃ CHẠY CÁC KIỂM THỬ PHÂN VÙNG CẤU TRÚC");
   console.log("==================================================================\n");

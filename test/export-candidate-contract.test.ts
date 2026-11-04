@@ -115,4 +115,82 @@ describe("Task 4: Export Candidate Gate Contract (C01, B05, B06)", () => {
     assert.equal(observed.downloads, 0, "Blocked candidate must not trigger download");
     assert.match(observed.error, /không tạo được tệp|không vượt qua kiểm tra toàn vẹn/, "Must report integrity reject");
   });
+
+  it("Task 3: Out-of-order async candidate generation, invalidation on edit/source switch, and review-only filename contract", async () => {
+    let resolveFirst!: (bytes: Uint8Array) => void;
+    let resolveSecond!: (bytes: Uint8Array) => void;
+    let callCount = 0;
+
+    const manager = createExportCandidateManager(() => {
+      callCount++;
+      if (callCount === 1) {
+        return new Promise<Uint8Array>((resolve) => { resolveFirst = resolve; });
+      }
+      return new Promise<Uint8Array>((resolve) => { resolveSecond = resolve; });
+    });
+
+    const makeInput = (bodyHtml: string): ExportCandidateSnapshot => ({
+      doc: {
+        orgHeader1: "", orgHeader2: "CƠ QUAN KIỂM THỬ", nationalHeader1: "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM", nationalHeader2: "Độc lập - Tự do - Hạnh phúc",
+        locationAndDate: "Hà Nội, ngày 20 tháng 10 năm 2026", documentType: "THÔNG BÁO", referenceNumber: "Số: 01/TB",
+        subject: "Trích yếu", bodyHtml, signTitle: "GIÁM ĐỐC", signName: "Nguyễn Văn A", recipients: "Lưu: VT.",
+      },
+      standardType: "state",
+      reviewBlocks: [],
+      structuredImport: null,
+    });
+
+    const inputA = makeInput("<p>Phiên bản A (cũ)</p>");
+    const inputB = makeInput("<p>Phiên bản B (mới)</p>");
+
+    const promiseA = manager.prepare(inputA);
+    const promiseB = manager.prepare(inputB);
+
+    const xmlB = '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Phiên bản B (mới)</w:t></w:r></w:p></w:body></w:document>';
+    const xmlA = '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Phiên bản A (cũ)</w:t></w:r></w:p></w:body></w:document>';
+
+    // B resolves BEFORE A (out-of-order async completion)
+    resolveSecond(await makeZipBytes("word/document.xml", xmlB));
+    const resultB = await promiseB;
+    assert.ok(resultB, "Newer candidate B must resolve");
+    assert.equal(manager.current, resultB, "Manager must hold candidate B");
+    assert.equal(manager.isCurrent(resultB, inputB), true, "Candidate B must be current for inputB");
+    assert.equal(manager.isCurrent(resultB, inputA), false, "Candidate B must not match stale inputA");
+
+    // Now stale request A resolves late
+    resolveFirst(await makeZipBytes("word/document.xml", xmlA));
+    const resultA = await promiseA;
+    assert.equal(resultA, null, "Late out-of-order candidate A must resolve to null");
+    assert.equal(manager.current, resultB, "Late candidate A must never overwrite newer candidate B");
+
+    // Review-only filename check ("-DOI_CHIEU_CHUA_XAC_NHAN-")
+    const s = fs.readFileSync("src/App.tsx", "utf8");
+    const startFn = s.indexOf("function formatDocxDownloadFilename(");
+    const endFn = s.indexOf("  const handleDownloadOriginalFile = async () => {", startFn);
+    const reviewCode = transformSync(s.slice(startFn, endFn), { loader: "ts", target: "es2022", format: "esm" }).code;
+    const downloadedFiles: Array<{ bytes: Uint8Array; filename: string }> = [];
+    const deps = {
+      candidateManager: { current: manager },
+      workspaceSnapshotRef: { current: inputB },
+      uploadedFileName: "Thong_bao_thu_nghiem.docx",
+      doc: inputB.doc,
+      isCandidateEligibleForReviewDownload: (c: any) => Boolean(c?.reviewDownloadable && c?.canRenderDiagnostic),
+      buildCandidateInput: (snap: any) => snap,
+      canEnterStep: () => true,
+      standardType: "state",
+      downloadDocxUint8Array: (bytes: Uint8Array, filename: string) => { downloadedFiles.push({ bytes, filename }); },
+      setErrorMsg: () => {},
+      setSuccessMsg: () => {},
+    };
+    const fnReview = new Function("deps", "const {" + Object.keys(deps).join(",") + "} = deps;\n" + reviewCode + "\nreturn downloadCandidateForReview;")(deps);
+    await fnReview();
+    assert.equal(downloadedFiles.length, 1, "Review download must trigger for review-eligible candidate");
+    assert.match(downloadedFiles[0].filename, /-DOI_CHIEU_CHUA_XAC_NHAN-ND30\.docx$/, "Review filename must clearly mark unverified status");
+    assert.deepEqual(downloadedFiles[0].bytes, resultB.bytes, "Review download must use exact candidate bytes");
+
+    // Invalidate on edit / source change
+    manager.invalidate();
+    assert.equal(manager.current, null, "invalidate() must immediately clear current candidate");
+    assert.equal(manager.isCurrent(resultB, inputB), false, "Invalidated candidate is no longer current");
+  });
 });

@@ -28,7 +28,14 @@ test('Workspace AI sends one selected paragraph and candidate gate explains unsu
   await c.evaluate('(()=>{const original=window.fetch.bind(window);window.__refineCalls=[];window.fetch=(input,init)=>{const url=typeof input==="string"?input:(input&&input.url)||"";if(url.includes("/api/ai/refine-text")){const body=JSON.parse(init.body);return new Promise(resolve=>window.__refineCalls.push({body,resolve:payload=>resolve(new Response(JSON.stringify(payload),{status:200,headers:{"Content-Type":"application/json"}}))}));}return original(input,init);};})()');
   await visiblePointer(c,'.df-workspace-sidebar button[data-step="2"]');
   assert.equal(await c.waitForFunction('document.querySelector("[data-ai-target-node]")!==null'),true);
-  await visiblePointer(c,'button[data-ai-target-node]');
+  await c.evaluate('document.querySelector(".df-step-context-toggle")?.click()');
+  assert.equal(await c.waitForFunction('(()=>{const e=document.querySelector("[data-workspace-node-capability=\\"editable\\"] [contenteditable=\\"true\\"]");return Boolean(e&&e.getClientRects().length)})()'),true);
+  const editorPoint=await c.evaluate<any>('(()=>{const r=document.querySelector("[data-workspace-node-capability=\\"editable\\"] [contenteditable=\\"true\\"]")?.getBoundingClientRect();return r?{x:r.left+Math.min(24,r.width/2),y:r.top+Math.min(16,r.height/2)}:null})()');
+  assert.ok(editorPoint);
+  await c.send('Input.dispatchMouseEvent',{type:'mousePressed',x:editorPoint.x,y:editorPoint.y,button:'left',clickCount:1});
+  await c.send('Input.dispatchMouseEvent',{type:'mouseReleased',x:editorPoint.x,y:editorPoint.y,button:'left',clickCount:1});
+  assert.equal(await c.waitForFunction('document.querySelector("button[data-ai-action=\\"proofread\\"]")?.disabled===false'),true);
+  await visiblePointer(c,'button[data-ai-action="proofread"]');
   assert.equal(await c.waitForFunction('window.__refineCalls.length===1'),true);
   const payload=await c.evaluate<any>('window.__refineCalls[0].body');assert.equal(payload.text,'<p>Đoạn đầu</p>');assert.doesNotMatch(payload.text,/BẢNG NGUỒN|Đoạn cuối|<img/);
   await c.evaluate('window.__refineCalls[0].resolve({success:true,source:"mock_fixture",refined:"<p>Đoạn đầu đã sửa</p>"})');

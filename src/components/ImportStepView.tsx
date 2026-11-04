@@ -34,9 +34,12 @@ import type { DocumentState, TemplatePreset } from "../App.tsx";
 import { COMPANY_HEADER_PROFILE_ID } from "../canonical/nd30/companyHeader.ts";
 import { COMPANY_HEADER_HD05_PROFILE_ID } from "../canonical/hd05/companyHeaderHD05.ts";
 import type { SourceBlock, StructuredImport } from "../shared/schemas/document.schema.ts";
+import type { UnsupportedFeature } from "../shared/importFidelity.ts";
 import type { OriginalDocumentSnapshot } from "../utils/draftStore.ts";
 import type { PartitionAiProviderKind } from "../shared/partitionAiProtocol.ts";
 import type { ChatGPTLocalStatus } from "../shared/chatgptPlanProtocol.ts";
+import { aiProviderDisplayName } from "../utils/aiProviderLabels.ts";
+import { getImportGroupAttention, getSourceVisualFailureMessage, semanticLabelForOfficeWorker } from "../utils/step1OfficeWorkerDisplay.ts";
 import type { FullDocumentAiCapability, VisualEvidenceManifest } from "../shared/fullDocumentAiProtocol.ts";
 import type { SemanticDecisionStatus } from "../shared/semanticDocument.ts";
 import { FullTextReviewPanel, type FullTextReviewPanelProps } from "./FullTextReviewPanel.tsx";
@@ -46,6 +49,7 @@ import {
   deriveSourceMismatch,
   docTypeDecisionCovers,
   findAppliedTemplate,
+  isImportedFileSource,
   type DocTypeDecision,
 } from "../utils/sourceMismatch.ts";
 
@@ -112,12 +116,19 @@ export interface SourceVisualUiState {
   reason?: string;
 }
 
+export type ImportStepFlow = "upload" | "create" | null;
+export type ImportStepPhase = "choice" | "upload" | "recognition" | "metadata" | "regime" | "doctype" | "template" | "ready";
+
 export interface ImportStepViewProps {
   regime: "state" | "party";
   onRequestRegimeSwitch: (target: "state" | "party") => void;
   doc: DocumentState;
   templates: TemplatePreset[];
   sourceOrigin: "none" | "uploaded_file" | "system_template";
+  flow: ImportStepFlow;
+  phase: ImportStepPhase;
+  onFlowChange: (flow: ImportStepFlow) => void;
+  onPhaseChange: (phase: ImportStepPhase) => void;
   onCreateDocument: (selection: {regime:"state"|"party";documentType:string;templateId?:string;headerProfile:"company"|"generic"}) => boolean;
   onFieldChange: (field: keyof DocumentState, value: string) => void;
   onFileUpload: (file: File) => void;
@@ -145,7 +156,7 @@ export interface ImportStepViewProps {
   onAiPartitionConsentChange: (enabled: boolean) => void;
   isCheckingPartitions: boolean;
   partitionCheckNotice: string;
-  partitionCheckSource: "gemini_ai" | "chatgpt_ai" | "rule_fallback" | "mixed" | "unverified";
+  partitionCheckSource: "gemini_ai" | "openai_api_ai" | "chatgpt_ai" | "rule_fallback" | "mixed" | "unverified";
   partitionProgress: {
     processedChunks: number;
     totalChunks: number;
@@ -176,6 +187,10 @@ export function ImportStepView({
   doc,
   templates,
   sourceOrigin,
+  flow,
+  phase,
+  onFlowChange,
+  onPhaseChange,
   onCreateDocument,
   onFieldChange,
   onFileUpload,
@@ -223,12 +238,9 @@ export function ImportStepView({
   const [uploadError, setUploadError] = useState("");
   const [showDiffModal, setShowDiffModal] = useState(false);
   const [contextOpen, setContextOpen] = useState(false);
-  const [flow,setFlow]=useState<"upload"|"create"|null>(null);
-  const [phase,setPhase]=useState<"choice"|"upload"|"recognition"|"metadata"|"regime"|"doctype"|"template"|"ready">("choice");
   const [draftRegime,setDraftRegime]=useState<"state"|"party">(regime);
   const [draftDocType,setDraftDocType]=useState("");
   const [draftProfile,setDraftProfile]=useState<"company"|"generic">("company");
-  const [pendingUpload,setPendingUpload]=useState(false);
   const [activeSourcePage,setActiveSourcePage]=useState(1);
   const [sourcePagePreview,setSourcePagePreview]=useState<string | null>(null);
   const [sourcePagePreviewError,setSourcePagePreviewError]=useState("");
@@ -263,12 +275,6 @@ export function ImportStepView({
     return()=>{controller.abort();if(objectUrl)URL.revokeObjectURL(objectUrl);};
   },[sourceVisualState.status,sourceVisualState.manifest,sourceVisualState.renderId,sourceVisualState.sourceSha256,sourceVisualState.sourceGeneration,activeSourcePage]);
 
-  useEffect(()=>{
-    if(pendingUpload&&sourceOrigin==="uploaded_file"&&!isUploading&&uploadedFileName){
-      setPendingUpload(false);
-      setPhase("recognition");
-    }
-  },[pendingUpload,sourceOrigin,isUploading,uploadedFileName]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -286,7 +292,6 @@ export function ImportStepView({
       return;
     }
     setUploadError("");
-    setPendingUpload(true);
     onFileUpload(file);
   };
 
@@ -298,7 +303,12 @@ export function ImportStepView({
   const blocksCount = uploadedBlocks.length;
   const appendicesCount = structuredImport?.appendices.length ?? doc.appendices?.length ?? 0;
   const filteredTemplates = templates.filter((t) => t.type === (draftRegime === "party" ? "party" : "state") && t.defaultData.documentType.toUpperCase().startsWith(draftDocType));
-  const hasImportedFile = sourceOrigin === "uploaded_file" || originalSnapshot?.sourceType === "uploaded_file" || Boolean(uploadedFileName || blocksCount > 0);
+  const hasImportedFile = isImportedFileSource({
+    sourceOrigin,
+    originalSnapshot,
+    fileName: uploadedFileName,
+    uploadedBlockCount: blocksCount,
+  });
   const hasUploadedSource = sourceOrigin === "uploaded_file" && hasImportedFile;
   const detection = structuredImport?.regimeDetection ?? null;
   const sourceTypeEvidence = detection?.documentType ?? null;
@@ -384,7 +394,7 @@ export function ImportStepView({
     { id: "03", title: "Số, ký hiệu", ...summarizeFields(["referenceNumber"], doc.referenceNumber) },
     { id: "04", title: "Địa danh, ngày tháng", ...summarizeFields(["locationAndDate"], doc.locationAndDate) },
     { id: "05", title: "Tên loại và trích yếu", ...summarizeFields(["documentType", "subject"], [doc.documentType, doc.subject].filter(Boolean).join(" · ")) },
-    { id: "06", title: "Nội dung văn bản (Body)", value: hasSelectedSource && (structuredImport?.body?.html || doc.bodyHtml) ? `${structuredImport?.body?.sourceBlockIds.length ?? blocksCount} khối nội dung` : hasSelectedSource ? "Chưa tìm thấy nội dung Body" : "Chưa có nguồn tài liệu", status: !hasSelectedSource ? "no-source" : (structuredImport?.body?.html || doc.bodyHtml) ? "identified" : "missing" },
+    { id: "06", title: "Nội dung văn bản", value: hasSelectedSource && (structuredImport?.body?.html || doc.bodyHtml) ? `${structuredImport?.body?.sourceBlockIds.length ?? blocksCount} khối nội dung` : hasSelectedSource ? "Chưa tìm thấy nội dung văn bản" : "Chưa có nguồn tài liệu", status: !hasSelectedSource ? "no-source" : (structuredImport?.body?.html || doc.bodyHtml) ? "identified" : "missing" },
     { id: "07", title: "Quyền hạn, chức vụ, chữ ký", ...summarizeFields(["signTitle", "signName"], [doc.signTitle, doc.signName].filter(Boolean).join(" · ")) },
     {
       id: "08",
@@ -396,7 +406,8 @@ export function ImportStepView({
   ];
   const identifiedGroupsCount = importGroups.filter((group) => group.status === "identified" || (group.status === "needs-review" && group.value !== "Cần đối chiếu nguồn")).length;
   const groupsNeedingReview = importGroups.filter((group) => group.status === "needs-review").length;
-  const aiSourceLabel = partitionCheckSource === "gemini_ai" ? "Gemini đã rà soát · chờ duyệt" : partitionCheckSource === "chatgpt_ai" ? "ChatGPT plan đã rà soát · chờ duyệt" : partitionCheckSource === "mixed" ? "AI và quy tắc · chờ duyệt" : partitionCheckSource === "rule_fallback" ? "Quy tắc nội bộ" : "Chưa kiểm tra";
+  const importGroupAttention = getImportGroupAttention(importGroups);
+  const aiSourceLabel = partitionCheckSource === "gemini_ai" ? "Gemini đã rà soát · chờ duyệt" : partitionCheckSource === "openai_api_ai" ? "OpenAI API đã rà soát · chờ duyệt" : partitionCheckSource === "chatgpt_ai" ? "ChatGPT plan đã rà soát · chờ duyệt" : partitionCheckSource === "mixed" ? "AI và quy tắc · chờ duyệt" : partitionCheckSource === "rule_fallback" ? "Quy tắc nội bộ" : "Chưa kiểm tra";
   const canOpenSourceReview = hasSelectedSource && Boolean(onOpenReviewModal);
   const flowSourceReady=flow==="upload"?sourceOrigin==="uploaded_file":flow==="create"?sourceOrigin==="system_template":false;
   const continueDisabled = !flowSourceReady||(!canContinue && !canOpenSourceReview);
@@ -407,9 +418,9 @@ export function ImportStepView({
     : sourceVisualState.status === "complete"
       ? sourceVisualState.manifest?.complete ? "Đã dựng đủ trang để xem bố cục." : "Đã dựng một phần trang; cần kiểm tra lại."
       : sourceVisualState.status === "incomplete"
-        ? "Chưa dựng đủ trang để đối chiếu."
+        ? getSourceVisualFailureMessage("incomplete")
         : sourceVisualState.status === "error" || sourceVisualState.status === "unavailable"
-          ? "Chưa thể xem bố cục trang trên máy này."
+          ? getSourceVisualFailureMessage(sourceVisualState.status)
           : "Chưa xem bố cục trang gốc.";
   const handleContinue = () => {
     if (!flowSourceReady) return;
@@ -417,17 +428,15 @@ export function ImportStepView({
     else if (canOpenSourceReview) onOpenReviewModal?.();
   };
   const selectFlow=(next:"upload"|"create")=>{
-    setFlow(next);
-    setPhase(next==="upload"?"upload":"regime");
+    onFlowChange(next);
+    onPhaseChange(next==="upload"?"upload":"regime");
     setUploadError("");
     setDraftDocType("");
   };
   const createFromChoice=(templateId?:string)=>{
     if(!draftDocType)return;
-    if(onCreateDocument({regime:draftRegime,documentType:draftDocType,templateId,headerProfile:draftProfile}))setPhase("ready");
+    if(onCreateDocument({regime:draftRegime,documentType:draftDocType,templateId,headerProfile:draftProfile}))onPhaseChange("ready");
   };
-  const phaseLabels=flow==="upload"?["Tải tệp","Xem nhận diện","Xác nhận thông tin","Sẵn sàng soạn"]:["Hệ thể thức","Loại văn bản","Chọn mẫu","Sẵn sàng soạn"];
-  const phaseIndex=flow==="upload"?(["upload","recognition","metadata","ready"] as const).indexOf(phase as "upload"):(["regime","doctype","template","ready"] as const).indexOf(phase as "regime");
 
   return (
     <div
@@ -453,14 +462,9 @@ export function ImportStepView({
         className="hidden"
       />
 
-      {flow&&<div className="df-import-flow-progress" aria-label="Tiến trình trong Bước 1">
-        {phaseLabels.map((label,index)=><span key={label} className={index===phaseIndex?"is-current":index<phaseIndex?"is-done":""}><b>{index<phaseIndex?<Check className="w-3 h-3"/>:index+1}</b>{label}</span>)}
-        <button type="button" onClick={()=>{setFlow(null);setPhase("choice");}}><ArrowLeft className="w-3.5 h-3.5"/> Đổi cách bắt đầu</button>
-      </div>}
-
       {phase==="choice"&&<section className="df-import-entry" aria-labelledby="df-step1-entry-title">
         <div className="df-import-entry-heading"><span>BƯỚC ĐẦU TIÊN</span><h2 id="df-step1-entry-title">Bạn muốn bắt đầu như thế nào?</h2><p>Chọn một cách để DocForm chỉ hiện những thông tin cần thiết tiếp theo.</p></div>
-        {sourceOrigin!=="none"&&<div className="df-import-resume"><span><strong>Đang mở: {uploadedFileName||doc.documentType}</strong><small>{sourceOrigin==="uploaded_file"?"Tệp đã tải và nhận diện":"Văn bản tạo từ mẫu"}</small></span><button type="button" onClick={()=>{setFlow(sourceOrigin==="uploaded_file"?"upload":"create");setPhase(sourceOrigin==="uploaded_file"?(canContinue?"ready":"recognition"):"ready");}}>Tiếp tục tài liệu hiện tại <ArrowRight size={15}/></button></div>}
+        {sourceOrigin!=="none"&&<div className="df-import-resume"><span><strong>Đang mở: {uploadedFileName||doc.documentType}</strong><small>{sourceOrigin==="uploaded_file"?"Tệp đã tải và nhận diện":"Văn bản tạo từ mẫu"}</small></span><button type="button" onClick={()=>{onFlowChange(sourceOrigin==="uploaded_file"?"upload":"create");onPhaseChange(sourceOrigin==="uploaded_file"?(canContinue?"ready":"recognition"):"ready");}}>Tiếp tục tài liệu hiện tại <ArrowRight size={15}/></button></div>}
         <div className="df-import-entry-options">
           <button type="button" onClick={()=>selectFlow("upload")}><span className="df-import-entry-icon"><Upload/></span><strong>Tải tài liệu có sẵn</strong><small>Đọc DOCX/TXT, nhận diện nội dung và duyệt nguồn trước khi soạn.</small><span className="df-import-entry-link">Tải tài liệu <ArrowRight size={16}/></span></button>
           <button type="button" onClick={()=>selectFlow("create")}><span className="df-import-entry-icon"><Plus/></span><strong>Tạo văn bản mới</strong><small>Chọn hệ thể thức, loại văn bản và mẫu hoặc bắt đầu từ trang trắng.</small><span className="df-import-entry-link">Tạo mới <ArrowRight size={16}/></span></button>
@@ -471,7 +475,7 @@ export function ImportStepView({
       {((flow==="create"&&(phase==="regime"||phase==="template"))||(flow==="upload"&&phase==="metadata"))&&<div id="df-step1-regime" className="df-import-choice-grid grid grid-cols-1 lg:grid-cols-2 gap-3">
         {phase!=="template"&&<>
         <section className="df-import-card bg-white rounded-2xl border border-[#CFD8EA] p-3 shadow-2xs" aria-labelledby="wizard-regime-heading">
-          <span className="df-import-stage-kicker">{choosingNew ? "BƯỚC 1 / 4 · TẠO VĂN BẢN" : "XÁC NHẬN TÀI LIỆU"}</span>
+          <span className="df-import-stage-kicker">{choosingNew ? "CHỌN HỆ THỂ THỨC" : "XÁC NHẬN TÀI LIỆU"}</span>
           <h2 id="wizard-regime-heading" className="text-xs sm:text-sm font-bold text-[#17233D] mb-2">
             Chọn hệ thể thức
           </h2>
@@ -606,7 +610,7 @@ export function ImportStepView({
       {/* 3. Loại văn bản */}
       {((flow==="create"&&phase==="doctype")||(flow==="upload"&&phase==="metadata"))&&<section id="df-step1-document-type" className="df-import-card bg-white rounded-2xl border border-[#CFD8EA] p-3.5 shadow-2xs" aria-labelledby="wizard-doctype-heading">
         <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1 mb-2">
-          {choosingNew&&<span className="df-import-stage-kicker">BƯỚC 2 / 4 · TẠO VĂN BẢN</span>}
+          {choosingNew&&<span className="df-import-stage-kicker">CHỌN LOẠI VĂN BẢN</span>}
           <h2 id="wizard-doctype-heading" className="text-xs sm:text-sm font-bold text-[#17233D]">
             {choosingNew?"Bạn muốn tạo loại văn bản nào?":"Loại văn bản nhận diện"}
           </h2>
@@ -801,8 +805,11 @@ export function ImportStepView({
                   <ul className="list-disc pl-4">{Object.entries(fullDocumentCapability.providers["chatgpt-plan"].features).map(([key,value])=><li key={`chatgpt-${key}`}><code>{key}</code>: <strong>{value.status}</strong> — {value.reason}</li>)}</ul>
                   <p>Gemini API · văn bản: {fullDocumentCapability.providers.gemini.textInput.status}; manifest: {fullDocumentCapability.providers.gemini.fullTextManifest.status}; tier: {fullDocumentCapability.providers.gemini.dataUseTier?.tier??"chưa xác minh"}.</p>
                   <ul className="list-disc pl-4">{Object.entries(fullDocumentCapability.providers.gemini.features).map(([key,value])=><li key={`gemini-${key}`}><code>{key}</code>: <strong>{value.status}</strong> — {value.reason}</li>)}</ul>
+                  <p>OpenAI API · văn bản: {fullDocumentCapability.providers["openai-api"].textInput.status}; manifest: {fullDocumentCapability.providers["openai-api"].fullTextManifest.status}; tier: {fullDocumentCapability.providers["openai-api"].dataUseTier?.tier??"chưa xác minh"}.</p>
+                  <ul className="list-disc pl-4">{Object.entries(fullDocumentCapability.providers["openai-api"].features).map(([key,value])=><li key={`openai-${key}`}><code>{key}</code>: <strong>{value.status}</strong> — {value.reason}</li>)}</ul>
                   <p>{fullDocumentCapability.providers["chatgpt-plan"].oauthFileInputProbeReason}</p>
                   <p>{fullDocumentCapability.providers.gemini.dataUseTier?.reason??"Chưa xác minh cấu hình Free Tier."}</p>
+                  <p>{fullDocumentCapability.providers["openai-api"].dataUseTier?.reason??"Chưa xác minh cấu hình dữ liệu OpenAI API."}</p>
                 </div>
               </details>
             </>:<p className="mt-1">Chưa lấy được trạng thái nhà cung cấp từ máy chủ local.</p>}
@@ -811,21 +818,21 @@ export function ImportStepView({
           {fullTextReview && <FullTextReviewPanel {...fullTextReview} />}
         </details>
 
-        <details id="df-step1-semantic-review" className="rounded-xl border border-[#CFD8EA] bg-white p-3" aria-label="Các đơn vị nội dung Body và phụ lục cần xem">
+        <details id="df-step1-semantic-review" className="rounded-xl border border-[#CFD8EA] bg-white p-3" aria-label="Các đơn vị nội dung thân văn bản và phụ lục cần xem">
           <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-2">
-            <span id="semantic-review-heading" className="text-sm font-bold text-[#17233D]">Body và phụ lục</span>
+            <span id="semantic-review-heading" className="text-sm font-bold text-[#17233D]">Thân văn bản và phụ lục</span>
             <span className="text-xs text-[#52607A]">{semanticConfirmedCount} đã xác nhận · {semanticPendingCount} chờ bạn xem</span>
             <span className="text-xs font-semibold text-[#5145C0]">{semanticPendingCount>0?"Xem các mục cần duyệt":"Xem kết quả"}</span>
           </summary>
           <p className="mt-2 text-xs text-[#52607A]">Các nhãn chưa được xác nhận sẽ không tự áp dụng quy tắc. Bạn có thể xem trích đoạn rồi xác nhận hoặc từ chối từng mục.</p>
           <div className="mt-2 max-h-80 space-y-2 overflow-y-auto" aria-label="Các đơn vị ngữ nghĩa cần rà soát">
-            {semanticReviewRows.length===0?<p className="rounded-lg bg-slate-50 p-2 text-xs text-slate-600">Chưa có khối Body/phụ lục đủ chứng cứ để phân loại.</p>:semanticReviewRows.map(row=><article key={row.id} className="rounded-lg border border-slate-200 p-2.5" data-semantic-unit-id={row.id}>
-              <div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-xs text-[#17233D]">{row.scope==="body"?"Body":`Phụ lục · ${row.appendixTitle??"chưa rõ cha"}`} · {row.label}</strong><span className="text-[10px] font-semibold text-amber-800">{row.status==="user_confirmed"?"Đã xác nhận":row.status==="auto_confirmed"?"Khớp tự động":row.status==="rejected"?"Đã từ chối":row.status==="unsupported"?"Chưa hỗ trợ":"Chờ duyệt"}</span></div>
+            {semanticReviewRows.length===0?<p className="rounded-lg bg-slate-50 p-2 text-xs text-slate-600">Chưa có nội dung thân văn bản hoặc phụ lục đủ căn cứ để phân loại.</p>:semanticReviewRows.map(row=><article key={row.id} className="rounded-lg border border-slate-200 p-2.5" data-semantic-unit-id={row.id}>
+              <div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-xs text-[#17233D]">{row.scope==="body"?"Thân văn bản":`Phụ lục · ${row.appendixTitle??"chưa xác định vị trí"}`} · {semanticLabelForOfficeWorker(row.label)}</strong><span className="text-[10px] font-semibold text-amber-800">{row.status==="user_confirmed"?"Đã xác nhận":row.status==="auto_confirmed"?"Khớp tự động":row.status==="rejected"?"Đã từ chối":row.status==="unsupported"?"Chưa hỗ trợ":"Chờ duyệt"}</span></div>
               <blockquote className="mt-1 border-l-2 border-slate-300 pl-2 text-xs text-[#3B4663] whitespace-pre-wrap">{row.quote||"(ô nguồn không có chữ)"}</blockquote>
               <p className="mt-1 text-[11px] text-slate-600">{row.reason}</p>
               {row.rules.length>0&&<p className="mt-1 text-[11px] text-slate-600">Quy tắc liên quan: {row.rules.map(rule=>rule.title).join(" · ")}</p>}
               {row.rules.length>0&&(row.status==="user_confirmed"||row.status==="auto_confirmed")&&(row.rulesApplied
-                ?<p className="mt-1 text-[10px] font-semibold text-emerald-800" role="status">Đã áp dụng quy tắc vào đúng đoạn Body. Bản xuất sẽ dùng các giá trị này.</p>
+                ?<p className="mt-1 text-[10px] font-semibold text-emerald-800" role="status">Đã áp dụng quy tắc vào đúng đoạn thân văn bản. Bản xuất sẽ dùng các giá trị này.</p>
                 :row.ruleApplyAvailable
                   ?<button type="button" onClick={()=>onApplySemanticRules(row.id)} className="mt-2 rounded border border-[#6255E8] bg-[#F6F5FF] px-2 py-1 text-[11px] font-semibold text-[#5145C0]">Áp dụng quy tắc vào đoạn soạn</button>
                   :<p className="mt-1 text-[10px] text-amber-800">Chưa thể áp dụng: {row.ruleApplyReason??"neo nguồn chưa đủ chính xác để sửa một đoạn riêng lẻ."}</p>)}
@@ -863,7 +870,7 @@ export function ImportStepView({
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
               <div className="text-xs">
                 <span className="text-slate-600">Nhà cung cấp mặc định: </span>
-                <strong className="text-[#17233D]">{partitionAiProvider === "chatgpt" ? "ChatGPT plan · local" : "Gemini · API máy chủ local"}</strong>
+                <strong className="text-[#17233D]">{aiProviderDisplayName(partitionAiProvider)}</strong>
                 {partitionAiProvider === "chatgpt" && <span className={`ml-2 ${chatGPTStatus.enabled && chatGPTStatus.session.status === "connected" && chatGPTStatus.session.sharing ? "text-emerald-700" : "text-amber-800"}`} role="status">
                   {chatGPTStatus.enabled && chatGPTStatus.session.status === "connected" && chatGPTStatus.session.sharing ? "Đã kết nối" : "Chưa sẵn sàng"}
                 </span>}
@@ -883,14 +890,14 @@ export function ImportStepView({
                 className="mt-0.5 accent-[#6255E8]"
                 aria-describedby="ai-partition-consent-details"
               />
-              <span>{partitionAiProvider === "chatgpt" ? "Cho phép gửi nguồn cho ChatGPT plan" : "Cho phép gửi nguồn cho Gemini"}</span>
+              <span>Cho phép gửi nguồn cho {aiProviderDisplayName(partitionAiProvider)}</span>
             </label>
             <p id="ai-partition-consent-details" className="mt-1 pl-5 text-[10.5px] leading-relaxed text-[#52607A]">
-              Khi bật, toàn bộ văn bản khối và chữ trong các ô bảng cùng ID/tọa độ nguồn được gửi qua máy chủ local đến {partitionAiProvider === "chatgpt" ? "OpenAI bằng ChatGPT plan đã cấp quyền" : "Gemini"}. Không gửi tệp, tên tệp, HTML/XML hoặc role parser. Gợi ý không tự áp dụng; phân vùng quy tắc vẫn chạy độc lập. Mặc định tắt sau khi tải lại trang; mỗi tệp nguồn cần được bật cho phép riêng.
+              Khi bật, toàn bộ văn bản khối và chữ trong các ô bảng cùng ID/tọa độ nguồn được gửi qua máy chủ local đến {partitionAiProvider === "chatgpt" ? "OpenAI qua ChatGPT plan đã cấp quyền" : aiProviderDisplayName(partitionAiProvider)}. Không gửi tệp, tên tệp, HTML/XML hoặc role parser. Gợi ý không tự áp dụng; phân vùng quy tắc vẫn chạy độc lập. Mặc định tắt sau khi tải lại trang; mỗi tệp nguồn cần được bật cho phép riêng.
             </p>
             {uploadedFileName && partitionCheckNotice && (
               <div className="mt-1.5 pl-5 text-[10.5px]" role="status" data-testid="ai-partition-status">
-                <span className={`font-semibold ${partitionCheckSource === "gemini_ai" || partitionCheckSource === "chatgpt_ai" || partitionCheckSource === "mixed" ? "text-emerald-700" : "text-amber-700"}`}>
+                <span className={`font-semibold ${partitionCheckSource === "gemini_ai" || partitionCheckSource === "openai_api_ai" || partitionCheckSource === "chatgpt_ai" || partitionCheckSource === "mixed" ? "text-emerald-700" : "text-amber-700"}`}>
                   {isCheckingPartitions ? "Đang rà soát" : aiSourceLabel === "Chưa kiểm tra" ? "Chưa kiểm tra" : partitionCheckSource === "rule_fallback" ? "Chỉ quy tắc nội bộ" : aiSourceLabel}
                 </span>
                 <span className="text-[#52607A]"> · {partitionCheckNotice}</span>
@@ -945,16 +952,55 @@ export function ImportStepView({
                 {blocksCount > 0 ? ` · ${blocksCount} khối nguồn` : ""}
               </div>
 
+              {/* Cảnh báo đặc điểm bảng phức tạp (bảng lồng, hyperlink, vMerge) */}
+              {(() => {
+                const allUnsupportedFeatures: UnsupportedFeature[] = [
+                  ...(structuredImport?.importFidelityManifest?.unsupportedFeatures || []),
+                  ...(uploadedBlocks || []).flatMap((b: SourceBlock) => b.unsupportedFeatures || []),
+                ];
+                const unsupportedFeatures = Array.from(new Map(allUnsupportedFeatures.map(feature => [
+                  `${feature.code}:${feature.tableId ?? ""}:${feature.blockId ?? ""}:${feature.description}`,
+                  feature,
+                ])).values());
+                if (unsupportedFeatures.length === 0) return null;
+                return (
+                  <div className="mt-2 p-2.5 rounded-lg border border-amber-200 bg-amber-50 text-[11.5px] text-amber-900 space-y-1">
+                    <div className="font-semibold flex items-center gap-1.5 text-amber-800">
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                      <span>Cần đối chiếu {unsupportedFeatures.length} phần của tài liệu với tệp gốc</span>
+                    </div>
+                    <p className="text-[11px] text-amber-700">
+                      Một số phần có thể chưa hiển thị hoặc chỉnh sửa đúng như tệp gốc. Hãy đối chiếu trước khi tiếp tục.
+                    </p>
+                    <details className="text-[10.5px] text-amber-800 pt-0.5">
+                      <summary className="cursor-pointer font-medium hover:underline">Xem chi tiết ({unsupportedFeatures.length})</summary>
+                      <ul className="list-disc pl-4 mt-1 space-y-0.5 font-mono text-[10px]">
+                        {unsupportedFeatures.map((f: UnsupportedFeature, idx: number) => (
+                          <li key={idx}>{f.description} ({f.code})</li>
+                        ))}
+                      </ul>
+                    </details>
+                  </div>
+                );
+              })()}
+
               <div className="df-import-source-tools">
                 <details className="df-import-disclosure df-import-source-details">
-                  <summary>Xem nhanh nội dung nguồn <span>Mở khi cần</span></summary>
+                  <summary>{originalSnapshot?.fileType === "txt" ? "Xem nhanh nội dung tệp đã đọc" : "Xem nhanh phần thân bài đã tách"} <span>Mở khi cần</span></summary>
+                  <p className="text-[11px] text-slate-500 italic px-3 pt-2">
+                    {originalSnapshot?.fileType === "txt"
+                      ? "* Tệp TXT không có bố cục trang; khung này hiển thị các dòng đã đọc, giữ dòng trống và thụt đầu dòng."
+                      : "* Lưu ý: Khung này chỉ hiển thị phần thân bài đã bóc tách, không bao gồm tiêu đề, nơi nhận và khối chữ ký."}
+                  </p>
                   <div
                     id="wizard-source-preview"
                     data-testid="wizard-source-preview"
                     className="max-h-[220px] overflow-y-auto p-3 text-[13px] leading-relaxed text-[#17233D] custom-scroll bg-white"
                     style={{ fontFamily: '"Times New Roman", Times, serif' }}
                   >
-                    {structuredImport?.body?.html ? (
+                    {originalSnapshot?.fileType === "txt" && uploadedBlocks.length > 0 ? (
+                      <div className="prose prose-xs max-w-none text-[#17233D]" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(uploadedBlocks.map(block => block.html || `<p>${block.text}</p>`).join("")) }} />
+                    ) : structuredImport?.body?.html ? (
                       <div className="prose prose-xs max-w-none text-[#17233D]" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(structuredImport.body.html) }} />
                     ) : doc.bodyHtml ? (
                       <div className="prose prose-xs max-w-none text-[#17233D]" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(doc.bodyHtml) }} />
@@ -969,7 +1015,7 @@ export function ImportStepView({
                       onClick={onOpenReviewModal}
                       className="df-import-review-link"
                     >
-                      <span>Đối chiếu nguồn</span>
+                      <span>Rà soát phân vùng nội dung</span>
                       <ExternalLink className="w-3 h-3" />
                     </button>
                   )}
@@ -1064,9 +1110,9 @@ export function ImportStepView({
             <ShieldCheck className="w-4 h-4 text-[#0D9488]" />
             Kết quả nhận diện tài liệu
           </h2>
-          {detection && (
+          {detection && detection.confidence !== "high" && (
             <span className="text-[10.5px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-[#52607A]">
-              Độ tin cậy: {detection.confidence}
+              {detection.confidence === "low" ? "Hãy kiểm tra hệ thể thức" : "Nên kiểm tra hệ thể thức"}
             </span>
           )}
         </div>
@@ -1077,18 +1123,29 @@ export function ImportStepView({
             <span>Nhóm có dữ liệu nhận diện</span>
           </div>
           <div className="df-import-metric" data-metric="appendices">
-            <strong>{String(appendicesCount).padStart(2, "0")}</strong>
+            <strong>{appendicesCount}</strong>
             <span>Phụ lục đã tách</span>
           </div>
           <div className="df-import-metric" data-metric="review">
-            <strong>{String(groupsNeedingReview).padStart(2, "0")}</strong>
+            <strong>{groupsNeedingReview}</strong>
             <span>Nhóm cần xác nhận</span>
           </div>
           <div className="df-import-metric" data-metric="tables">
-            <strong>{String(tablesCount).padStart(2, "0")}</strong>
+            <strong>{tablesCount}</strong>
             <span>Bảng trong nguồn</span>
           </div>
         </div>
+
+        {hasUploadedSource && onOpenReviewModal && <button type="button" className="df-import-review-link" onClick={onOpenReviewModal}>Rà soát phân vùng nội dung <ArrowRight size={15} /></button>}
+
+        {hasSelectedSource && (importGroupAttention.unverified.length > 0 || importGroupAttention.missing.length > 0) && (
+          <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-950" data-testid="recognition-attention-summary" role="status" aria-live="polite">
+            <strong className="block">Một số thành phần cần bạn đối chiếu</strong>
+            {importGroupAttention.unverified.length > 0 && <p className="mt-1">{importGroupAttention.unverified.length} nhóm chưa xác minh: {importGroupAttention.unverified.join(", ")}.</p>}
+            {importGroupAttention.missing.length > 0 && <p className="mt-1">{importGroupAttention.missing.length} nhóm chưa tìm thấy: {importGroupAttention.missing.join(", ")}.</p>}
+            <p className="mt-1">Hãy đối chiếu với tệp gốc nếu văn bản có các thành phần này.</p>
+          </div>
+        )}
 
         <div className="df-import-group-heading">
           <h3>Thành phần đã nhận diện từ nguồn</h3>
@@ -1259,7 +1316,7 @@ export function ImportStepView({
 
       {phase==="ready"&&<section id="df-step1-ready" className="df-import-card df-import-ready" aria-labelledby="df-step1-ready-title">
         <span className="df-import-ready-icon"><CheckCircle2 size={22}/></span>
-        <div><h2 id="df-step1-ready-title">{flow==="upload"?"Tài liệu đã được nhận diện":"Văn bản mới đã được khởi tạo"}</h2>
+        <div><h2 id="df-step1-ready-title">{flow==="upload"?(canContinue?"Nguồn đã được duyệt":"Tài liệu đã được nhận diện"):"Văn bản mới đã được khởi tạo"}</h2>
           <p>{flow==="upload"?`${uploadedFileName} · ${blocksCount} khối nguồn · ${tablesCount} bảng · ${appendicesCount} phụ lục`:`${doc.documentType} · ${REGIME_LABEL[regime]} · ${isCompanyProfile?"Mẫu Hoa tiêu miền Bắc":"Cơ quan chung"}`}</p>
           {flow==="upload"&&<p>{canContinue?"Nguồn đã được duyệt, có thể soạn nội dung.":"Kiểm tra và duyệt phân vùng nguồn trước khi tiếp tục."}</p>}
           {flow==="upload"&&canOpenSourceReview&&<button type="button" onClick={onOpenReviewModal}>Xem và duyệt nguồn <ArrowRight size={15}/></button>}
@@ -1267,17 +1324,17 @@ export function ImportStepView({
       </section>}
 
       {flow&&phase!=="choice"&&<div className="df-wizard-actions df-import-actions">
-        <button type="button" className="df-import-back" onClick={()=>setPhase(phase==="upload"||phase==="regime"?"choice":phase==="recognition"?"upload":phase==="metadata"?"recognition":phase==="doctype"?"regime":phase==="template"?"doctype":flow==="upload"?"metadata":"template")}><ArrowLeft size={15}/> Quay lại</button>
+        <button type="button" className="df-import-back" onClick={()=>onPhaseChange(phase==="upload"||phase==="regime"?"choice":phase==="recognition"?"upload":phase==="metadata"?"recognition":phase==="doctype"?"regime":phase==="template"?"doctype":flow==="upload"?"metadata":"template")}><ArrowLeft size={15}/> Quay lại</button>
         <span className="df-import-action-hint">{phase==="regime"?`Đang chọn: ${draftRegime==="party"?"Văn bản Đảng · Hướng dẫn 05":"Văn bản hành chính · Nghị định 30"}`:phase==="doctype"?draftDocType?`Đã chọn: ${draftDocType}`:"Chọn một loại văn bản để tiếp tục":phase==="template"?`Thể thức ${draftRegime==="party"?"Đảng":"hành chính"} · ${draftDocType}`:phase==="upload"?"Tệp DOCX hoặc TXT · dữ liệu nguồn được giữ để đối chiếu":""}</span>
-        {phase==="upload"&&<button type="button" className="df-import-forward" disabled={!hasUploadedSource||isUploading} onClick={()=>setPhase("recognition")}>Xem kết quả nhận diện <ArrowRight size={16}/></button>}
-        {phase==="recognition"&&<button type="button" className="df-import-forward" onClick={()=>setPhase("metadata")}>Xác nhận thông tin <ArrowRight size={16}/></button>}
+        {phase==="upload"&&<button type="button" className="df-import-forward" disabled={!hasUploadedSource||isUploading} onClick={()=>onPhaseChange("recognition")}>Xem kết quả nhận diện <ArrowRight size={16}/></button>}
+        {phase==="recognition"&&<button type="button" className="df-import-forward" onClick={()=>onPhaseChange("metadata")}>Xác nhận thông tin <ArrowRight size={16}/></button>}
         {phase==="metadata"&&!doc.documentType&&<div id="doctype-required-reason" role="status" aria-live="polite" className="w-full rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
           Chưa thể xem tóm tắt: hãy xác nhận loại văn bản để chọn đúng quy tắc và mẫu.
         </div>}
-        {phase==="metadata"&&<button type="button" className="df-import-forward" disabled={!doc.documentType} aria-describedby={!doc.documentType?"doctype-required-reason":undefined} onClick={()=>setPhase("ready")}>Xem tóm tắt <ArrowRight size={16}/></button>}
-        {phase==="regime"&&<button type="button" className="df-import-forward" onClick={()=>setPhase("doctype")}>Chọn loại văn bản <ArrowRight size={16}/></button>}
-        {phase==="doctype"&&<button type="button" className="df-import-forward" disabled={!draftDocType} onClick={()=>setPhase("template")}>Chọn mẫu <ArrowRight size={16}/></button>}
-        {phase==="ready"&&<button type="button" data-action="wizard-next" className="df-import-forward" disabled={continueDisabled} onClick={handleContinue}>{canContinue&&flowSourceReady?"Sang Bước 2: Soạn & kiểm tra":canOpenSourceReview&&flowSourceReady?"Duyệt nguồn trước":"Chọn nguồn trước khi tiếp tục"} <ArrowRight size={16}/></button>}
+        {phase==="metadata"&&<button type="button" className="df-import-forward" disabled={!doc.documentType} aria-describedby={!doc.documentType?"doctype-required-reason":undefined} onClick={()=>onPhaseChange("ready")}>Xem tóm tắt <ArrowRight size={16}/></button>}
+        {phase==="regime"&&<button type="button" className="df-import-forward" onClick={()=>onPhaseChange("doctype")}>Chọn loại văn bản <ArrowRight size={16}/></button>}
+        {phase==="doctype"&&<button type="button" className="df-import-forward" disabled={!draftDocType} onClick={()=>onPhaseChange("template")}>Chọn mẫu <ArrowRight size={16}/></button>}
+        {phase==="ready"&&<button type="button" data-action="wizard-next" className="df-import-forward" disabled={continueDisabled} onClick={handleContinue}>{canContinue&&flowSourceReady?"Tiếp tục đưa vào Studio soạn thảo":canOpenSourceReview&&flowSourceReady?"Rà soát phân vùng trước":"Chọn nguồn trước khi tiếp tục"} <ArrowRight size={16}/></button>}
       </div>}
 
       {showDiffModal && (
@@ -1387,12 +1444,12 @@ export function ImportStepView({
 
             <section className="df-import-context-card df-import-next-card" aria-label="Bước tiếp theo">
               <h3>Gợi ý tiếp theo</h3>
-              <p>{canContinue ? "Nguồn đã đủ điều kiện. Bạn có thể chuyển sang soạn và kiểm tra." : hasSelectedSource ? "Đối chiếu các vùng nguồn và xác nhận những mục còn cần xem lại." : "Chọn nguồn tài liệu để bắt đầu quy trình."}</p>
+              <p>{canContinue ? "Nguồn đã đủ điều kiện. Bạn có thể chuyển sang soạn và kiểm tra." : hasSelectedSource ? "Rà soát các phân vùng nguồn và xác nhận những mục còn cần xem lại." : "Chọn nguồn tài liệu để bắt đầu quy trình."}</p>
               {!canContinue && canOpenSourceReview && (
-                <button type="button" onClick={onOpenReviewModal} className="df-import-context-action">Mở đối chiếu nguồn →</button>
+                <button type="button" onClick={onOpenReviewModal} className="df-import-context-action">Mở rà soát phân vùng →</button>
               )}
               {canContinue&&flowSourceReady && (
-                <button type="button" onClick={handleContinue} className="df-import-context-action">Sang Bước 2 →</button>
+                <button type="button" onClick={handleContinue} className="df-import-context-action">Tiếp tục đưa vào Studio soạn thảo →</button>
               )}
             </section>
           </div>

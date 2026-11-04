@@ -13,7 +13,13 @@ export type UnsupportedFeatureCode =
   | "vmerge_unsupported"
   | "unsupported_table_geometry"
   | "unverified_roundtrip"
-  | "content_overflow";
+  | "content_overflow"
+  | "alternate_content"
+  | "unsupported_body_element"
+  | "unresolved_table_style"
+  | "unsupported_table_style"
+  | "unsupported_numbering"
+  | "invalid_xml_entity";
 
 export interface UnsupportedFeature {
   code: UnsupportedFeatureCode;
@@ -105,7 +111,7 @@ export function assessExportSafety(
         code: feat.code,
         tableId: feat.tableId,
         blockId: feat.blockId,
-        messageVi: `Bảng biểu ${feat.tableId || ""} chứa tính năng chưa hỗ trợ bảo toàn trọn vẹn: ${feat.description}.`,
+        messageVi: `Tài liệu có phần cần đối chiếu với tệp gốc: ${feat.description}.`,
         canDownloadOriginal,
       });
     }
@@ -228,9 +234,11 @@ export function scanRawTableXmlFeatures(tblXml: string, tableId?: string, blockI
   }
 
   // Ô tiếp nối vMerge continue có chứa nội dung văn bản (nguy cơ mất dữ liệu khi gộp)
+  // Strip nested tables so nested tables do not pollute outer table vMerge detection
+  const xmlWithoutNestedTables = innerXml.replace(/<w:tbl\b[\s\S]*?<\/w:tbl>/g, "");
   const tcRegex = /<w:tc\b[\s\S]*?<\/w:tc>/g;
   let tcMatch: RegExpExecArray | null;
-  while ((tcMatch = tcRegex.exec(tblXml)) !== null) {
+  while ((tcMatch = tcRegex.exec(xmlWithoutNestedTables)) !== null) {
     const tcXml = tcMatch[0];
     const isVMergeRestart = /<w:vMerge\b[^>]*w:val="restart"/i.test(tcXml);
     const hasVMerge = /<w:vMerge\b/i.test(tcXml);

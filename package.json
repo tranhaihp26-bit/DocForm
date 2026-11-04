@@ -19,7 +19,7 @@
     "test:pilot": "tsx test/pilot-documents.test.ts",
     "test:edgecases": "tsx test/complex-malformed-pipeline.test.ts",
     "test:repro": "tsx test/repro-plan-signature-bug.test.ts",
-    "test:regression": "node scripts/run-regression.mjs",
+    "test:regression": "npm run test:import:segments && npm run test:body:tables && npm run test:fidelity && npm run test:edgecases && npm run test:repro",
     "fixtures:export": "tsx scripts/export_pilot_fixtures.ts",
     "fixtures:export:edgecases": "tsx scripts/export_complex_malformed_fixtures.ts"
   },

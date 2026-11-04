@@ -36,6 +36,7 @@ const NATIONAL_HEADER_1_REGEX = /CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM|�
 const NATIONAL_HEADER_2_REGEX = /Độc lập\s*-\s*Tự do\s*-\s*Hạnh phúc/i;
 const DATE_LOCATION_REGEX = /(?:^|\b)([\p{L}\s\.\-]+),\s*ngày\s+(\d{1,2})\s+tháng\s+(\d{1,2})\s+năm\s+(\d{4})(?:\b|$)/u;
 const REF_NUMBER_REGEX = /(?:^|[\r\n\t|;])\s*(?:Số:\s*([^\n\r,;\t|]+)|Số\s+([0-9]+[^\n\r,;\t|]*))/i;
+export const HEADER_MARKER_REGEX = /^(?:dự\s*thảo|bản\s*thảo|mẫu\s*số(?:\s*[:\-\d\p{L}\/]+)?|lưu\s*hành\s*nội\s*bộ)\b/iu;
 
 const SIGNATURE_TITLE_KEYWORDS = [
   "GIÁM ĐỐC", "TỔNG GIÁM ĐỐC", "CHỦ TỊCH", "PHÓ CHỦ TỊCH", "PHÓ GIÁM ĐỐC",
@@ -243,7 +244,7 @@ export function classifyTable(
 
   if (embeddedRecipientsSignatureTable(block)) {
     return {
-      owner: "body",
+      owner: "signature",
       role: "layout",
       evidence: "Một bảng vật lý chứa Nơi nhận ở ô trái và người ký ở ô phải; giữ nguyên bảng, nhận diện theo ô",
       confidence: "high",
@@ -288,8 +289,13 @@ export function classifyTable(
   const hasDateLocation = DATE_LOCATION_REGEX.test(rightColText);
 
   // Kiểm tra xem bảng có nằm ở vùng đầu tài liệu hay không
-  const isAtDocumentTop = precedingBlocks.every(b => 
-    b.kind === "paragraph" && (!b.text.trim() || /^[---_\s*]{3,}$/.test(b.text.trim()))
+  // Cho phép khoảng trắng, đường kẻ phân cách, hoặc các marker tiêu đề ngắn hợp lệ (DỰ THẢO, Mẫu số 01, ...)
+  const isAtDocumentTop = precedingBlocks.every(b =>
+    b.kind === "paragraph" && (
+      !b.text.trim() ||
+      /^[---_\s*]{3,}$/.test(b.text.trim()) ||
+      (b.text.trim().length <= 60 && HEADER_MARKER_REGEX.test(b.text.trim()))
+    )
   );
 
   if (isAtDocumentTop && colsCount >= 2) {

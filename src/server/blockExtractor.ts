@@ -6,6 +6,7 @@
 
 import JSZip from "jszip";
 import type { SourceBlock, SourceBlockKind, TableProperties } from "../shared/schemas/document.schema.ts";
+import type { UnsupportedFeature } from "../shared/importFidelity.ts";
 
 /**
  * Strips XML tags or extracts text cleanly.
@@ -14,8 +15,15 @@ function decodeXmlEntities(str: string): string {
   const decodeEntities = (value: string) => value
     .replace(/&(#x[0-9a-f]+|#[0-9]+|amp|lt|gt|quot|apos);/gi, (entity, token: string) => {
       const normalized = token.toLowerCase();
-      if (normalized.startsWith("#x")) return String.fromCodePoint(Number.parseInt(normalized.slice(2), 16));
-      if (normalized.startsWith("#")) return String.fromCodePoint(Number.parseInt(normalized.slice(1), 10));
+      if (normalized.startsWith("#x") || normalized.startsWith("#")) {
+        const code = normalized.startsWith("#x")
+          ? Number.parseInt(normalized.slice(2), 16)
+          : Number.parseInt(normalized.slice(1), 10);
+        if (Number.isFinite(code) && code >= 0 && code <= 0x10FFFF && (code < 0xD800 || code > 0xDFFF)) {
+          return String.fromCodePoint(code);
+        }
+        return entity;
+      }
       return ({ amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" } as const)[normalized as "amp" | "lt" | "gt" | "quot" | "apos"];
     });
   let decoded = "";
@@ -30,6 +38,41 @@ function decodeXmlEntities(str: string): string {
     cursor = end + 3;
   }
   return decoded;
+}
+
+function hasInvalidNumericEntity(xml: string): boolean {
+  const markup = xml.replace(/<!\[CDATA\[[\s\S]*?\]\]>/g, "").replace(/<!--[\s\S]*?-->/g, "");
+  return Array.from(markup.matchAll(/&#(x[0-9a-f]+|[0-9]+);/gi)).some(([, token]) => {
+    const code = token[0].toLowerCase() === "x"
+      ? Number.parseInt(token.slice(1), 16)
+      : Number.parseInt(token, 10);
+    return !Number.isFinite(code) || code > 0x10FFFF || (code >= 0xD800 && code <= 0xDFFF);
+  });
+}
+
+function formatNumberingValue(value: number, format: string | undefined): string | undefined {
+  if (!Number.isInteger(value) || value < 1) return undefined;
+  if (format === "decimal") return String(value);
+  if (format === "decimalzero") return String(value).padStart(2, "0");
+  if (format === "lowerletter" || format === "upperletter") {
+    let n = value;
+    let result = "";
+    while (n > 0) {
+      n--;
+      result = String.fromCharCode(97 + n % 26) + result;
+      n = Math.floor(n / 26);
+    }
+    return format === "upperletter" ? result.toUpperCase() : result;
+  }
+  if (format === "lowerroman" || format === "upperroman") {
+    if (value > 3999) return undefined;
+    const pairs: Array<[number, string]> = [[1000,"M"],[900,"CM"],[500,"D"],[400,"CD"],[100,"C"],[90,"XC"],[50,"L"],[40,"XL"],[10,"X"],[9,"IX"],[5,"V"],[4,"IV"],[1,"I"]];
+    let n = value;
+    let result = "";
+    for (const [amount, numeral] of pairs) while (n >= amount) { result += numeral; n -= amount; }
+    return format === "upperroman" ? result : result.toLowerCase();
+  }
+  return undefined;
 }
 
 function escapeXmlCdataSectionsForParsing(xml: string): string {
@@ -69,6 +112,17 @@ function escapeXmlCdataSectionsForParsing(xml: string): string {
   return result;
 }
 
+export const PAGE_BREAK_HTML = '<span class="docx-page-break" data-page-break="true" style="display:block; page-break-after:always; border-top:1px dashed #cbd5e1; margin:8px 0;" title="Ngắt trang" contenteditable="false"></span>';
+
+function escapeXml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
 function escapeHtml(str: string): string {
   return str
     .replace(/&/g, "&amp;")
@@ -90,7 +144,11 @@ function extractParagraphText(pXml: string): string {
     if (match[0].startsWith("<w:tab")) {
       parts.push("\t");
     } else if (match[0].startsWith("<w:br")) {
-      parts.push("\n");
+      if (/<w:br\b[^>]*w:type=["']page["']/i.test(match[0])) {
+        parts.push("\u000C");
+      } else {
+        parts.push("\n");
+      }
     } else if (match[1] !== undefined) {
       parts.push(decodeXmlEntities(match[1]));
     }
@@ -110,6 +168,7 @@ function paragraphXmlToHtml(pXml: string): string {
   let alignStyle = "";
   if (align === "center") alignStyle = ' style="text-align: center;"';
   else if (align === "right") alignStyle = ' style="text-align: right;"';
+  else if (align === "both" || align === "justify") alignStyle = ' style="text-align: justify;"';
 
   // Extract runs
   const runBlockRegex = /<w:r\b[\s\S]*?<\/w:r>/g;
@@ -136,7 +195,11 @@ function paragraphXmlToHtml(pXml: string): string {
       if (tMatch[0].startsWith("<w:tab")) {
         rText += "\t";
       } else if (tMatch[0].startsWith("<w:br")) {
-        rText += "\n";
+        if (/<w:br\b[^>]*w:type=["']page["']/i.test(tMatch[0])) {
+          rText += "\u000C";
+        } else {
+          rText += "\n";
+        }
       } else if (tMatch[1] !== undefined) {
         rText += decodeXmlEntities(tMatch[1]);
       }
@@ -168,6 +231,7 @@ function paragraphXmlToHtml(pXml: string): string {
   for (const r of rawRuns) {
     let runHtml = escapeHtml(r.text)
       .replace(/\t/g, "&nbsp;&nbsp;&nbsp;&nbsp;")
+      .replace(/\u000C/g, PAGE_BREAK_HTML)
       .replace(/\n/g, "<br/>");
     if (r.isBold) runHtml = `<strong>${runHtml}</strong>`;
     if (r.isItalic) runHtml = `<em>${runHtml}</em>`;
@@ -178,7 +242,9 @@ function paragraphXmlToHtml(pXml: string): string {
   if (!innerHtml) {
     const fallbackText = extractParagraphText(pXml);
     if (!fallbackText.trim()) return "<p></p>";
-    innerHtml = escapeHtml(fallbackText).replace(/\n/g, "<br/>");
+    innerHtml = escapeHtml(fallbackText)
+      .replace(/\u000C/g, PAGE_BREAK_HTML)
+      .replace(/\n/g, "<br/>");
   }
 
   return `<p${alignStyle}>${innerHtml}</p>`;
@@ -283,7 +349,50 @@ export function extractDirectChildren(
 /**
  * Trích xuất cấu trúc TableModel hoàn chỉnh từ XML <w:tbl>, bảo toàn lưới, gộp ngang, gộp dọc và thuộc tính hàng/ô.
  */
-export function extractTableModelFromXml(tblXml: string, tableId: string = "table_extracted"): TableModel {
+type TableAlignment = "left" | "center" | "right";
+
+function resolveTableStyle(tblPr: string, stylesXml?: string): { alignment?: TableAlignment; unresolved: boolean; unsupportedFormatting: boolean } {
+  const styleId = tblPr.match(/<w:tblStyle\b[^>]*w:val=["']([^"']+)["']/i)?.[1];
+  if (!styleId) return { unresolved: false, unsupportedFormatting: false };
+  if (!stylesXml) return { unresolved: true, unsupportedFormatting: false };
+
+  const styleRows = extractDirectChildren(stylesXml, "w:styles", new Set(["w:style"]));
+  const styles = new Map<string, { basedOn?: string; alignment?: TableAlignment; unsupportedFormatting: boolean }>();
+  for (const styleRow of styleRows) {
+    const type = styleRow.xml.match(/\bw:type=["']([^"']+)["']/i)?.[1];
+    const id = styleRow.xml.match(/\bw:styleId=["']([^"']+)["']/i)?.[1];
+    if (type !== "table" || !id) continue;
+    const basedOn = styleRow.xml.match(/<w:basedOn\b[^>]*w:val=["']([^"']+)["']/i)?.[1];
+    const styleTableProperties = extractDirectChildren(styleRow.xml, "w:style", new Set(["w:tblPr"]))[0]?.xml ?? "";
+    const rawAlignment = styleTableProperties.match(/<w:jc\b[^>]*w:val=["']([^"']+)["']/i)?.[1]?.toLowerCase();
+    const alignment = rawAlignment === "left" || rawAlignment === "center" || rawAlignment === "right"
+      ? rawAlignment
+      : undefined;
+    const hasUnsupportedTableProperties = extractDirectChildren(styleTableProperties, "w:tblPr")
+      .some(property => property.tag !== "w:jc");
+    styles.set(id, {
+      basedOn,
+      alignment,
+      unsupportedFormatting: hasUnsupportedTableProperties || /<w:tblStylePr\b/i.test(styleRow.xml),
+    });
+  }
+
+  const visited = new Set<string>();
+  let current: string | undefined = styleId;
+  let alignment: TableAlignment | undefined;
+  let unsupportedFormatting = false;
+  while (current && !visited.has(current)) {
+    visited.add(current);
+    const style = styles.get(current);
+    if (!style) return { alignment, unresolved: true, unsupportedFormatting };
+    alignment ??= style.alignment;
+    unsupportedFormatting ||= style.unsupportedFormatting;
+    current = style.basedOn;
+  }
+  return { alignment, unresolved: Boolean(current), unsupportedFormatting };
+}
+
+export function extractTableModelFromXml(tblXml: string, tableId: string = "table_extracted", stylesXml?: string): TableModel {
   tblXml = escapeXmlCdataSectionsForParsing(tblXml);
   const tblPrMatch = tblXml.match(/<w:tblPr\b[\s\S]*?<\/w:tblPr>/);
   const tblPr = tblPrMatch ? tblPrMatch[0] : "";
@@ -336,19 +445,29 @@ export function extractTableModelFromXml(tblXml: string, tableId: string = "tabl
   // 3. Kích thước và căn chỉnh
   let tableWidthTwips = 9355;
   let widthType: "dxa" | "pct" | "auto" = "dxa";
-  const tblWMatch = tblPr.match(/<w:tblW\b[^>]*w:w="(\d+)"[^>]*w:type="([^"]+)"/i);
-  if (tblWMatch) {
-    tableWidthTwips = Number(tblWMatch[1]) || 9355;
-    const wType = tblWMatch[2].toLowerCase();
+  const tblWValMatch = tblPr.match(/<w:tblW\b[^>]*w:w=["']?(\d+)["']?/i);
+  const tblWTypeMatch = tblPr.match(/<w:tblW\b[^>]*w:type=["']?([^"'\s>]+)["']?/i);
+  if (tblWValMatch) {
+    tableWidthTwips = Number(tblWValMatch[1]) || 9355;
+  }
+  if (tblWTypeMatch) {
+    const wType = tblWTypeMatch[1].toLowerCase();
     if (wType === "pct") widthType = "pct";
     else if (wType === "auto") widthType = "auto";
   }
 
-  const gridCols = Array.from(tblXml.matchAll(/<w:gridCol\b[^>]*w:w="(\d+)"/g));
+  // Scan outer gridCol only before first <w:tr> to prevent nested tables leaking columns
+  const firstTrIdx = tblXml.indexOf("<w:tr");
+  const outerTblHeaderXml = firstTrIdx >= 0 ? tblXml.slice(0, firstTrIdx) : tblXml;
+  const gridMatch = outerTblHeaderXml.match(/<w:tblGrid\b[\s\S]*?<\/w:tblGrid>/i);
+  const gridCols = gridMatch ? Array.from(gridMatch[0].matchAll(/<w:gridCol\b[^>]*w:w=["']?(\d+)["']?/g)) : [];
   const gridColumnsTwips: number[] = gridCols.length > 0 ? gridCols.map(m => Number(m[1])) : [];
 
-  const jcMatch = tblPr.match(/<w:jc\b[^>]*w:val="([^"]+)"/i);
-  const alignment: "left" | "center" | "right" = (jcMatch ? jcMatch[1].toLowerCase() : "center") as any;
+  const jcMatch = tblPr.match(/<w:jc\b[^>]*w:val=["']?([^"'\s>]+)["']?/i);
+  // Default table alignment is left per ISO/IEC 29500-1 §17.4.28
+  const directAlignment = jcMatch?.[1].toLowerCase();
+  const styleResolution = resolveTableStyle(tblPr, stylesXml);
+  const alignment: TableAlignment = (directAlignment || styleResolution.alignment || "left") as TableAlignment;
 
   // 4. Duyệt các hàng <w:tr> trực tiếp
   const trElements = extractDirectChildren(tblXml, "w:tbl", new Set(["w:tr"]));
@@ -441,35 +560,40 @@ export function extractTableModelFromXml(tblXml: string, tableId: string = "tabl
         if (pText) cellTexts.push(pText);
         const jcM = pXml.match(/<w:jc\b[^>]*w:val="([^"]+)"/i);
 
-        // Trích xuất chi tiết từng run trong paragraph
-        const rElements = extractDirectChildren(pXml, "w:p", new Set(["w:r"]));
+        // Trích xuất chi tiết từng run trong paragraph (kể cả bên trong w:hyperlink hoặc w:ins)
+        const runBlockRegex = /<w:r\b[\s\S]*?<\/w:r>/g;
         const runs: TableCellRun[] = [];
+        let rMatch: RegExpExecArray | null;
 
-        for (const rElem of rElements) {
-          const rXml = rElem.xml;
+        while ((rMatch = runBlockRegex.exec(pXml)) !== null) {
+          const rXml = rMatch[0];
           const rTagRegex = /<w:t(?:\s[^>]*)?>([\s\S]*?)<\/w:t>|<w:br(?:\s[^>]*)?\/?>|<w:tab(?:\s[^>]*)?\/?>/g;
-          let rMatch: RegExpExecArray | null;
+          let rTextMatch: RegExpExecArray | null;
           let rText = "";
-          while ((rMatch = rTagRegex.exec(rXml)) !== null) {
-            if (rMatch[0].startsWith("<w:br")) {
-              rText += "\n";
-            } else if (rMatch[0].startsWith("<w:tab")) {
+          while ((rTextMatch = rTagRegex.exec(rXml)) !== null) {
+            if (rTextMatch[0].startsWith("<w:br")) {
+              if (/<w:br\b[^>]*w:type=["']page["']/i.test(rTextMatch[0])) {
+                rText += "\u000C";
+              } else {
+                rText += "\n";
+              }
+            } else if (rTextMatch[0].startsWith("<w:tab")) {
               rText += "\t";
-            } else if (rMatch[1] !== undefined) {
-              rText += decodeXmlEntities(rMatch[1]);
+            } else if (rTextMatch[1] !== undefined) {
+              rText += decodeXmlEntities(rTextMatch[1]);
             }
           }
           rText = rText.normalize("NFC");
           if (!rText) continue;
 
-          const fontMatch = rXml.match(/<w:rFonts\b[^>]*w:(?:ascii|hAnsi)="([^"]+)"/i);
+          const fontMatch = rXml.match(/<w:rFonts\b[^>]*w:(?:ascii|hAnsi)=["']([^"']+)["']/i);
           const font = fontMatch ? fontMatch[1] : undefined;
-          const szMatch = rXml.match(/<w:sz\b[^>]*w:val="(\d+)"/i);
+          const szMatch = rXml.match(/<w:sz\b[^>]*w:val=["'](\d+)["']/i);
           const sizeHalfPt = szMatch ? parseInt(szMatch[1], 10) : undefined;
-          const bold = /<w:b(?:\s|>|\/>)/i.test(rXml) && !/<w:b\s+w:val="(?:0|false)"/i.test(rXml);
-          const italic = /<w:i(?:\s|>|\/>)/i.test(rXml) && !/<w:i\s+w:val="(?:0|false)"/i.test(rXml);
-          const underline = /<w:u(?:\s|>|\/>)/i.test(rXml) && !/<w:u\s+w:val="(?:none|0|false)"/i.test(rXml);
-          const colorMatch = rXml.match(/<w:color\b[^>]*w:val="([A-Fa-f0-9]{6})"/i);
+          const bold = /<w:b(?:\s|>|\/>)/i.test(rXml) && !/<w:b\s+w:val=["'](?:0|false)["']/i.test(rXml);
+          const italic = /<w:i(?:\s|>|\/>)/i.test(rXml) && !/<w:i\s+w:val=["'](?:0|false)["']/i.test(rXml);
+          const underline = /<w:u(?:\s|>|\/>)/i.test(rXml) && !/<w:u\s+w:val=["'](?:none|0|false)["']/i.test(rXml);
+          const colorMatch = rXml.match(/<w:color\b[^>]*w:val=["']([A-Fa-f0-9]{6})["']/i);
           const color = colorMatch ? colorMatch[1] : undefined;
 
           // Merge with previous run if identical styling to prevent word splitting and broken diacritics
@@ -489,9 +613,9 @@ export function extractTableModelFromXml(tblXml: string, tableId: string = "tabl
               text: rText,
               font,
               sizeHalfPt,
-              bold,
-              italic,
-              underline,
+              bold: bold || undefined,
+              italic: italic || undefined,
+              underline: underline || undefined,
               color,
             });
           }
@@ -579,7 +703,7 @@ export function extractTableModelFromXml(tblXml: string, tableId: string = "tabl
  * Extracts a table structure and 2D cell data from a <w:tbl>...</w:tbl> XML string.
  * Preserves borders, widths, cell shading, headers, and split-protection accurately.
  */
-export function extractTableDetails(tblXml: string, tableId: string = "table_extracted"): {
+export function extractTableDetails(tblXml: string, tableId: string = "table_extracted", stylesXml?: string): {
   rows: number;
   columns: number;
   tableData: string[][];
@@ -588,7 +712,7 @@ export function extractTableDetails(tblXml: string, tableId: string = "table_ext
   tableProperties: TableProperties;
   tableModel: TableModel;
 } {
-  const model = extractTableModelFromXml(tblXml, tableId);
+  const model = extractTableModelFromXml(tblXml, tableId, stylesXml);
   const tableData: string[][] = model.rows.map(r => r.cells.map(c => c.text));
   const textLines: string[] = model.rows.map(r => r.cells.map(c => c.text).join(" | "));
   const tableHtml = tableModelToHtmlView(model);
@@ -646,13 +770,110 @@ export function extractTableDetails(tblXml: string, tableId: string = "table_ext
 }
 
 /**
- * Scans top-level children of <w:body> inside word/document.xml.
+ * Recursively unpacks any body-level child element (e.g. <w:sdt>, <w:customXml>, <mc:AlternateContent>)
+ * into linear w:p, w:tbl, and w:sectPr blocks in exact source order.
  */
-function extractBodyXmlChildren(xml: string): Array<{ tag: "w:p" | "w:tbl" | "w:sectPr"; xml: string }> {
+type BodyXmlChild = { tag: "w:p" | "w:tbl" | "w:sectPr"; xml: string; unsupportedFeatures?: UnsupportedFeature[] };
+
+export class UnsupportedDocxContentError extends Error {}
+
+function unpackBodyLevelElement(tag: string, elemXml: string): BodyXmlChild[] {
+  if (tag === "w:p" || tag === "w:tbl" || tag === "w:sectPr") {
+    return [{ tag, xml: elemXml }];
+  }
+
+  if (tag === "mc:AlternateContent") {
+    const branches = extractDirectChildren(elemXml, tag);
+    const selected = branches.find(child => child.tag === "mc:Fallback")
+      ?? branches.find(child => child.tag === "mc:Choice");
+    if (!selected) throw new UnsupportedDocxContentError("Tệp Word chứa nội dung thay thế không có phần có thể đọc. Vui lòng kiểm tra tệp gốc.");
+    const branchBlocks = extractDirectChildren(selected.xml, selected.tag)
+      .flatMap(child => unpackBodyLevelElement(child.tag, child.xml));
+    if (branchBlocks.length === 0) throw new UnsupportedDocxContentError("Tệp Word chứa nội dung thay thế chưa thể đọc. Vui lòng kiểm tra tệp gốc.");
+    return branchBlocks.map(child => ({
+      ...child,
+      unsupportedFeatures: [
+        ...(child.unsupportedFeatures ?? []),
+        { code: "alternate_content", description: "Nội dung thay thế trong DOCX cần đối chiếu với tệp gốc" },
+      ],
+    }));
+  }
+
+  const withWrapperReview = (children: BodyXmlChild[]): BodyXmlChild[] => {
+    // Structured document tags are an explicitly supported wrapper: their
+    // sdtContent is the user-visible payload. Other body-level wrappers may
+    // carry semantics we do not model, so retain their payload but ask for a
+    // source comparison instead of silently presenting a flattened result.
+    if (tag === "w:sdt") return children;
+    return children.map(child => ({
+      ...child,
+      unsupportedFeatures: [
+        ...(child.unsupportedFeatures ?? []),
+        {
+          code: "unsupported_body_element",
+          description: `Nội dung trong phần tử DOCX ${tag} được giữ lại nhưng cần đối chiếu với tệp gốc`,
+        },
+      ],
+    }));
+  };
+
+  // Handle w:sdt (Structured Document Tag)
+  let targetXml = elemXml;
+  let targetParent = tag;
+  if (tag === "w:sdt") {
+    const sdtContentMatch = elemXml.match(/<w:sdtContent\b[\s\S]*?<\/w:sdtContent>/);
+    if (sdtContentMatch) {
+      targetXml = sdtContentMatch[0];
+      targetParent = "w:sdtContent";
+    }
+  }
+
+  // Extract direct children of this container
+  const directChildren = extractDirectChildren(targetXml, targetParent);
+  const unpacked: BodyXmlChild[] = [];
+
+  for (const child of directChildren) {
+    unpacked.push(...unpackBodyLevelElement(child.tag, child.xml));
+  }
+
+  if (unpacked.length > 0) {
+    return withWrapperReview(unpacked);
+  }
+
+  // Fallback: Check if there are any w:p or w:tbl anywhere inside elemXml
+  const innerChildren = extractDirectChildren(elemXml, tag, new Set(["w:p", "w:tbl"]));
+  if (innerChildren.length > 0) {
+    return withWrapperReview(innerChildren as BodyXmlChild[]);
+  }
+
+  // If the unsupported element contains text directly without paragraph tags, wrap it into a paragraph
+  // so no user content is lost silently!
+  const text = extractParagraphText(elemXml).trim();
+  if (text) {
+    const syntheticP = `<w:p><w:r><w:t>${escapeXml(text)}</w:t></w:r></w:p>`;
+    return [{ tag: "w:p", xml: syntheticP, unsupportedFeatures: [{
+      code: "unsupported_body_element",
+      description: `Nội dung trong phần tử DOCX ${tag} cần đối chiếu với tệp gốc`,
+    }] }];
+  }
+
+  // These elements can carry visible source content without a paragraph. An
+  // empty return would silently lose that content and make the import look safe.
+  if (/<(?:w:(?:drawing|pict|object|altChunk)|a:graphic|v:shape|o:OLEObject)\b/i.test(elemXml)) {
+    throw new UnsupportedDocxContentError("Tệp Word có hình hoặc nội dung nhúng chưa thể đọc ở vị trí này. Hãy đối chiếu tệp gốc.");
+  }
+
+  return [];
+}
+
+/**
+ * Scans top-level children of <w:body> inside word/document.xml.
+ * Unpacks <w:sdt> and unsupported containers safely without dropping document blocks.
+ */
+function extractBodyXmlChildren(xml: string): BodyXmlChild[] {
   const bodyMatch = /<w:body(?=[\s>])/.exec(xml);
   if (!bodyMatch) return [];
-  const results: Array<{ tag: "w:p" | "w:tbl" | "w:sectPr"; xml: string }> = [];
-  const supported = new Set(["w:p", "w:tbl", "w:sectPr"]);
+  const results: BodyXmlChild[] = [];
   const stack: string[] = [];
   let childStart = -1;
   let childTag = "";
@@ -706,14 +927,14 @@ function extractBodyXmlChildren(xml: string): Array<{ tag: "w:p" | "w:tbl" | "w:
         continue;
       }
       if (stack.pop() !== name) throw new Error(`Invalid OOXML nesting near ${name}`);
-      if (stack.length === 0 && supported.has(childTag)) {
-        results.push({ tag: childTag as "w:p" | "w:tbl" | "w:sectPr", xml: xml.slice(childStart, pos) });
+      if (stack.length === 0) {
+        const unpacked = unpackBodyLevelElement(childTag, xml.slice(childStart, pos));
+        results.push(...unpacked);
       }
     } else if (stack.length === 0) {
       if (selfClosing) {
-        if (supported.has(name)) {
-          results.push({ tag: name as "w:p" | "w:tbl" | "w:sectPr", xml: xml.slice(start, pos) });
-        }
+        const unpacked = unpackBodyLevelElement(name, xml.slice(start, pos));
+        results.push(...unpacked);
       } else {
         childStart = start;
         childTag = name;
@@ -743,7 +964,60 @@ export async function extractBlocksFromDocx(buffer: Uint8Array | ArrayBuffer): P
 
   const docXml = await docXmlFile.async("string");
   const rawChildren = extractBodyXmlChildren(docXml);
+  const stylesFile = zip.file("word/styles.xml");
+  const stylesXml = stylesFile ? await stylesFile.async("string") : undefined;
 
+  type NumberingLevel = { format?: string; lvlText?: string; start?: number; customRestart?: boolean };
+  const numberingFile = zip.file("word/numbering.xml");
+  let numberingMap: Map<string, Map<number, NumberingLevel>> | undefined;
+  if (numberingFile) {
+    const numberingXml = await numberingFile.async("string");
+    const attr = (xml: string, name: string) => xml.match(new RegExp(`\\bw:${name}=["']([^"']+)["']`, "i"))?.[1];
+    const readLevel = (levelXml: string): NumberingLevel => ({
+      format: attr(levelXml.match(/<w:numFmt\b[^>]*\/?\s*>/i)?.[0] ?? "", "val")?.toLowerCase(),
+      lvlText: attr(levelXml.match(/<w:lvlText\b[^>]*\/?\s*>/i)?.[0] ?? "", "val"),
+      start: Number(attr(levelXml.match(/<w:start\b[^>]*\/?\s*>/i)?.[0] ?? "", "val")) || undefined,
+      customRestart: /<w:lvlRestart\b/i.test(levelXml),
+    });
+    const abstractLevels = new Map<string, Map<number, NumberingLevel>>();
+    for (const abstract of extractDirectChildren(numberingXml, "w:numbering", new Set(["w:abstractNum"]))) {
+      const abstractId = attr(abstract.xml.match(/<w:abstractNum\b[^>]*>/i)?.[0] ?? "", "abstractNumId");
+      if (!abstractId) continue;
+      const levels = new Map<number, NumberingLevel>();
+      for (const level of extractDirectChildren(abstract.xml, "w:abstractNum", new Set(["w:lvl"]))) {
+        const ilvl = Number(attr(level.xml.match(/<w:lvl\b[^>]*>/i)?.[0] ?? "", "ilvl"));
+        if (Number.isInteger(ilvl)) levels.set(ilvl, readLevel(level.xml));
+      }
+      abstractLevels.set(abstractId, levels);
+    }
+
+    numberingMap = new Map();
+    for (const instance of extractDirectChildren(numberingXml, "w:numbering", new Set(["w:num"]))) {
+      const numId = attr(instance.xml.match(/<w:num\b[^>]*>/i)?.[0] ?? "", "numId");
+      const abstractId = attr(instance.xml.match(/<w:abstractNumId\b[^>]*\/?\s*>/i)?.[0] ?? "", "val");
+      if (!numId || !abstractId) continue;
+      const levels = new Map(Array.from(abstractLevels.get(abstractId)?.entries() ?? [], ([level, definition]) => [level, { ...definition }]));
+      for (const override of extractDirectChildren(instance.xml, "w:num", new Set(["w:lvlOverride"]))) {
+        const ilvl = Number(attr(override.xml.match(/<w:lvlOverride\b[^>]*>/i)?.[0] ?? "", "ilvl"));
+        if (!Number.isInteger(ilvl)) continue;
+        const previous = levels.get(ilvl) ?? {};
+        const nestedLevel = extractDirectChildren(override.xml, "w:lvlOverride", new Set(["w:lvl"]))[0]?.xml;
+        const startOverride = Number(attr(override.xml.match(/<w:startOverride\b[^>]*\/?\s*>/i)?.[0] ?? "", "val"));
+        const nestedDefinition = nestedLevel ? readLevel(nestedLevel) : {};
+        levels.set(ilvl, {
+          ...previous,
+          ...(nestedDefinition.format ? { format: nestedDefinition.format } : {}),
+          ...(nestedDefinition.lvlText !== undefined ? { lvlText: nestedDefinition.lvlText } : {}),
+          ...(nestedDefinition.start ? { start: nestedDefinition.start } : {}),
+          ...(startOverride > 0 ? { start: startOverride } : {}),
+        });
+      }
+      numberingMap.set(numId, levels);
+    }
+  }
+
+  const listCounters = new Map<string, Map<number, number>>();
+  const previousListLevels = new Map<string, number>();
   const blocks: SourceBlock[] = [];
   let blockIndex = 0;
 
@@ -755,14 +1029,84 @@ export async function extractBlocksFromDocx(buffer: Uint8Array | ArrayBuffer): P
     }
 
     if (child.tag === "w:p") {
-      const text = extractParagraphText(child.xml);
-      const html = paragraphXmlToHtml(child.xml);
+      let resolvedPrefix = "";
+      let numberingIssue: UnsupportedFeature | undefined;
+      const numPrXml = child.xml.match(/<w:numPr\b[\s\S]*?<\/w:numPr>/i)?.[0];
+      if (numPrXml) {
+        const numId = numPrXml.match(/<w:numId\b[^>]*w:val=["'](\d+)["']/i)?.[1];
+        const ilvl = Number(numPrXml.match(/<w:ilvl\b[^>]*w:val=["'](\d+)["']/i)?.[1] ?? "0");
+        if (numId && numId !== "0") {
+          const levels = numberingMap?.get(numId);
+          const definition = levels?.get(ilvl);
+          if (!levels || !definition) {
+            numberingIssue = { code: "unsupported_numbering", description: "Không tìm thấy định nghĩa đánh số tự động của đoạn; cần đối chiếu với tệp gốc" };
+          } else if (definition.customRestart) {
+            numberingIssue = { code: "unsupported_numbering", description: "Quy tắc khởi động lại số thứ tự nhiều cấp chưa được hỗ trợ đầy đủ; cần đối chiếu với tệp gốc" };
+          } else {
+            let counters = listCounters.get(numId);
+            if (!counters) { counters = new Map<number, number>(); listCounters.set(numId, counters); }
+            const previousLevel = previousListLevels.get(numId);
+            if (previousLevel !== undefined && ilvl < previousLevel) {
+              for (const level of counters.keys()) if (level > ilvl) counters.delete(level);
+            }
+            const previousCount = counters.get(ilvl);
+            const count = previousCount === undefined ? (definition.start ?? 1) : previousCount + 1;
+            counters.set(ilvl, count);
+            previousListLevels.set(numId, ilvl);
+
+            if (definition.format === "bullet" || definition.lvlText === "" || definition.lvlText === "•") {
+              resolvedPrefix = "• ";
+            } else if (definition.lvlText) {
+              let unsupportedToken = false;
+              const numberedText = definition.lvlText.replace(/%(\d+)/g, (_token, digits: string) => {
+                const referencedIndex = Number(digits);
+                const referencedLevel = referencedIndex - 1;
+                if (referencedIndex < 1 || referencedIndex > 9) unsupportedToken = true;
+                const referencedDefinition = levels.get(referencedLevel);
+                const referencedValue = counters.get(referencedLevel) ?? referencedDefinition?.start ?? 1;
+                const formatted = formatNumberingValue(referencedValue, referencedDefinition?.format);
+                if (formatted === undefined) unsupportedToken = true;
+                return formatted ?? "";
+              });
+              if (unsupportedToken || /%/.test(numberedText)) {
+                numberingIssue = { code: "unsupported_numbering", description: "Kiểu đánh số tự động chưa được hỗ trợ đầy đủ; cần đối chiếu với tệp gốc" };
+              } else {
+                resolvedPrefix = `${numberedText} `;
+              }
+            } else {
+              numberingIssue = { code: "unsupported_numbering", description: "Mẫu đánh số tự động bị thiếu; cần đối chiếu với tệp gốc" };
+            }
+          }
+        }
+      }
+
+      let text = extractParagraphText(child.xml);
+      let html = paragraphXmlToHtml(child.xml);
+
+      if (resolvedPrefix && !text.trim().startsWith(resolvedPrefix.trim())) {
+        text = resolvedPrefix + text;
+        html = html.replace(/^<p([^>]*)>/, `<p$1>${escapeHtml(resolvedPrefix)}`);
+      }
+
       blocks.push({
         id: `block-${blockIndex}`,
         index: blockIndex,
         kind: "paragraph",
         text,
         html,
+        rawXml: child.xml,
+        unsupportedFeatures: [
+          ...(child.unsupportedFeatures ?? []),
+          ...(numberingIssue ? [numberingIssue] : []),
+          ...(/<(?:w:drawing|w:pict|w:object|w:altChunk)\b/i.test(child.xml) ? [{
+            code: "drawing_or_image" as const,
+            description: "Hình hoặc đối tượng nhúng trong đoạn văn cần đối chiếu với tệp gốc",
+          }] : []),
+          ...(hasInvalidNumericEntity(child.xml) ? [{
+            code: "invalid_xml_entity" as const,
+            description: "Ký tự mã hóa không hợp lệ trong DOCX cần đối chiếu với tệp gốc",
+          }] : []),
+        ].map(feature => ({ ...feature, blockId: `block-${blockIndex}` })),
         role: "unclassified",
       });
       blockIndex++;
@@ -771,8 +1115,30 @@ export async function extractBlocksFromDocx(buffer: Uint8Array | ArrayBuffer): P
 
     if (child.tag === "w:tbl") {
       const blockId = `block-${blockIndex}`;
-      const details = extractTableDetails(child.xml, blockId);
-      const unsupported = scanRawTableXmlFeatures(escapeXmlCdataSectionsForParsing(child.xml), blockId, blockId);
+      const details = extractTableDetails(child.xml, blockId, stylesXml);
+      const tblPr = child.xml.match(/<w:tblPr\b[\s\S]*?<\/w:tblPr>/i)?.[0] ?? "";
+      const styleResolution = resolveTableStyle(tblPr, stylesXml);
+      const unsupported = [
+        ...scanRawTableXmlFeatures(escapeXmlCdataSectionsForParsing(child.xml), blockId, blockId),
+        ...(child.unsupportedFeatures ?? []).map(feature => ({ ...feature, blockId })),
+        ...(styleResolution.unresolved ? [{
+          code: "unresolved_table_style" as const,
+          blockId,
+          tableId: blockId,
+          description: "Kiểu bảng được tham chiếu nhưng không có trong tệp nguồn; căn chỉnh bảng có thể chưa phản ánh đúng",
+        }] : []),
+        ...(styleResolution.unsupportedFormatting ? [{
+          code: "unsupported_table_style" as const,
+          blockId,
+          tableId: blockId,
+          description: "Kiểu bảng có thuộc tính định dạng chưa được giữ đầy đủ; cần đối chiếu với tệp gốc trước khi xuất",
+        }] : []),
+        ...(hasInvalidNumericEntity(child.xml) ? [{
+          code: "invalid_xml_entity" as const,
+          blockId,
+          description: "Ký tự mã hóa không hợp lệ trong DOCX cần đối chiếu với tệp gốc",
+        }] : []),
+      ];
       blocks.push({
         id: blockId,
         index: blockIndex,
@@ -813,14 +1179,36 @@ export function extractBlocksFromTxt(textContent: string): ExtractedBlocksResult
   let idx = 0;
 
   lines.forEach((lineText) => {
-    const cleanText = lineText.trim();
-    if (!cleanText) return;
-    const html = `<p>${escapeHtml(cleanText)}</p>`;
+    // Preserve blank lines cleanly as empty text with non-breaking space paragraph
+    if (!lineText.trim()) {
+      blocks.push({
+        id: `block-${idx}`,
+        index: idx,
+        kind: "paragraph",
+        text: "",
+        html: "<p>&nbsp;</p>",
+        role: "unclassified",
+      });
+      idx++;
+      return;
+    }
+
+    // Preserve leading whitespace (spaces/tabs) as &nbsp; in HTML view
+    const leadingMatch = lineText.match(/^([ \t]+)/);
+    let leadingHtml = "";
+    let contentText = lineText;
+    if (leadingMatch) {
+      const leadingWs = leadingMatch[1];
+      leadingHtml = leadingWs.replace(/\t/g, "&nbsp;&nbsp;&nbsp;&nbsp;").replace(/ /g, "&nbsp;");
+      contentText = lineText.slice(leadingWs.length);
+    }
+
+    const html = `<p>${leadingHtml}${escapeHtml(contentText.trimEnd())}</p>`;
     blocks.push({
       id: `block-${idx}`,
       index: idx,
       kind: "paragraph",
-      text: cleanText,
+      text: lineText.trimEnd(),
       html,
       role: "unclassified",
     });

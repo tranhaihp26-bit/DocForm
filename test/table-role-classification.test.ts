@@ -47,6 +47,31 @@ describe("Task 5: Table Role & Contextual Partitioning", () => {
     assert.equal(res.confidence, "high");
   });
 
+  it("Cho phép marker DỰ THẢO trước bảng header nhưng không bỏ qua đoạn văn mở đầu tùy ý", () => {
+    const headerTable: SourceBlock = {
+      id: "tbl_draft_header",
+      index: 1,
+      kind: "table",
+      role: "unclassified",
+      text: "CƠ QUAN | CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM",
+      tableShape: { rows: 2, columns: 2 },
+      tableData: [
+        ["CƠ QUAN MẪU", "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM"],
+        ["Số: 01/KH", "Hà Nội, ngày 01 tháng 02 năm 2026"],
+      ],
+      html: "<table><tr><td>CƠ QUAN</td><td>CỘNG HÒA</td></tr></table>",
+    };
+    const draftMarker: SourceBlock = {
+      id: "draft-marker", index: 0, kind: "paragraph", role: "unclassified",
+      text: "DỰ THẢO", html: "<p>DỰ THẢO</p>",
+    };
+    assert.equal(classifyTable(headerTable, [draftMarker]).owner, "header");
+
+    const unrelatedOpening = { ...draftMarker, text: "BẢN GHI NHỚ", html: "<p>BẢN GHI NHỚ</p>" };
+    assert.notEqual(classifyTable(headerTable, [unrelatedOpening]).owner, "header",
+      "Only known short markers may be skipped when deciding whether a table is at document top");
+  });
+
   it("Đoạn văn mở đầu thân bài sau tên loại KHÔNG bị nhận nhầm thành trích yếu (subject)", () => {
     const blocks: SourceBlock[] = [
       { id: "b0", index: 0, kind: "paragraph", text: "BIÊN BẢN HỌP GIAO BAN", html: "<p>BIÊN BẢN HỌP GIAO BAN</p>", role: "unclassified" },
