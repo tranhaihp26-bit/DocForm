@@ -14,6 +14,8 @@ export function isDecorativeLineShape(fragment: string): boolean {
   if (/<(?:a:blip|a:t|v:textbox|wps:txbx|w:txbxContent)\b/.test(fragment)) return false;
   if (/<v:imagedata\b[^>]*(?:\br:(?:id|href|relid)|\bsrc)\s*=/i.test(fragment)) return false;
   if (/\br:(?:embed|link|id|href|relid)\s*=/i.test(fragment)) return false;
+  if (/<a:(?:headEnd|tailEnd)\b[^>]*\btype\s*=\s*"(?!none")[^"]+"/i.test(fragment) ||
+      /<v:stroke\b[^>]*\b(?:o:)?(?:startarrow|endarrow|arrowhead|arrowtail)\s*=\s*"(?!none|0")[^"]+"/i.test(fragment)) return false;
 
   // Cả Choice (DrawingML) và Fallback (VML) phải đều biểu diễn đường kẻ theo hợp đồng hỗ trợ
   const hasChoiceDrawing = /<mc:Choice\b[\s\S]*?<w:drawing\b/.test(fragment);

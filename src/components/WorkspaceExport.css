@@ -111,6 +111,100 @@
   display: none;
 }
 
+.df-step3-preview-modes {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 3px;
+  padding: 2px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.df-step3-preview-modes button {
+  border: 0;
+  border-radius: 6px;
+  padding: 5px 9px;
+  background: transparent;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.df-step3-preview-modes button[aria-selected="true"] {
+  background: #ffffff;
+  color: #3730a3;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, .12);
+}
+
+.df-step3-preview-modes button:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+
+.df-candidate-pdf-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  margin-top: 4px;
+}
+
+.df-candidate-pdf-meta {
+  overflow: hidden;
+  margin: 0;
+  color: #64748b;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.df-candidate-pdf-preview iframe {
+  display: block;
+  width: 100%;
+  height: min(78vh, 1100px);
+  min-height: 420px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f1f5f9;
+}
+
+.df-candidate-pdf-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 380px;
+  margin-top: 4px;
+  padding: 24px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 10px;
+  background: #f8fafc;
+  color: #475569;
+  text-align: center;
+}
+
+.df-candidate-pdf-state strong {
+  color: #1e293b;
+}
+
+.df-candidate-pdf-state button {
+  border: 1px solid #c7d2fe;
+  border-radius: 8px;
+  padding: 7px 12px;
+  background: #eef2ff;
+  color: #3730a3;
+  font-weight: 700;
+}
+
+.df-candidate-docx-preview-note {
+  margin: 4px 0 0;
+  color: #92400e;
+  font-size: 11px;
+}
+
 /* Empty state */
 .df-step3-empty-state {
   padding: 32px 20px;

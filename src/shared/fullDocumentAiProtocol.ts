@@ -66,6 +66,7 @@ export type VisualEvidenceFailureCode =
   | "empty_source"
   | "source_too_large"
   | "renderer_unavailable"
+  | "renderer_busy"
   | "render_failed"
   | "pdf_page_count_unavailable"
   | "zero_pages"

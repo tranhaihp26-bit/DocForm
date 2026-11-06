@@ -29,7 +29,7 @@ async function seedCurrentCandidate(c:CdpClient, sourceBytes:Uint8Array, bodyTex
  return saved as string;
 }
 
-test('Candidate preview, isolated print wiring and exact original download',async()=>{
+test('Candidate PDF preview, exact candidate/original downloads and DOCX comparison',async()=>{
  const port=5117,server=await startTestServer(port),c=new CdpClient('docform-g4-print');
   const bodyTexts=Array.from({length:6},(_,index)=>index===0?'Body original · đoạn thử nghiệm 1':`Body original · đoạn thử nghiệm ${index+1} — nội dung tổng hợp dùng cho kiểm tra phân trang`);
   const bodyHtml=bodyTexts.map(text=>`<p>${text}</p>`).join('');
@@ -48,13 +48,22 @@ test('Candidate preview, isolated print wiring and exact original download',asyn
   assert.equal(await c.waitForFunction(`document.querySelector('[data-current-step="2"]')!==null`),true,'Application should open Step 2 through the wizard');
   const stepTwoGate=await c.evaluate<any>(`(()=>{const button=document.querySelector('[data-action="workspace-next"]');return{text:button?.textContent?.trim(),disabled:button?.disabled}})()`);
   assert.equal(stepTwoGate.disabled,false,`Step 2 transition should be enabled for the approved workspace: ${JSON.stringify(stepTwoGate)}`);
+  await c.evaluate(`(()=>{const realFetch=window.fetch.bind(window);window.__candidatePdfRequests=0;window.fetch=async(input,init)=>{const raw=typeof input==='string'?input:input instanceof Request?input.url:String(input);if(new URL(raw,location.href).pathname!=='/api/export/candidate-pdf')return realFetch(input,init);window.__candidatePdfRequests++;const headers=new Headers(init?.headers);const pdf=new TextEncoder().encode('%PDF-1.4\\n% synthetic browser fixture\\n%%EOF');const digest=await crypto.subtle.digest('SHA-256',pdf);const sha=[...new Uint8Array(digest)].map(value=>value.toString(16).padStart(2,'0')).join('');return new Response(pdf,{status:200,headers:{'Content-Type':'application/pdf','X-Candidate-SHA256':headers.get('X-Candidate-SHA256')??'','X-Candidate-Revision':headers.get('X-Candidate-Revision')??'','X-Candidate-Instance':headers.get('X-Candidate-Instance')??'','X-Rendered-PDF-SHA256':sha,'X-PDF-Renderer-Version':'synthetic-1'}})}})()`);
   assert.equal(await c.clickByText('button','Tiếp tục xem & xuất'),true,'Advance through the actual Step 2 primary action');
   assert.equal(await c.waitForFunction(`document.querySelector('[data-current-step="3"]')!==null`),true,'Application should open Step 3 through the workspace header action');
   const safeReady=await c.waitForFunction(`document.querySelector('[data-candidate-safe="true"]')!==null`,30000);
   if(!safeReady){const state=await c.evaluate(`({step:document.querySelector('[data-current-step]')?.getAttribute('data-current-step'),candidate:document.querySelector('[data-candidate-safe]')?.getAttribute('data-candidate-safe'),alerts:[...document.querySelectorAll('[role="alert"]')].map(element=>element.textContent),exportText:document.querySelector('[data-wizard-step="3"]')?.textContent?.slice(0,2000)})`);assert.fail(`Current candidate was not safe: ${JSON.stringify(state)}`);}
-  assert.equal(await c.waitForFunction(`Boolean(document.querySelector('[data-preview-bytes-sha]'))`,15000),true);
+  assert.equal(await c.waitForFunction(`Boolean(document.querySelector('[data-candidate-pdf-preview]'))`,30000),true,'WPS PDF bytes from the current candidate are the default preview');
+  assert.equal(await c.waitForFunction(`Boolean(document.querySelector('[data-candidate-pdf-download]:not(:disabled)'))`,5000),true);
+  const pdfPreview=await c.evaluate<any>(`(()=>({candidateSha:document.querySelector('[data-candidate-pdf-preview]')?.dataset.candidateSha,pdfSha:document.querySelector('[data-candidate-pdf-preview]')?.dataset.candidatePdfSha,requests:window.__candidatePdfRequests,src:document.querySelector('[data-candidate-pdf-preview] iframe')?.src}))()`);
+  assert.equal(pdfPreview.candidateSha,await c.evaluate(`document.querySelector('[data-candidate-safe]')?.dataset.candidateSha`));
+  assert.match(pdfPreview.pdfSha,/^[a-f0-9]{64}$/);assert.equal(pdfPreview.requests,1);assert.ok(pdfPreview.src.startsWith('blob:'));
+  assert.equal(await c.evaluate(`(()=>{const tab=document.querySelector('[data-preview-mode-choice="docx"]');if(!tab)return false;tab.click();return true})()`),true,'The DOCX renderer remains available for comparison');
+  assert.equal(await c.waitForFunction(`document.querySelector('[data-preview-mode-choice="docx"]')?.getAttribute('aria-selected')==='true'`,5000),true,'The DOCX comparison tab becomes active');
+  const docxPreviewReady=await c.waitForFunction(`Boolean(document.querySelector('[data-preview-bytes-sha]'))`,15000);
+  if(!docxPreviewReady){const state=await c.evaluate(`({mode:document.querySelector('[data-preview-mode-choice="docx"]')?.getAttribute('aria-selected'),candidate:document.querySelector('[data-candidate-safe]')?.dataset.candidateSha,preview:document.querySelector('[data-candidate-preview]')?.outerHTML.slice(0,1200),alerts:[...document.querySelectorAll('[role="alert"]')].map(element=>element.textContent),stepText:document.querySelector('[data-wizard-step="3"]')?.textContent?.slice(0,900)})`);assert.fail(`DOCX comparison did not finish rendering: ${JSON.stringify(state)}`);}
   assert.equal(await c.waitForFunction(`Boolean(document.querySelector('[data-original-download]'))`,5000),true,'Uploaded original blob should have an independent download action');
-  assert.equal(await c.evaluate(`(()=>Boolean(document.querySelector('[data-candidate-preview]')&&document.querySelector('[data-candidate-print]')&&document.querySelector('[data-original-download]')))()`),true,'The candidate preview, print and original-download controls are all present');
+  assert.equal(await c.evaluate(`(()=>Boolean(document.querySelector('[data-candidate-preview]')&&document.querySelector('[data-candidate-pdf-download]')&&document.querySelector('[data-original-download]')))()`),true,'The DOCX comparison, WPS PDF download and original-download controls are all present');
   assert.equal(await c.waitForFunction(`Boolean(document.querySelector('[data-preview-page-count]')?.getAttribute('data-preview-page-count'))`,5000),true);
   const initial=await c.evaluate<any>(`(()=>{const root=document.querySelector('[data-candidate-safe]'),preview=document.querySelector('[data-candidate-preview]'),pages=[...document.querySelectorAll('[data-preview-page]')];return{sha:root?.dataset.candidateSha,previewSha:preview?.dataset.previewBytesSha,count:pages.length,dimensions:pages.map(p=>({width:Math.round(p.getBoundingClientRect().width),height:Math.round(p.getBoundingClientRect().height)})),fit:document.querySelector('[data-preview-fit]')?.getAttribute('aria-pressed'),scrollWidth:document.querySelector('.df-candidate-preview-scroll')?.scrollWidth}})()`);
   assert.equal(initial.previewSha,initial.sha);assert.ok(initial.count>=2,'Synthetic appendix should render on another page');assert.ok(initial.dimensions.every((d:any)=>d.width>0&&d.height>0));
@@ -70,7 +79,7 @@ test('Candidate preview, isolated print wiring and exact original download',asyn
   assert.ok(await c.evaluate(`document.querySelector('.df-candidate-preview-scroll').scrollWidth<=document.querySelector('.df-candidate-preview-scroll').clientWidth+2`),'Fit mode contains the full paper width');
   await c.setViewport(1440,900);
 
-  await c.evaluate(`(()=>{window.__downloadBytes=null;window.__candidatePrinted=null;window.__holdPrintFonts=false;const original=URL.createObjectURL.bind(URL);URL.createObjectURL=blob=>{blob.arrayBuffer().then(buffer=>{const bytes=new Uint8Array(buffer);let binary='';for(const b of bytes)binary+=String.fromCharCode(b);window.__downloadBytes=btoa(binary)});return original(blob)};const observer=new MutationObserver(records=>{for(const record of records)for(const node of record.addedNodes){if(node instanceof HTMLIFrameElement&&node.hasAttribute('data-candidate-print-frame')){const frame=node;if(window.__holdPrintFonts)Object.defineProperty(frame.contentDocument.fonts,'ready',{configurable:true,get(){return new Promise(resolve=>window.__releasePrintFonts=resolve)}});frame.contentWindow.print=()=>{window.__candidatePrinted={sha:frame.dataset.candidateSha,instance:frame.dataset.candidateInstance,bodyText:frame.contentDocument.body.innerText,appText:document.body.innerText}}}}});observer.observe(document.documentElement,{childList:true,subtree:true})})()`);
+  await c.evaluate(`(()=>{window.__downloadBytes=null;window.__candidatePdfDownload=null;window.__candidatePdfPrint=null;const original=URL.createObjectURL.bind(URL);URL.createObjectURL=blob=>{blob.arrayBuffer().then(buffer=>{const bytes=new Uint8Array(buffer);let binary='';for(const b of bytes)binary+=String.fromCharCode(b);window.__downloadBytes=btoa(binary)});return original(blob)};const click=HTMLAnchorElement.prototype.click;HTMLAnchorElement.prototype.click=function(){if(this.download.endsWith('.pdf')){window.__candidatePdfDownload={href:this.href,filename:this.download};return}if(this.target==='_blank'){window.__candidatePdfPrint={href:this.href,target:this.target,rel:this.rel};return}return click.call(this)}})()`);
   assert.equal(await c.clickByText('button','Tải xuống DOCX'),true,'The transformed candidate has a separate download action');
   assert.equal(await c.waitForFunction(`window.__downloadBytes!==null`,5000),true);
   const candidateDownloaded=Buffer.from(await c.evaluate<string>('window.__downloadBytes'),'base64');
@@ -81,23 +90,21 @@ test('Candidate preview, isolated print wiring and exact original download',asyn
   assert.equal(await c.waitForFunction(`window.__downloadBytes!==null`,5000),true);
   const downloaded=Buffer.from(await c.evaluate<string>('window.__downloadBytes'),'base64');
   assert.equal(crypto.createHash('sha256').update(downloaded).digest('hex'),sourceHash,'Original download must match the immutable stored source bytes');
-  await c.clickByText('button','In bản xem');
-  assert.equal(await c.waitForFunction(`window.__candidatePrinted!==null`,10000),true);
-  const printed=await c.evaluate<any>('window.__candidatePrinted');
-  assert.equal(printed.sha,initial.sha);assert.equal(printed.instance,await c.evaluate(`document.querySelector('[data-candidate-safe]')?.dataset.candidateInstance`));
-  assert.ok(printed.bodyText.includes('Body original'));assert.ok(!printed.bodyText.includes('Xem & xuất'));
-  assert.ok(!printed.bodyText.includes('Bằng chứng kiểm tra ứng viên'));assert.ok(printed.appText.includes('Bản ứng viên hiện tại'));
+  await c.clickByText('button','PDF WPS');
+  assert.equal(await c.clickByText('button','Tải PDF từ WPS'),true);
+  assert.equal(await c.waitForFunction(`window.__candidatePdfDownload!==null`,5000),true);
+  const pdfDownload=await c.evaluate<any>('window.__candidatePdfDownload');
+  assert.equal(pdfDownload.href,pdfPreview.src,'The PDF download must use the same generated PDF Blob shown in preview');
+  assert.ok(pdfDownload.filename.endsWith('.pdf'));
+  assert.equal(await c.clickByText('button','Mở PDF WPS để in'),true);
+  assert.equal(await c.waitForFunction(`window.__candidatePdfPrint!==null`,5000),true);
+  const pdfPrint=await c.evaluate<any>('window.__candidatePdfPrint');
+  assert.equal(pdfPrint.href,pdfPreview.src,'Print must open the same generated PDF Blob shown in preview and download');
+  assert.ok(pdfPrint.rel.includes('noopener'));
+  await c.evaluate(`document.querySelector('[data-preview-mode-choice="docx"]')?.click()`);
+  assert.equal(await c.waitForFunction(`document.querySelector('[data-preview-bytes-sha]')?.dataset.previewBytesSha===document.querySelector('[data-candidate-safe]')?.dataset.candidateSha`,15000),true,'The DOCX comparison preview remains available after PDF download');
   const shot=await c.send('Page.captureScreenshot',{format:'png'});
   fs.writeFileSync(path.join(evidenceDir,'g4-candidate-preview-fit.png'),Buffer.from(shot.result?.data??shot.data,'base64'));
-  await c.evaluate('window.__candidatePrinted=null;window.__holdPrintFonts=true;window.__releasePrintFonts=null');
-  await c.clickByText('button','In bản xem');
-  assert.equal(await c.waitForFunction(`typeof window.__releasePrintFonts==='function'`,10000),true,'Print waits for fonts before opening');
-  await c.clickStep(2);assert.equal(await c.waitForFunction(`Boolean(document.querySelector('.ProseMirror'))`),true);
-  await c.evaluate(`document.querySelector('.ProseMirror').focus()`);await c.send('Input.insertText',{text:' MUTATED_DURING_PRINT'});
-  assert.equal(await c.waitForFunction(`document.querySelector('.ProseMirror')?.textContent.includes('MUTATED_DURING_PRINT')`),true);
-  await c.evaluate('window.__releasePrintFonts()');await new Promise(resolve=>setTimeout(resolve,500));
-  assert.equal(await c.evaluate('window.__candidatePrinted===null'),true,'A stale candidate never reaches print()');
-  assert.equal(await c.evaluate(`document.querySelectorAll('[data-candidate-print-frame]').length`),1,'The stale print frame is discarded; only the completed prior frame remains');
-  fs.writeFileSync(path.join(evidenceDir,'g4-preview-metrics.json'),JSON.stringify({candidateSha:initial.sha,candidateDownloadSha,previewSha:initial.previewSha,renderedPageCount:initial.count,pageDimensionsCssPx:initial.dimensions,fit:initial.fit,actual100PercentPan:actual,mobile100PercentPan:mobileActual,originalSha:sourceHash,originalDownloadSha:crypto.createHash('sha256').update(downloaded).digest('hex'),isolatedPrint:{sha:printed.sha,instance:printed.instance,containsCandidateBody:printed.bodyText.includes('Body original'),containsAppTitle:printed.bodyText.includes('Xuất văn bản')},staleCandidateStopped:true},null,2));
+  fs.writeFileSync(path.join(evidenceDir,'g4-preview-metrics.json'),JSON.stringify({candidateSha:initial.sha,candidateDownloadSha,previewSha:initial.previewSha,wpsPdfCandidateSha:pdfPreview.candidateSha,wpsPdfSha:pdfPreview.pdfSha,wpsPdfDownloadUsesPreviewBlob:pdfDownload.href===pdfPreview.src,renderedPageCount:initial.count,pageDimensionsCssPx:initial.dimensions,fit:initial.fit,actual100PercentPan:actual,mobile100PercentPan:mobileActual,originalSha:sourceHash,originalDownloadSha:crypto.createHash('sha256').update(downloaded).digest('hex')},null,2));
  }finally{c.close();server.kill();}
 });

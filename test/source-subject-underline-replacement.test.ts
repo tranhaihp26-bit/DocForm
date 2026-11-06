@@ -10,6 +10,18 @@ const paragraph = (shape = line()) => `<w:p><w:pPr><w:jc w:val="center"/></w:pPr
 
 assert.equal(hasReplaceableSubjectUnderlineShape(paragraph(), subject, subject), true,
   "An exact subject paragraph with one horizontal DrawingML/VML line is replaceable");
+const drawingArrow = line().replace(
+  "</wps:spPr>",
+  '<a:ln><a:tailEnd type="triangle"/></a:ln></wps:spPr>',
+);
+assert.equal(hasReplaceableSubjectUnderlineShape(paragraph(drawingArrow), subject, subject), false,
+  "A DrawingML line with an arrowhead must not be replaced as a plain subject underline");
+const vmlArrow = line().replace(
+  /(<v:line\b[^>]*)(\/>)/,
+  '$1><v:stroke o:endarrow="triangle"/></v:line>',
+);
+assert.equal(hasReplaceableSubjectUnderlineShape(paragraph(vmlArrow), subject, subject), false,
+  "A VML line with an arrowhead must not be replaced as a plain subject underline");
 const pageAnchoredLine = paragraph(line().replace(
   "<wp:inline>",
   '<wp:anchor><wp:positionV relativeFrom="page"><wp:posOffset>987654321</wp:posOffset></wp:positionV>',

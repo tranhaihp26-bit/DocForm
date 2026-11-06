@@ -16,7 +16,6 @@ import JSZip from "jszip";
 import DOMPurify from "dompurify";
 import ND30Editor from "./components/ND30Editor.tsx";
 import { A4DocumentPreview } from "./components/A4DocumentPreview.tsx";
-import {printCandidate} from "./components/CandidatePrintView.tsx";
 import {
   exportToDocx as generateAndDownloadDocx,
   generateND30DocxUint8Array,
@@ -3684,19 +3683,6 @@ function formatDocxDownloadFilename(rawTitle: string, regime: 'state' | 'party',
     }catch(error){setErrorMsg(`Không thể xác minh tệp gốc đã lưu: ${String(error)}. Không tải bản tái tạo.`);}
   };
 
-  const handlePrintCandidate=async()=>{
-    const current=visibleCandidate;
-    if(!current?.downloadable||!current?.safe||!candidateManager.current?.isCurrent(current,buildCandidateInput(workspaceSnapshotRef.current))||!canEnterStep(3)){
-      setErrorMsg('Ứng viên DOCX không tạo được tệp hoặc không vượt qua kiểm tra toàn vẹn (integrity reject); chưa thể in.');return;
-    }
-    setErrorMsg('');
-    const isCurrent=()=>Boolean(candidateManager.current?.isCurrent(current,buildCandidateInput(workspaceSnapshotRef.current))&&current?.downloadable&&current?.safe&&canEnterStep(3));
-    const result=await printCandidate(current.bytes,current.sha256,current.instanceId,isCurrent);
-    if(result==='stale')setErrorMsg('Ứng viên đã thay đổi trong lúc dựng vùng in; hãy tạo và kiểm ứng viên hiện hành trước khi in.');
-    else if(result==='render_error')setErrorMsg('Không dựng được vùng in từ DOCX ứng viên; nội dung soạn và nguồn vẫn giữ nguyên.');
-    else setSuccessMsg('Đã mở bản xem để in · phân trang tham khảo. Đối chiếu PDF trong Word trước khi phát hành.');
-  };
-
   const restoreVersion = (v: Version) => {
     let restored:WorkspaceSnapshot;
     try{restored=restoreWorkspaceVersion(v);}catch(error){setErrorMsg('Không khôi phục phiên bản không hợp lệ; bản đang soạn được giữ nguyên. '+String(error));return;}
@@ -4121,7 +4107,7 @@ function formatDocxDownloadFilename(rawTitle: string, regime: 'state' | 'party',
         />
       )}
 
-      {currentStep===3&&<WorkspaceExport candidate={visibleCandidate} isStale={Boolean(candidate && !visibleCandidate)} complianceReport={currentComplianceReport} complianceRevision={complianceRevision} pending={candidatePending} error={candidateError} onPrepare={()=>void prepareCandidate()} onDownload={()=>void exportToDocx()} onDownloadReview={()=>void downloadCandidateForReview()} onDownloadOriginal={()=>void handleDownloadOriginalFile()} onPrintCandidate={()=>void handlePrintCandidate()} originalAvailable={sourceBlobAvailability==='available'} onPrev={()=>goToStep(2)} onReviewSource={()=>{setCurrentStep(1);setShowSideBySideModal(true);}} onEditTarget={(targetId)=>{if(!canEnterStep(2)){goToStep(2);return;}setCurrentStep(2);requestAnimationFrame(()=>{const node=[...document.querySelectorAll<HTMLElement>('[data-workspace-node]')].find(el=>el.dataset.workspaceNode===targetId);(node?.querySelector<HTMLElement>('[contenteditable="true"]')??document.querySelector<HTMLElement>('[data-canvas-id="body"] [contenteditable="true"]'))?.focus({preventScroll:true});});}}/>}
+      {currentStep===3&&<WorkspaceExport candidate={visibleCandidate} isStale={Boolean(candidate && !visibleCandidate)} complianceReport={currentComplianceReport} complianceRevision={complianceRevision} pending={candidatePending} error={candidateError} onPrepare={()=>void prepareCandidate()} onDownload={()=>void exportToDocx()} onDownloadReview={()=>void downloadCandidateForReview()} onDownloadOriginal={()=>void handleDownloadOriginalFile()} originalAvailable={sourceBlobAvailability==='available'} onPrev={()=>goToStep(2)} onReviewSource={()=>{setCurrentStep(1);setShowSideBySideModal(true);}} onEditTarget={(targetId)=>{if(!canEnterStep(2)){goToStep(2);return;}setCurrentStep(2);requestAnimationFrame(()=>{const node=[...document.querySelectorAll<HTMLElement>('[data-workspace-node]')].find(el=>el.dataset.workspaceNode===targetId);(node?.querySelector<HTMLElement>('[contenteditable="true"]')??document.querySelector<HTMLElement>('[data-canvas-id="body"] [contenteditable="true"]'))?.focus({preventScroll:true});});}}/>}
       <div className="df-workspace-step2-shell" hidden={currentStep!==2}>
         {sourceChosen&&canEnterProfileDecision&&canEnterWorkspaceStep(workspaceSnapshot,2)&&<WorkspaceEditor key={workspaceSnapshot.workspace.source?.identity??originalSnapshot?.sourceId??'template'} snapshot={workspaceSnapshot} initialCanvasId={editorState.activeCanvasId} onCanvasSelected={id=>setEditorState({activeCanvasId:id})} active={currentStep===2} onAction={workspaceAction} onRequestRegimeSwitch={requestRegimeSwitch} onPartition={()=>{setCurrentStep(1);setShowSideBySideModal(true);}} onRefine={handleAiRefine} refining={isRefining} aiProvider={partitionAiProvider} chatGPTReady={chatGPTStatus.enabled&&chatGPTStatus.session.status==="connected"&&chatGPTStatus.session.sharing} onAiSettings={()=>setShowAppSettings(true)} canContinue={canEnterStep(3)} complianceReport={currentComplianceReport} complianceRevision={complianceRevision} onOpenCompliance={()=>setShowComplianceModal(true)} onPrev={()=>goToStep(1)} onNext={()=>goToStep(3)}/>}
       </div>

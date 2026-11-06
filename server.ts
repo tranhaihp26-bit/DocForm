@@ -24,7 +24,7 @@ import {
   testOpenAiApiConnection,
   type OpenAiResponsesClient,
 } from "./src/server/openAiApiProvider.ts";
-import { renderSourceDocx, type SourceVisualRenderResult } from "./src/server/sourceVisualRenderer.ts";
+import { renderCandidatePdfWithWps, renderSourceDocx, type CandidatePdfRenderResult, type SourceVisualRenderResult } from "./src/server/sourceVisualRenderer.ts";
 import { validateLocalSourceVisualRequest } from "./src/server/localSourceVisualRequest.ts";
 import type { ChatGPTClient, SessionState } from "./vendor/openai/sign-in-with-chatgpt-devkit/packages/local/src/types.ts";
 
@@ -156,6 +156,8 @@ export interface ServerOptions {
   openAiResponsesClient?: OpenAiResponsesClient;
   /** Local-only renderer seam for synthetic endpoint tests. */
   sourceVisualRenderer?: (sourceBytes: Uint8Array, expectedSha256: string, signal: AbortSignal) => Promise<SourceVisualRenderResult>;
+  /** Local-only renderer seam for candidate PDF export tests. */
+  candidatePdfRenderer?: (candidateBytes: Uint8Array, signal: AbortSignal) => Promise<CandidatePdfRenderResult>;
   /** Optional listener controls for local integration tests. */
   port?: number;
   bindHost?: string;
@@ -458,6 +460,71 @@ export async function startServer(options: ServerOptions = {}): Promise<Server> 
       } catch {
         if (res.destroyed || abortController.signal.aborted) return;
         return res.status(500).json({ error: "source_render_failed" });
+      } finally {
+        req.off("aborted", abortOnDisconnect);
+        res.off("close", abortOnDisconnect);
+      }
+    },
+  );
+
+  app.post(
+    "/api/export/candidate-pdf",
+    express.raw({ type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", limit: "25mb" }),
+    async (req, res) => {
+      if (!isLocalLoopbackRequest(req)) {
+        return res.status(403).json({ error: "Chỉ ứng dụng DocForm local mới xuất PDF ứng viên." });
+      }
+      const instanceId = req.get("x-candidate-instance") ?? "";
+      if (!/^[\da-f-]{36}$/i.test(instanceId)) return res.status(400).json({ error: "invalid_candidate_instance" });
+      const requestValidation = validateLocalSourceVisualRequest({
+        host: req.get("host"),
+        origin: req.get("origin"),
+        remoteAddress: req.socket.remoteAddress,
+        port: req.socket.localPort ?? PORT,
+        cloudRun,
+        contentType: req.get("content-type"),
+        expectedSha256: req.get("x-candidate-sha256"),
+        sourceGeneration: Number(req.get("x-candidate-revision")),
+        sourceBytes: req.body instanceof Uint8Array ? req.body : undefined,
+      });
+      if (!requestValidation.valid) {
+        const status = requestValidation.reason === "origin_not_local" ? 403
+          : requestValidation.reason === "source_hash_mismatch" ? 409
+          : requestValidation.reason === "source_too_large" ? 413
+          : requestValidation.reason === "unsupported_media_type" ? 415
+          : 400;
+        return res.status(status).json({ error: requestValidation.reason });
+      }
+
+      const abortController = new AbortController();
+      const abortOnDisconnect = () => {
+        if (!res.writableEnded) abortController.abort();
+      };
+      req.on("aborted", abortOnDisconnect);
+      res.on("close", abortOnDisconnect);
+      try {
+        const rendered = await (options.candidatePdfRenderer ?? renderCandidatePdfWithWps)(
+          req.body as Uint8Array, abortController.signal,
+        );
+        if (res.destroyed || abortController.signal.aborted) return;
+        res.setHeader("Cache-Control", "no-store");
+        res.setHeader("Cross-Origin-Resource-Policy", "same-origin");
+        res.setHeader("X-Candidate-SHA256", requestValidation.sourceSha256);
+        res.setHeader("X-Candidate-Revision", String(requestValidation.sourceGeneration));
+        res.setHeader("X-Candidate-Instance", instanceId);
+        res.setHeader("X-Rendered-PDF-SHA256", rendered.pdfSha256);
+        res.setHeader("X-PDF-Renderer", rendered.rendererName);
+        res.setHeader("X-PDF-Renderer-Version", rendered.rendererVersion);
+        res.type("application/pdf");
+        res.setHeader("Content-Disposition", "inline; filename=docform-candidate.pdf");
+        return res.end(Buffer.from(rendered.pdfBytes));
+      } catch (error) {
+        if (res.destroyed || abortController.signal.aborted) return;
+        const code = error && typeof error === "object" && "code" in error
+          ? String((error as { code?: unknown }).code)
+          : "render_failed";
+        const status = code === "renderer_unavailable" ? 503 : code === "renderer_busy" ? 409 : code === "timeout" ? 504 : 500;
+        return res.status(status).json({ error: code === "renderer_unavailable" || code === "renderer_busy" || code === "timeout" ? code : "candidate_pdf_render_failed" });
       } finally {
         req.off("aborted", abortOnDisconnect);
         res.off("close", abortOnDisconnect);

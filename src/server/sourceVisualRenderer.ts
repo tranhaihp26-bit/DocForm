@@ -16,6 +16,7 @@ const MAX_PAGE_IMAGE_BYTES = 30 * 1024 * 1024;
 const MAX_TOTAL_PAGE_IMAGE_BYTES = 300 * 1024 * 1024;
 const WORD_RENDER_TIMEOUT_MS = 120_000;
 const PDF_RENDER_TIMEOUT_MS = 90_000;
+const CANDIDATE_PDF_RENDER_TIMEOUT_MS = 120_000;
 
 export interface RenderedSourcePage {
   page: number;
@@ -42,6 +43,13 @@ export interface SourceVisualRenderResult {
   pages: Array<RenderedSourcePage & { sha256: string }>;
 }
 
+export interface CandidatePdfRenderResult {
+  pdfBytes: Uint8Array;
+  pdfSha256: string;
+  rendererName: "WPS Office";
+  rendererVersion: string;
+}
+
 interface ProcessResult {
   stdout: string;
   stderr: string;
@@ -66,7 +74,7 @@ function errorCode(error: unknown, fallback: VisualEvidenceFailureCode): VisualE
   if (error instanceof VisualRendererError) return error.code;
   if (error && typeof error === "object" && "code" in error) {
     const code = (error as { code?: unknown }).code;
-    if (code === "cancelled" || code === "timeout" || code === "renderer_unavailable" ||
+    if (code === "cancelled" || code === "timeout" || code === "renderer_unavailable" || code === "renderer_busy" ||
         code === "pdf_page_count_unavailable" || code === "page_render_failed") return code;
   }
   return fallback;
@@ -225,6 +233,51 @@ function parseWordRendererVersion(metadata: string): string {
     return typeof value.rendererVersion === "string" ? value.rendererVersion : "unknown";
   } catch {
     throw new VisualRendererError("render_failed");
+  }
+}
+
+/** Export a validated candidate with WPS so the PDF can also be the Step 3 preview. */
+export async function renderCandidatePdfWithWps(
+  candidateBytes: Uint8Array,
+  signal: AbortSignal,
+): Promise<CandidatePdfRenderResult> {
+  if (process.platform !== "win32") throw new VisualRendererError("renderer_unavailable");
+  if (candidateBytes.byteLength === 0 || candidateBytes.byteLength > 25 * 1024 * 1024) {
+    throw new VisualRendererError("render_failed");
+  }
+  const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
+  const powershellPath = path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+  const scriptPath = path.join(moduleDirectory, "candidatePdfRenderer.win.ps1");
+  const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "docform-candidate-pdf-"));
+  try {
+    const docxPath = path.join(tempDirectory, "candidate.docx");
+    const pdfPath = path.join(tempDirectory, "candidate.pdf");
+    const metadataPath = path.join(tempDirectory, "renderer.json");
+    await fs.writeFile(docxPath, Buffer.from(candidateBytes));
+    const result = await runProcess(powershellPath, [
+      "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", scriptPath,
+      "-InputDocxPath", docxPath, "-OutputPdfPath", pdfPath, "-MetadataPath", metadataPath,
+    ], signal, CANDIDATE_PDF_RENDER_TIMEOUT_MS);
+    if (result.exitCode === 42) throw new VisualRendererError("renderer_unavailable", 42);
+    if (result.exitCode === 44) throw new VisualRendererError("renderer_busy", 44);
+    if (result.exitCode !== 0) throw new VisualRendererError("render_failed", result.exitCode);
+    const pdfBytes = new Uint8Array(await fs.readFile(pdfPath));
+    if (pdfBytes.byteLength === 0 || pdfBytes.byteLength > MAX_PDF_BYTES ||
+        new TextDecoder().decode(pdfBytes.subarray(0, 5)) !== "%PDF-") {
+      throw new VisualRendererError("render_failed");
+    }
+    const metadata = JSON.parse(await fs.readFile(metadataPath, "utf8")) as { rendererVersion?: unknown };
+    return {
+      pdfBytes,
+      pdfSha256: sha256(pdfBytes),
+      rendererName: "WPS Office",
+      rendererVersion: typeof metadata.rendererVersion === "string" ? metadata.rendererVersion : "unknown",
+    };
+  } catch (error) {
+    if (error instanceof VisualRendererError) throw error;
+    throw new VisualRendererError("render_failed");
+  } finally {
+    await fs.rm(tempDirectory, { recursive: true, force: true }).catch(() => undefined);
   }
 }
 

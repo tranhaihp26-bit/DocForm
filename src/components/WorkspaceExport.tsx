@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { type ExportCandidate, isCandidateEligibleForExport, isCandidateEligibleForReviewDownload } from '../utils/exportCandidate.ts';
 import { CandidateDocumentPreview } from './A4DocumentPreview.tsx';
 import { describeExportBlocker } from '../utils/workspaceExportMessages.ts';
@@ -18,7 +18,6 @@ type WorkspaceExportProps = {
   onDownload: () => void;
   onDownloadReview: () => void;
   onDownloadOriginal: () => void;
-  onPrintCandidate: () => void;
   originalAvailable: boolean;
   onPrev: () => void;
   onReviewSource: () => void;
@@ -36,7 +35,6 @@ export function WorkspaceExport({
   onDownload,
   onDownloadReview,
   onDownloadOriginal,
-  onPrintCandidate,
   originalAvailable,
   onPrev,
   onReviewSource,
@@ -49,6 +47,106 @@ export function WorkspaceExport({
   // ExportCandidate.bytes is a defensive-copy getter. Read it once per immutable
   // candidate so UI state changes do not create a new preview input each render.
   const previewBytes = useMemo(() => candidate ? candidate.bytes : null, [candidate]);
+  const candidatePdfKey = candidate ? `${candidate.instanceId}:${candidate.revision}:${candidate.sha256}` : '';
+  const [candidatePdf, setCandidatePdf] = useState<{
+    key: string;
+    status: 'loading' | 'ready' | 'error';
+    url?: string;
+    blob?: Blob;
+    pdfSha256?: string;
+    rendererVersion?: string;
+    error?: string;
+  } | null>(null);
+  const [pdfRetry, setPdfRetry] = useState(0);
+  const [previewMode, setPreviewMode] = useState<'wps-pdf' | 'docx'>('wps-pdf');
+
+  useEffect(() => {
+    setPreviewMode(candidate?.safe && !isStale ? 'wps-pdf' : 'docx');
+  }, [candidate?.instanceId, candidate?.sha256, candidate?.safe, isStale]);
+
+  useEffect(() => {
+    if (!candidate || !candidate.safe || !candidate.downloadable || isStale || !previewBytes) {
+      setCandidatePdf(null);
+      return;
+    }
+    const key = candidatePdfKey;
+    const controller = new AbortController();
+    let disposed = false;
+    let objectUrl: string | undefined;
+    setCandidatePdf({ key, status: 'loading' });
+
+    void (async () => {
+      const bytes = new Uint8Array(previewBytes);
+      const hashBuffer = await crypto.subtle.digest('SHA-256', bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+      const candidateSha = [...new Uint8Array(hashBuffer)].map(value => value.toString(16).padStart(2, '0')).join('');
+      if (candidateSha !== candidate.sha256) throw new Error('candidate_sha_mismatch');
+
+      const response = await fetch('/api/export/candidate-pdf', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          'X-Candidate-SHA256': candidate.sha256,
+          'X-Candidate-Revision': String(candidate.revision),
+          'X-Candidate-Instance': candidate.instanceId,
+        },
+        body: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer,
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({})) as { error?: unknown };
+        throw new Error(typeof body.error === 'string' ? body.error : 'candidate_pdf_render_failed');
+      }
+      if (response.headers.get('x-candidate-sha256') !== candidate.sha256 ||
+          response.headers.get('x-candidate-revision') !== String(candidate.revision) ||
+          response.headers.get('x-candidate-instance') !== candidate.instanceId) {
+        throw new Error('candidate_pdf_identity_mismatch');
+      }
+      const blob = await response.blob();
+      if (blob.size === 0 || blob.type !== 'application/pdf') throw new Error('candidate_pdf_invalid');
+      const pdfBuffer = await blob.arrayBuffer();
+      const pdfHashBuffer = await crypto.subtle.digest('SHA-256', pdfBuffer);
+      const pdfSha256 = [...new Uint8Array(pdfHashBuffer)].map(value => value.toString(16).padStart(2, '0')).join('');
+      if (response.headers.get('x-rendered-pdf-sha256') !== pdfSha256) throw new Error('candidate_pdf_sha_mismatch');
+      if (disposed) return;
+      objectUrl = URL.createObjectURL(blob);
+      setCandidatePdf({
+        key,
+        status: 'ready',
+        url: objectUrl,
+        blob,
+        pdfSha256,
+        rendererVersion: response.headers.get('x-pdf-renderer-version') ?? 'unknown',
+      });
+    })().catch(error => {
+      if (disposed || controller.signal.aborted) return;
+      setCandidatePdf({ key, status: 'error', error: error instanceof Error ? error.message : 'candidate_pdf_render_failed' });
+    });
+
+    return () => {
+      disposed = true;
+      controller.abort();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [candidate, candidatePdfKey, isStale, previewBytes, pdfRetry]);
+
+  const currentCandidatePdf = candidatePdf?.key === candidatePdfKey ? candidatePdf : null;
+  const openCandidatePdfForPrint = () => {
+    if (!currentCandidatePdf || currentCandidatePdf.status !== 'ready' || !currentCandidatePdf.url || !currentCandidatePdf.blob || !candidate?.safe || isStale) return;
+    const anchor = document.createElement('a');
+    anchor.href = currentCandidatePdf.url;
+    anchor.target = '_blank';
+    anchor.rel = 'noopener noreferrer';
+    anchor.click();
+  };
+  const downloadCandidatePdf = () => {
+    if (!currentCandidatePdf || currentCandidatePdf.status !== 'ready' || !currentCandidatePdf.url || !currentCandidatePdf.blob || !candidate?.safe || isStale) return;
+    const title = (candidate.formatData.subject || candidate.formatData.documentType || 'van-ban')
+      .normalize('NFC').replace(/[<>:"/\\|?*\u0000-\u001f]/g, '').replace(/\s+/g, ' ').trim().slice(0, 70) || 'van-ban';
+    const anchor = document.createElement('a');
+    anchor.href = currentCandidatePdf.url;
+    anchor.download = `${title}.pdf`;
+    anchor.click();
+  };
   const blockerDescriptions = candidate?.blockers.map(code => describeExportBlocker(code)) ?? [];
   const actions = [...new Map(blockerDescriptions.filter(d => d.action && (d.action !== 'download_original' || originalAvailable)).map(d => [d.action === 'edit_target' ? `${d.action}|${d.targetId ?? ''}` : d.action, d])).values()];
 
@@ -164,6 +262,16 @@ export function WorkspaceExport({
                 )}
               </div>
               <div className="df-step3-heading-toolbar" ref={setToolbarTarget} />
+              {candidate?.safe && !isStale && (
+                <div className="df-step3-preview-modes" role="tablist" aria-label="Chế độ xem ứng viên">
+                  <button type="button" role="tab" aria-selected={previewMode === 'wps-pdf'} data-preview-mode-choice="wps-pdf" onClick={() => setPreviewMode('wps-pdf')}>
+                    PDF WPS
+                  </button>
+                  <button type="button" role="tab" aria-selected={previewMode === 'docx'} data-preview-mode-choice="docx" onClick={() => setPreviewMode('docx')}>
+                    DOCX
+                  </button>
+                </div>
+              )}
               <button
                 type="button"
                 className="df-step3-context-toggle"
@@ -186,13 +294,38 @@ export function WorkspaceExport({
             )}
 
             {Boolean(candidate && (candidate.downloadable || candidate.canRenderDiagnostic) && previewBytes) && (
-              <CandidateDocumentPreview
-                bytes={previewBytes!}
-                sha256={candidate!.sha256}
-                instanceId={candidate!.instanceId}
-                companyHeaderRegime={companyHeaderRegime}
-                toolbarTarget={toolbarTarget}
-              />
+              candidate?.safe && !isStale && previewMode === 'wps-pdf' ? (
+                currentCandidatePdf?.status === 'ready' && currentCandidatePdf.url ? (
+                  <section className="df-candidate-pdf-preview" data-candidate-pdf-preview data-candidate-pdf-sha={currentCandidatePdf.pdfSha256} data-candidate-sha={candidate.sha256} data-candidate-instance={candidate.instanceId} aria-label="Bản xem PDF do WPS xuất">
+                    <p className="df-candidate-pdf-meta">PDF WPS · Candidate SHA {candidate.sha256.slice(0, 12)}… · WPS {currentCandidatePdf.rendererVersion}</p>
+                    <iframe title="Bản xem trước PDF WPS của ứng viên" src={currentCandidatePdf.url} />
+                  </section>
+                ) : currentCandidatePdf?.status === 'error' ? (
+                  <div className="df-candidate-pdf-state" role="alert" data-candidate-pdf-status="error">
+                    <strong>Chưa tạo được PDF bằng WPS.</strong>
+                    <span>{currentCandidatePdf.error === 'renderer_unavailable' ? 'Không tìm thấy WPS Writer trên máy này.' : currentCandidatePdf.error === 'renderer_busy' ? 'WPS đang bận với phiên tự động khác. Hãy thử lại sau.' : 'Không thể xuất PDF cho candidate hiện hành; hãy thử lại hoặc chuyển sang tab DOCX để đối chiếu.'}</span>
+                    <button type="button" onClick={() => setPdfRetry(value => value + 1)}>Thử tạo lại PDF</button>
+                  </div>
+                ) : (
+                  <div className="df-candidate-pdf-state" role="status" data-candidate-pdf-status="loading">
+                    <strong>Đang xuất PDF bằng WPS…</strong>
+                    <span>PDF sẽ được xem và tải từ cùng candidate hiện hành.</span>
+                  </div>
+                )
+              ) : (
+                <>
+                  {candidate?.safe && !isStale && previewMode === 'docx' && (
+                    <p className="df-candidate-docx-preview-note" role="status">Đang xem DOCX bằng trình duyệt. Bố cục có thể khác PDF WPS.</p>
+                  )}
+                  <CandidateDocumentPreview
+                    bytes={previewBytes!}
+                    sha256={candidate!.sha256}
+                    instanceId={candidate!.instanceId}
+                    companyHeaderRegime={companyHeaderRegime}
+                    toolbarTarget={toolbarTarget}
+                  />
+                </>
+              )
             )}
 
             {Boolean(candidate && !candidate.downloadable && !candidate.canRenderDiagnostic) && (
@@ -253,17 +386,31 @@ export function WorkspaceExport({
                 </button>
                 <button
                   type="button"
-                  className="df-step3-print-button"
-                  data-candidate-print
+                  className={`df-step3-download-button ${currentCandidatePdf?.status === 'ready' ? '' : 'is-locked'}`}
+                  data-candidate-pdf-download
                   data-candidate-sha={candidate.sha256}
                   data-candidate-instance={candidate.instanceId}
-                  onClick={onPrintCandidate}
+                  disabled={currentCandidatePdf?.status !== 'ready'}
+                  onClick={downloadCandidatePdf}
+                >
+                  <Download className="w-4 h-4 inline mr-1.5" />
+                  {currentCandidatePdf?.status === 'ready' ? 'Tải PDF từ WPS' : currentCandidatePdf?.status === 'error' ? 'PDF WPS chưa sẵn sàng' : 'Đang tạo PDF bằng WPS…'}
+                </button>
+                <button
+                  type="button"
+                  className={`df-step3-print-button ${currentCandidatePdf?.status === 'ready' ? '' : 'is-locked'}`}
+                  data-candidate-pdf-print
+                  data-candidate-sha={candidate.sha256}
+                  data-candidate-instance={candidate.instanceId}
+                  disabled={currentCandidatePdf?.status !== 'ready'}
+                  title="Mở chính PDF đang xem trong tab mới để in từ trình xem PDF"
+                  onClick={openCandidatePdfForPrint}
                 >
                   <Printer className="w-4 h-4 inline mr-1.5" />
-                  In bản xem / Lưu PDF tham khảo
+                  {currentCandidatePdf?.status === 'ready' ? 'Mở PDF WPS để in' : 'PDF WPS chưa sẵn sàng để in'}
                 </button>
-                <p className="df-step3-export-note">
-                  Bản in từ trình duyệt chỉ để tham khảo. Hãy mở DOCX trong Word để kiểm tra phân trang trước khi phát hành.
+                <p className="df-step3-export-note" role="status">
+                  Preview và PDF tải xuống dùng cùng tệp PDF WPS. Bản DOCX vẫn có thể dàn trang khác giữa các ứng dụng và phiên bản.
                 </p>
               </>
             ) : candidate && reviewDownloadAvailable ? (
