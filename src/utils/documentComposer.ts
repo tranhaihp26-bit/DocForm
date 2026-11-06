@@ -1,7 +1,8 @@
 import type { DocumentFormatType, DocumentState, SourceBlock, StructuredImport } from "../shared/schemas/document.schema.ts";
-import { COMPANY_HEADER_PROFILE_ID, COMPANY_HEADER_PARENT, COMPANY_HEADER_ISSUER, applyCompanyProfile } from "../canonical/nd30/companyHeader.ts";
-import { COMPANY_HEADER_HD05_PROFILE_ID, COMPANY_HEADER_HD05_PARENT, COMPANY_HEADER_HD05_ISSUER, applyCompanyHD05Profile } from "../canonical/hd05/companyHeaderHD05.ts";
+import { COMPANY_HEADER_PROFILE_ID, applyCompanyProfile } from "../canonical/nd30/companyHeader.ts";
+import { COMPANY_HEADER_HD05_PROFILE_ID, applyCompanyHD05Profile } from "../canonical/hd05/companyHeaderHD05.ts";
 import { sanitizeHtmlForDocx } from "./docxExport.ts";
+import { resolveCompanyBodyProfile } from "../canonical/nd30/companyBodyProfile.ts";
 import { syncImportedTablesFromHtml } from "./tableFormatUtils.ts";
 import { isTransformedMetadataTable } from "./sourceTableInventory.ts";
 export interface DocumentComposerSnapshot {
@@ -17,17 +18,16 @@ export function composeDocumentFormatData(snapshot: DocumentComposerSnapshot): D
     const isParty = standardType === "party";
     let exportDoc = doc;
     let effectiveProfile: "generic" | typeof COMPANY_HEADER_PROFILE_ID | typeof COMPANY_HEADER_HD05_PROFILE_ID = "generic";
-    const normalized = (value: string) => value.normalize("NFC").replace(/\s+/g, " ").trim().toLocaleUpperCase("vi-VN");
-    const matchesCompany = normalized(doc.orgHeader1 || "") === normalized(isParty ? COMPANY_HEADER_HD05_PARENT : COMPANY_HEADER_PARENT) &&
-      normalized(doc.orgHeader2 || "") === normalized(isParty ? COMPANY_HEADER_HD05_ISSUER : COMPANY_HEADER_ISSUER);
-    // Existing local sessions may predate profile auto-selection; export their exact Hoa Tieu agency with the canonical header.
-    if (!isParty && (doc.headerProfile === COMPANY_HEADER_PROFILE_ID || (doc.headerProfile === "generic" && matchesCompany))) {
+    // Source agency names may suggest a profile, but cannot silently activate it.
+    // The user must select/confirm the profile before the export composer applies it.
+    if (!isParty && doc.headerProfile === COMPANY_HEADER_PROFILE_ID) {
       exportDoc = applyCompanyProfile(doc);
       effectiveProfile = COMPANY_HEADER_PROFILE_ID;
-    } else if (isParty && (doc.headerProfile === COMPANY_HEADER_HD05_PROFILE_ID || (doc.headerProfile === "generic" && matchesCompany))) {
+    } else if (isParty && doc.headerProfile === COMPANY_HEADER_HD05_PROFILE_ID) {
       exportDoc = applyCompanyHD05Profile(doc);
       effectiveProfile = COMPANY_HEADER_HD05_PROFILE_ID;
     }
+    const effectiveBody = resolveCompanyBodyProfile(isParty ? "party" : "administrative", effectiveProfile);
 
     const sourceBlocks = reviewBlocks.length > 0 ? reviewBlocks : (structuredImport?.blocks || uploadedBlocks);
     const transformedMetadataIds = new Set((sourceBlocks ?? []).filter(b => isTransformedMetadataTable(b, structuredImport?.importFidelityManifest, structuredImport?.fields)).flatMap(b => [b.id, b.tableModel?.tableId ?? b.id]));
@@ -85,7 +85,7 @@ export function composeDocumentFormatData(snapshot: DocumentComposerSnapshot): D
       nationalHeader1: isParty ? "ĐẢNG CỘNG SẢN VIỆT NAM" : "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM",
       nationalHeader2: (isParty ? "" : "Độc lập - Tự do - Hạnh phúc") as "" | "Độc lập - Tự do - Hạnh phúc",
       fontFamily: "Times New Roman",
-      fontSize: isParty ? 14 : 13,
+      fontSize: (effectiveBody?.body.fontSizePt ?? (isParty ? 14 : 13)) as 13 | 14,
       orgHeader1: exportDoc.orgHeader1,
       orgHeader2: exportDoc.orgHeader2,
       draftNote: exportDoc.draftNote,
