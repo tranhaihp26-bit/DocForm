@@ -4,6 +4,10 @@ File này giữ các quy tắc áp dụng toàn repository và định tuyến �
 
 ## Mục tiêu và bất biến sản phẩm
 
+**Chính sách V2.2:** Mục tiêu là tạo/chỉnh sửa/chuẩn hóa văn bản đúng **profile Công ty đã xác nhận**. Mỗi thuộc tính đã được profile cấu hình dùng **đúng profile**, **không đối chiếu, hậu kiểm hoặc cảnh báo xung đột** với ND30/HD05. Chỉ thuộc tính chưa có ở tất cả cấp profile mới fallback ND30 hoặc HD05 đúng regime; thiếu cả hai là `UNSPECIFIED`. Giá trị `0`, `false`, `""` có chủ ý là đã cấu hình. Đọc đặc tả trung tâm: [`docs/DOCFORM_PRODUCT_FIRST_PROFILE_POLICY_V2_2.md`](docs/DOCFORM_PRODUCT_FIRST_PROFILE_POLICY_V2_2.md). Đây là **yêu cầu**, không tự suy runtime đã triển khai.
+
+**Ưu tiên giá trị người dùng:** đúng profile → fallback phần thiếu → nội dung toàn vẹn → DOCX dễ chỉnh sửa → ít thao tác. Giữ byte gốc riêng để đối chiếu nhưng không duy trì các lỗi định dạng khi tạo ứng viên chuẩn hóa.
+
 DocForm nhập DOCX/TXT, hỗ trợ rà soát/soạn thảo theo hai chế độ độc lập, rồi tạo ứng viên DOCX và bản in tham khảo. Luồng UI hiện hành là wizard 3 bước: nhập và duyệt nguồn → soạn thảo → xem/đối chiếu/xuất.
 
 - Ưu tiên thiết kế, triển khai và nghiệm thu giao diện trên desktop/PC trước. Chỉ tối ưu tablet, mobile và các màn hình khác sau khi luồng chính trên desktop đã hoàn thiện; không để tối ưu màn hình khác làm giảm chất lượng trải nghiệm desktop.

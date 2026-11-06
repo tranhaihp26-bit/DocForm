@@ -11,6 +11,12 @@ Mọi đường dẫn trong tài liệu này đều là đường dẫn tương 
 
 > **Cách đọc cho agent:** Đây là tài liệu tham chiếu chi tiết, không cần nạp toàn bộ trong mọi tác vụ. Tìm heading phù hợp, đọc mục đó và lần xuống đúng file/test; hướng dẫn `AGENTS.md` gần thư mục mã nguồn chứa các ràng buộc chỉ áp dụng trong phạm vi ấy.
 
+## Định hướng và tuyến cấu hình hiệu lực V2.2
+
+[**Product First — Profile override, ND30/HD05 fallback theo từng thuộc tính**](DOCFORM_PRODUCT_FIRST_PROFILE_POLICY_V2_2.md) là nguồn yêu cầu trung tâm: profile đã thiết lập thuộc tính → dùng/QA giá trị profile và **không đối chiếu/hậu kiểm** với ND30/HD05 cho thuộc tính đó; chỉ thiếu ở mọi cấp profile mới fallback đúng regime; thiếu cả hai → `UNSPECIFIED`. `0`, `false`, `""` có chủ ý là có cấu hình.
+
+**Đọc mã theo tuyến:** profile header: `../src/canonical/nd30/profiles/hoa-tieu-hang-hai-mien-bac/profile.json`, `../src/canonical/hd05/profiles/hoa-tieu-hang-hai-mien-bac/profile.json`; body/table: `../src/canonical/nd30/companyBodyProfile.ts`; rules: `../src/canonical/ruleEngine.ts`; composer/export: `../src/utils/documentComposer.ts`, `../src/utils/docxExport.ts`, `../src/utils/hoaTieuHeaderStamp.ts`, `../src/utils/exportCandidate.ts`; Bước 3: `../src/components/WorkspaceExport.tsx`. Đây là route vào code, **không phải bằng chứng resolver đã nối toàn pipeline**; khi lập trình phải kiểm producer → effective value → consumer → DOCX/QA.
+
 ## Tra Cứu Nhanh Theo Tác Vụ
 
 | Tác vụ | Hướng dẫn theo thư mục | Mục trong bản đồ |
