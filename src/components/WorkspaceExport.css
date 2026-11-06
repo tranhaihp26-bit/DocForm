@@ -72,6 +72,7 @@
 .df-step3-export-card button{min-height:42px;padding:9px 12px;border:1px solid #dce2ee;border-radius:9px;background:#fff;color:#53617b;font-size:12px;font-weight:700;cursor:pointer}
 .df-step3-export-card .df-step3-prepare-button{border-color:#d9d5ff;background:#f2f0ff;color:#5c50d7}
 .df-step3-export-card .df-step3-download-button{border-color:#6459e8;background:#6459e8;color:#fff}
+.df-step3-export-card .df-step3-review-download-button{border-color:#d79a45;background:#fff6e9;color:#8b4b18}
 .df-step3-export-card .df-step3-print-button{border-color:#dde3f0;background:#fff;color:#586784}
 .df-step3-export-card .df-step3-original-button{border-style:dashed}
 .df-step3-export-card .df-step3-back-button{margin-top:3px;background:#f7f8fb}

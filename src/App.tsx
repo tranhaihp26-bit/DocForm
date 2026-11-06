@@ -138,7 +138,7 @@ import {createWorkspaceSnapshot,canonicalWorkspaceValue,makePartition,canEnterWo
 import {transactWorkspace,approveWorkspacePartition,stageWorkspacePartition,cancelWorkspacePartition,confirmWorkspacePartition,changeWorkspaceRegime,type WorkspaceAction,type WorkspaceResult} from './utils/workspaceTransactions.ts';
 import {prepareTemplateTables} from './utils/templateWorkspace.ts';
 import {restoreWorkspaceVersion} from './utils/workspacePersistence.ts';
-import {createExportCandidateManager,exportCandidateKey,isCandidateEligibleForExport,type ExportCandidate} from './utils/exportCandidate.ts';
+import {createExportCandidateManager,exportCandidateKey,isCandidateEligibleForExport,isCandidateEligibleForReviewDownload,type ExportCandidate} from './utils/exportCandidate.ts';
 import {createWorkspaceAiTarget,receiveWorkspaceAiResult,applyWorkspaceAiResult,type WorkspaceAiTarget} from './utils/workspaceAiTarget.ts';
 import { ImportStepView, type ImportStepFlow, type ImportStepPhase, type SemanticReviewRow, type SourceVisualUiState } from "./components/ImportStepView.tsx";
 import type { FullTextManifestUiStatus, FullTextReviewUiStatus } from "./components/FullTextReviewPanel.tsx";
@@ -3599,6 +3599,16 @@ export default function App() {
     if(!current?.downloadable||!current?.safe||!candidateManager.current!.isCurrent(current,buildCandidateInput(workspaceSnapshotRef.current))||!canEnterStep(3)){setErrorMsg('DOCX ứng viên không tạo được tệp hoặc không vượt qua kiểm tra toàn vẹn (integrity reject). Chức năng tải bị khóa.');return;}
     downloadDocxUint8Array(current.bytes,'Van_Ban_'+(standardType==='party'?'HD05':'ND30')+'.docx');
   };
+  const downloadCandidateForReview = async () => {
+    const current=candidateManager.current!.current;
+    if(!current||!isCandidateEligibleForReviewDownload(current)||current.safe||!candidateManager.current!.isCurrent(current,buildCandidateInput(workspaceSnapshotRef.current))||!canEnterStep(3)){
+      setErrorMsg('Ứng viên hiện hành chưa đủ điều kiện cấu trúc để tải bản đối chiếu. Nội dung nguồn vẫn được giữ nguyên.');return;
+    }
+    const regime=standardType==='party'?'HD05':'ND30';
+    downloadDocxUint8Array(current.bytes,`Ban_doi_chieu_chua_xac_nhan_${regime}.docx`);
+    setErrorMsg('');
+    setSuccessMsg('Đã tải bản DOCX đối chiếu chưa xác nhận. Chỉ dùng để rà soát, không dùng phát hành.');
+  };
   const handleDownloadOriginalFile = async () => {
     if (!originalSnapshot?.sourceHash) {
       setErrorMsg("Không tìm thấy thông tin tệp gốc.");
@@ -3742,8 +3752,8 @@ export default function App() {
         }
       : {
           label: "BẢN XUẤT DOCX",
-          title: candidatePending ? "Đang tạo bản xem" : isCandidateEligibleForExport(visibleCandidate) ? "Có thể tải DOCX" : visibleCandidate ? "Bản xuất bị khóa" : "Chưa có bản DOCX",
-          detail: candidatePending ? "Đang dựng DOCX từ bản soạn." : isCandidateEligibleForExport(visibleCandidate) ? "Đối chiếu không ghi nhận cảnh báo." : visibleCandidate ? "Bản xuất không vượt qua kiểm tra toàn vẹn; tải và in bị khóa." : "Chưa tạo được bản xuất từ bản soạn.",
+          title: candidatePending ? "Đang tạo bản xem" : isCandidateEligibleForExport(visibleCandidate) ? "Có thể tải DOCX" : isCandidateEligibleForReviewDownload(visibleCandidate) ? "Có thể tải bản đối chiếu" : visibleCandidate ? "Bản xuất bị khóa" : "Chưa có bản DOCX",
+          detail: candidatePending ? "Đang dựng DOCX từ bản soạn." : isCandidateEligibleForExport(visibleCandidate) ? "Đối chiếu không ghi nhận cảnh báo." : isCandidateEligibleForReviewDownload(visibleCandidate) ? "Bản đối chiếu chưa được xác nhận; chỉ dùng để rà soát, không phát hành." : visibleCandidate ? "Bản xem không đủ điều kiện tải; hãy đối chiếu hoặc tải tệp gốc." : "Chưa tạo được bản xuất từ bản soạn.",
           tone: candidatePending ? "neutral" : isCandidateEligibleForExport(visibleCandidate) ? "ready" : visibleCandidate ? "review" : "neutral",
         };
   const partitionBlocksForProposalReview = reviewBlocks.length > 0 ? reviewBlocks : (structuredImport?.blocks || uploadedBlocks);
@@ -4047,7 +4057,7 @@ export default function App() {
         />
       )}
 
-      {currentStep===3&&<WorkspaceExport candidate={visibleCandidate} complianceReport={complianceReport} complianceRevision={complianceRevision} pending={candidatePending} error={candidateError} onPrepare={()=>void prepareCandidate()} onDownload={()=>void exportToDocx()} onDownloadOriginal={()=>void handleDownloadOriginalFile()} onPrintCandidate={()=>void handlePrintCandidate()} originalAvailable={sourceBlobAvailability==='available'} onPrev={()=>goToStep(2)} onReviewSource={()=>{setCurrentStep(1);setShowSideBySideModal(true);}} onEditTarget={(targetId)=>{if(!canEnterStep(2)){goToStep(2);return;}setCurrentStep(2);requestAnimationFrame(()=>{const node=[...document.querySelectorAll<HTMLElement>('[data-workspace-node]')].find(el=>el.dataset.workspaceNode===targetId);(node?.querySelector<HTMLElement>('[contenteditable="true"]')??document.querySelector<HTMLElement>('[data-canvas-id="body"] [contenteditable="true"]'))?.focus({preventScroll:true});});}}/>}
+      {currentStep===3&&<WorkspaceExport candidate={visibleCandidate} complianceReport={complianceReport} complianceRevision={complianceRevision} pending={candidatePending} error={candidateError} onPrepare={()=>void prepareCandidate()} onDownload={()=>void exportToDocx()} onDownloadReview={()=>void downloadCandidateForReview()} onDownloadOriginal={()=>void handleDownloadOriginalFile()} onPrintCandidate={()=>void handlePrintCandidate()} originalAvailable={sourceBlobAvailability==='available'} onPrev={()=>goToStep(2)} onReviewSource={()=>{setCurrentStep(1);setShowSideBySideModal(true);}} onEditTarget={(targetId)=>{if(!canEnterStep(2)){goToStep(2);return;}setCurrentStep(2);requestAnimationFrame(()=>{const node=[...document.querySelectorAll<HTMLElement>('[data-workspace-node]')].find(el=>el.dataset.workspaceNode===targetId);(node?.querySelector<HTMLElement>('[contenteditable="true"]')??document.querySelector<HTMLElement>('[data-canvas-id="body"] [contenteditable="true"]'))?.focus({preventScroll:true});});}}/>}
       <div className="df-workspace-step2-shell" hidden={currentStep!==2}>
         {sourceChosen&&canEnterProfileDecision&&canEnterWorkspaceStep(workspaceSnapshot,2)&&<WorkspaceEditor key={workspaceSnapshot.workspace.source?.identity??originalSnapshot?.sourceId??'template'} snapshot={workspaceSnapshot} initialCanvasId={editorState.activeCanvasId} onCanvasSelected={id=>setEditorState({activeCanvasId:id})} active={currentStep===2} onAction={workspaceAction} onRequestRegimeSwitch={requestRegimeSwitch} onPartition={()=>{setCurrentStep(1);setShowSideBySideModal(true);}} onRefine={handleAiRefine} refining={isRefining} aiProvider={partitionAiProvider} chatGPTReady={chatGPTStatus.enabled&&chatGPTStatus.session.status==="connected"&&chatGPTStatus.session.sharing} onAiSettings={()=>setShowAppSettings(true)} canContinue={canEnterStep(3)} complianceReport={complianceReport} onOpenCompliance={()=>setShowComplianceModal(true)}/>}
       </div>
