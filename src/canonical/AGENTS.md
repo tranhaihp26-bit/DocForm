@@ -9,7 +9,8 @@
 - Phân biệt năm loại: `mandatory_legal`, `official_guidance`, `company_profile`, `aesthetic_preset`, `style_spelling`. Chỉ quy định pháp lý có căn cứ điều/khoản/trang nguồn mới được phân loại là bắt buộc; preset/thẩm mỹ/chính tả không phải lỗi pháp lý.
 - Rule phải dựa trên bằng chứng cụ thể. Không đặt `PASS` mặc định, không tính `NOT_EVALUATED` vào PASS, không suy diễn kết quả từ số nhóm đã nhận diện.
 - Giữ trạng thái riêng: `PASS`, `FAIL`, `NOT_EVALUATED`, `NEEDS_REVIEW`, `NOT_APPLICABLE`. Khi thiếu OOXML/văn bản/nguồn pháp lý đủ để kết luận, dùng trạng thái chưa đánh giá hoặc cần rà soát.
-- Profile đơn vị chỉ được PASS khi tài liệu chọn profile và bằng chứng OOXML khớp. Không sửa hình học/header profile Hoa Tiêu đã chốt nếu không có yêu cầu rõ ràng kèm file Word mẫu mới.
+- **Chính sách V2.2:** khi chọn và xác nhận profile Công ty, thông số hiệu lực được phân giải **theo từng thuộc tính**: có profile → chỉ áp/kiểm đúng giá trị profile, **không hậu kiểm hoặc báo xung đột với ND30/HD05**; thiếu trong mọi cấp profile → fallback ND30/HD05 đúng regime; thiếu cả hai → UNSPECIFIED. Giữ `0`, `false`, `""` có chủ ý; `null` theo schema. Không bỏ các gate bảo vệ dữ liệu độc lập.
+- Rule PASS phải dựa trên bằng chứng OOXML với **giá trị hiệu lực**, không đo theo default pháp quy khi profile đã có trị số. Khi triển khai phải rà cả `ruleEngine.ts`, composer/export và output QA; chỉnh hướng dẫn không đủ chứng minh runtime đã đúng. Không sửa geometry header Hoa Tiêu đã duyệt khi thiếu mẫu thay thế. Xem [V2.2](../../docs/DOCFORM_PRODUCT_FIRST_PROFILE_POLICY_V2_2.md).
 - Khi sửa rule, kiểm tra cả hệ còn lại, applicability, ca thiếu bằng chứng và lý do trạng thái; cập nhật căn cứ và test tương ứng.
 
 ## Đọc và kiểm chứng

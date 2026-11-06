@@ -9,6 +9,12 @@
 - Quyết định regime/loại/profile phải gắn với fingerprint/nguồn và regime hiện tại qua `sourceMismatch.ts`/`profileDecision.ts`. Không áp profile chỉ vì lựa chọn UI hoặc tên file.
 - Đề xuất AI/semantic gắn với `targetBlockId`, cell/anchor, fingerprint và revision; người dùng quyết định Áp dụng/Bỏ qua. Không sửa nguồn trực tiếp; từ chối an toàn nếu `original` không còn khớp.
 
+## Thông số hiệu lực theo profile V2.2
+
+- Chọn profile Công ty đã xác nhận làm nguồn thông số cao nhất theo **từng thuộc tính**, cả những trường phân tán trong JSON header, TypeScript body/table và mẫu đã duyệt. Chỉ trường chưa cấu hình trong mọi cấp profile mới fallback ND30/HD05 cùng chế độ. **Không hậu kiểm hoặc báo lỗi vì khác mặc định ND30/HD05** trên thuộc tính đã có profile.
+- Giữ phân biệt giá trị `0`, `false`, `""` có chủ ý với absent; không dùng `||`/truthy để quyết định fallback. Ghép các trường theo cùng ngữ nghĩa, scope, version, đơn vị; ghi rõ nguồn `company-profile`/`nd30-fallback`/`hd05-fallback`/`unspecified` và xác minh đến DOCX output.
+- Byte DOCX gốc vẫn được lưu để truy vết, nhưng định dạng sai cần được sửa trong ứng viên. Không xây exporter OOXML/template khác khi chưa chứng minh pipeline hiện tại không đáp ứng. Đọc [đặc tả V2.2](../../docs/DOCFORM_PRODUCT_FIRST_PROFILE_POLICY_V2_2.md).
+
 ## Bảng và xuất ứng viên
 
 - Bảng nhập cần ID ổn định duy nhất và cell ID bền vững. Khi đồng bộ HTML → TableModel, đối chiếu theo cell ID/lưới và giữ thuộc tính nguồn được hỗ trợ; không áp preset ngầm hoặc mặc định 12pt/viền.
