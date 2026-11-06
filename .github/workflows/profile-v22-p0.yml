@@ -22,7 +22,7 @@ jobs:
           node-version: "22"
           cache: npm
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --legacy-peer-deps # Existing esbuild 0.25 / Vite 8 peer mismatch; tracked separately
       - name: Typecheck
         run: npm run lint
       - name: Focused V2.2 regression tests
