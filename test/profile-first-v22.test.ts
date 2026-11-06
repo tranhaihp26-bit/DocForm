@@ -5,6 +5,7 @@ import { composeDocumentFormatData } from "../src/utils/documentComposer.ts";
 import { prepareImportedFileBundle } from "../src/utils/importSessionLifecycle.ts";
 import { parseLocalFile } from "../src/utils/localFileImport.ts";
 import { enforceND30Standards } from "../src/server/middleware/compliance.middleware.ts";
+import { evaluateDocumentRules } from "../src/canonical/ruleEngine.ts";
 import {
   COMPANY_HEADER_PARENT, COMPANY_HEADER_ISSUER, COMPANY_HEADER_PROFILE_ID,
 } from "../src/canonical/nd30/companyHeader.ts";
@@ -74,4 +75,55 @@ test("export UI describes technical checks without claiming legal issuance appro
   const source = readFileSync("src/components/WorkspaceExport.tsx", "utf8");
   assert.doesNotMatch(source, /Văn bản đủ điều kiện ban hành\./u);
   assert.match(source, /Cần rà soát nội dung, thông số profile và phê duyệt nghiệp vụ riêng/u);
+});
+
+test("canonical audit prefers confirmed ND30 profile over legal-looking generic values", () => {
+  const evidence: any = {
+    header_profile: COMPANY_HEADER_PROFILE_ID,
+    margin_left_mm: 31, // allowed by general ND30 range; not the company's 30mm
+    motto_underline_length_relation: "wrong",
+    issuer_underline_fraction: 0.1,
+    body_evidence: {
+      hasDirectBodyParagraphs: true,
+      fontSizeRangePt: { min: 14, max: 14 },
+      firstLineIndentRangeDxa: { min: 720, max: 720 },
+      lineSpacingRangeDxa: { min: 380, max: 380 },
+      directParagraphs: [{ text: "Nội dung", isEligibleBody: true, lineRule: "exact", lineSpacingDxa: 380 }],
+    },
+  };
+  const report = evaluateDocumentRules({
+    headerProfile: COMPANY_HEADER_PROFILE_ID, documentType: "THÔNG BÁO",
+  }, "administrative", evidence);
+  const rule = (id: string) => report.results.find(r => r.ruleId === id);
+  assert.equal(rule("ND30.PL1.I.GENERAL.MARGIN_LEFT")?.status, "FAIL");
+  assert.equal(rule("ND30.PL1.I.GENERAL.MARGIN_LEFT")?.category, "company_profile");
+  assert.equal(rule("ND30.PL1.I.GENERAL.MARGIN_LEFT")?.expected, 30);
+  assert.equal(rule("ND30.PL1.I.II.1B.MOTTO_UNDERLINE_LENGTH")?.status, "NOT_APPLICABLE");
+  assert.equal(rule("ND30.PL1.I.II.2B.ISSUER_UNDERLINE_RANGE")?.status, "NOT_APPLICABLE");
+  assert.equal(rule("ND30-BODY-FONT-SIZE")?.status, "PASS");
+  assert.equal(rule("ND30-BODY-FONT-SIZE")?.category, "company_profile");
+  const generic = evaluateDocumentRules({ headerProfile: "generic", documentType: "THÔNG BÁO" }, "administrative", evidence);
+  assert.equal(generic.results.find(r => r.ruleId === "ND30.PL1.I.GENERAL.MARGIN_LEFT")?.status, "PASS");
+});
+
+test("confirmed HD05 company body enforces the profile's 14pt and 567twip, not broad generic ranges", () => {
+  const evidence: any = {
+    header_profile: COMPANY_HEADER_HD05_PROFILE_ID,
+    body_evidence: {
+      hasDirectBodyParagraphs: true,
+      fontSizeRangePt: { min: 15, max: 15 }, // generic HD05 would allow this
+      firstLineIndentRangeDxa: { min: 576, max: 576 }, // generic 540-600 permits
+      lineSpacingRangeDxa: { min: 380, max: 380 },
+      directParagraphs: [{ text: "Nội dung", isEligibleBody: true, lineRule: "exact", lineSpacingDxa: 380 }],
+    },
+  };
+  const report = evaluateDocumentRules({
+    headerProfile: COMPANY_HEADER_HD05_PROFILE_ID, documentType: "NGHỊ QUYẾT",
+  }, "party", evidence);
+  for (const id of ["HD05-BODY-FONT-SIZE", "HD05-BODY-FIRST-LINE-INDENT"]) {
+    const result = report.results.find(r => r.ruleId === id);
+    assert.equal(result?.status, "FAIL", id);
+    assert.equal(result?.category, "company_profile", id);
+    assert.match(result?.reason ?? "", /profile Công ty/u);
+  }
 });
