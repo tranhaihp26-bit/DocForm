@@ -1002,6 +1002,9 @@ test("Cổng ứng viên: Hoa Tiêu thay thế Shape phần đầu an toàn; pro
       <w:pict><v:line from="0,0" to="131.3pt,0"/></w:pict>
     </mc:Fallback>
   </mc:AlternateContent>`;
+  const subjectInlineShapeFragment = shapeFragment
+    .replace("<wp:anchor>", "<wp:inline>")
+    .replace("</wp:anchor>", "</wp:inline>");
 
   const headerBlock: SourceBlock = {
     ...makeSourceTableBlock("block-0", 0, "header", [
@@ -1055,7 +1058,10 @@ test("Cổng ứng viên: Hoa Tiêu thay thế Shape phần đầu an toàn; pro
         sourceKind: "uploaded_docx" as const,
         sourceBlockIds: blocks.map(b => b.id),
         tableIds: [],
-        unsupportedFeatures: effectiveHeaderBlock.unsupportedFeatures ?? [],
+        unsupportedFeatures: [
+          ...(effectiveHeaderBlock.unsupportedFeatures ?? []),
+          ...(subjectBlock.unsupportedFeatures ?? []),
+        ],
       },
     } as any;
     const snap = createWorkspaceSnapshot({
@@ -1134,5 +1140,104 @@ test("Cổng ứng viên: Hoa Tiêu thay thế Shape phần đầu an toàn; pro
   assert.equal(bodyShapeCandidate.safe, false, "Shape trong phần Body (sơ đồ) chưa được chứng minh bảo toàn phải giữ safe: false");
   assert.equal(bodyShapeCandidate.downloadable, false, "Shape trong phần Body phải khóa tải chính thức");
   assert.ok(bodyShapeCandidate.blockers.includes("unsupported_source_ooxml:block-3"), "Phải giữ blocker unsupported_source_ooxml cho khối Body");
-  assert.match(describeExportBlocker("unsupported_source_ooxml:block-3").messageVi, /#4 \(block-3\)/);
+  assert.match(describeExportBlocker("unsupported_source_ooxml:block-3").messageVi, /#4/);
+
+  // 6) Chỉ gỡ blocker Shape ở trích yếu khi cùng đoạn nguồn chỉ có chữ trích yếu và
+  // đường ngang DrawingML/VML đơn giản, còn DOCX ứng viên chứng minh đường thay thế hợp lệ.
+  const provenSubjectShape: SourceBlock = {
+    ...subjectPlainBlock,
+    rawXml: `<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/></w:rPr><w:t>Về việc kiểm thử phần đầu Hoa Tiêu</w:t></w:r>${subjectInlineShapeFragment}</w:p>`,
+    unsupportedFeatures: [{
+      code: "drawing_or_image",
+      blockId: "block-2",
+      description: "Synthetic horizontal subject divider",
+    }],
+  };
+  const provenSnap = makeApprovedSnapshot(COMPANY_HEADER_PROFILE_ID, provenSubjectShape, COMPANY_HEADER_ISSUER);
+  const provenCandidate = await prepareExportCandidate(provenSnap);
+  assert.equal(provenCandidate.blockers.includes("unsupported_source_ooxml:block-2"), false, "A proven subject-only horizontal line should use the generated replacement");
+  assert.equal(provenCandidate.exportSafety.decision, "allow", "The matching source line may be removed from the safety manifest only after candidate proof");
+  assert.equal(provenCandidate.safe, true, "The supported source subject line should not leave a review-only blocker");
+
+  // 7) Bảng đầu có cả Shape line VÀ cảnh báo kiểu bảng unsupported_table_style:
+  // Thay thế line chỉ gỡ cảnh báo drawing_or_image, cảnh báo bảng unsupported_table_style vẫn giữ nguyên
+  const headerWithTableStyleWarning: SourceBlock = {
+    ...headerBlock,
+    text: `${COMPANY_HEADER_PARENT}\n${COMPANY_HEADER_ISSUER}\t${COMPANY_NATIONAL_HEADER}\n${COMPANY_MOTTO}\tSố: 01/TB-HTMB\tHải Phòng, ngày 20 tháng 10 năm 2026`,
+    tableModel: {
+      ...headerBlock.tableModel!,
+      rows: [{
+        ...headerBlock.tableModel!.rows[0],
+        cells: [
+          { ...headerBlock.tableModel!.rows[0].cells[0], text: `${COMPANY_HEADER_PARENT}\n${COMPANY_HEADER_ISSUER}` },
+          headerBlock.tableModel!.rows[0].cells[1],
+          headerBlock.tableModel!.rows[0].cells[2],
+          headerBlock.tableModel!.rows[0].cells[3],
+        ],
+      }],
+    },
+    unsupportedFeatures: [
+      {
+        code: "drawing_or_image",
+        tableId: "block-0",
+        blockId: "block-0",
+        description: "Bảng chứa đối tượng hình ảnh/vẽ (w:drawing/w:pict) chưa hỗ trợ bảo toàn cấu trúc",
+      },
+      {
+        code: "unsupported_table_style",
+        tableId: "block-0",
+        blockId: "block-0",
+        description: "Bảng đầu trang có định dạng kiểu viền/màu chưa hỗ trợ bảo toàn",
+      },
+    ],
+  };
+  const mixedSnapBlocks = [headerWithTableStyleWarning, typeBlock, provenSubjectShape, bodyBlock];
+  const mixedSnap = createWorkspaceSnapshot({
+    doc: makeDoc({
+      headerProfile: COMPANY_HEADER_PROFILE_ID,
+      orgHeader1: COMPANY_HEADER_PARENT,
+      orgHeader2: COMPANY_HEADER_ISSUER,
+      nationalHeader1: COMPANY_NATIONAL_HEADER,
+      nationalHeader2: COMPANY_MOTTO,
+      referenceNumber: "Số: 01/TB-HTMB",
+      locationAndDate: "Hải Phòng, ngày 20 tháng 10 năm 2026",
+      documentType: "THÔNG BÁO",
+      subject: "Về việc kiểm thử phần đầu Hoa Tiêu",
+      bodyHtml: "<p>Nội dung thân bài kiểm thử.</p>",
+    }),
+    standardType: "state",
+    reviewBlocks: mixedSnapBlocks,
+    structuredImport: {
+      fields: {
+        orgHeader1: { value: COMPANY_HEADER_PARENT, sourceBlockIds: ["block-0"] },
+        orgHeader2: { value: COMPANY_HEADER_ISSUER, sourceBlockIds: ["block-0"] },
+        nationalHeader1: { value: COMPANY_NATIONAL_HEADER, sourceBlockIds: ["block-0"] },
+        nationalHeader2: { value: COMPANY_MOTTO, sourceBlockIds: ["block-0"] },
+        referenceNumber: { value: "Số: 01/TB-HTMB", sourceBlockIds: ["block-0"] },
+        locationAndDate: { value: "Hải Phòng, ngày 20 tháng 10 năm 2026", sourceBlockIds: ["block-0"] },
+        documentType: { value: "THÔNG BÁO", sourceBlockIds: ["block-1"] },
+        subject: { value: "Về việc kiểm thử phần đầu Hoa Tiêu", sourceBlockIds: ["block-2"] },
+      },
+      importFidelityManifest: {
+        sourceKind: "uploaded_docx" as const,
+        sourceBlockIds: mixedSnapBlocks.map(b => b.id),
+        tableIds: [],
+        unsupportedFeatures: [
+          ...(headerWithTableStyleWarning.unsupportedFeatures ?? []),
+          ...(provenSubjectShape.unsupportedFeatures ?? []),
+        ],
+      },
+    } as any,
+  }, { blobHash: "hash-mixed-features", generation: 1, blocks: mixedSnapBlocks });
+  const approvedMixed = approveWorkspacePartition(mixedSnap);
+  assert.equal(approvedMixed.ok, true);
+  const mixedCandidate = await prepareExportCandidate(approvedMixed.snapshot);
+  assert.equal(mixedCandidate.blockers.includes("unsupported_source_ooxml:block-0"), false,
+    "Line đã thay đúng thì không còn blocker unsupported_source_ooxml cho block-0");
+  assert.equal(mixedCandidate.blockers.includes("unsupported_source_ooxml:block-2"), false,
+    "Line trích yếu đã thay đúng thì không còn blocker cho block-2");
+  assert.ok(mixedCandidate.exportSafety.violations.some(v => v.code === "unsupported_table_style"),
+    "Cảnh báo kiểu bảng unsupported_table_style phải được giữ nguyên");
+  assert.notEqual(mixedCandidate.exportSafety.decision, "allow",
+    "Candidate không được coi là allow khi vẫn còn cảnh báo kiểu bảng độc lập");
 });

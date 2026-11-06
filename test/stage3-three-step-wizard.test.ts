@@ -356,6 +356,23 @@ test("Chặng 3: wizard ba bước, cổng dữ liệu, bảo toàn nguồn, lư
     })()`);
     await new Promise((r) => setTimeout(r, 300));
 
+    assert.ok(
+      await client.evaluate<boolean>(`(() => {
+        const button = document.querySelector('button[data-step1-phase="recognition"]');
+        if (!button || button.disabled) return false;
+        button.click();
+        return true;
+      })()`),
+      "Tiểu bước Xem nhận diện phải truy cập được sau khi tải tệp",
+    );
+    assert.ok(
+      await client.waitForFunction(
+        `document.querySelector('[data-wizard-step="1"]')?.getAttribute('data-flow-phase') === 'recognition' && document.querySelector('#regime-suggested') !== null`,
+        5000,
+      ),
+      "Màn hình nhận diện nguồn phải được mở trước khi kiểm tra chứng cứ",
+    );
+
     // Chờ nhận diện thể thức hoàn tất (không còn dòng mặc định "Nguồn là mẫu hệ thống").
     assert.ok(
       await client.waitForFunction(
@@ -376,6 +393,11 @@ test("Chặng 3: wizard ba bước, cổng dữ liệu, bảo toàn nguồn, lư
 
     // Tải B (Đảng) khi đang chọn Hành chính => phải hỏi, hủy thì giữ nguyên A.
     await client.uploadFile('input[type="file"]', partyPath);
+    assert.ok(
+      await client.waitForFunction(`document.querySelector('#replace-file-dialog-title') !== null`, 5000),
+      "Thay một tệp nguồn đang mở phải yêu cầu xác nhận trước",
+    );
+    assert.ok(await client.clickByText("button", "Xác nhận thay thế"), "Phải xác nhận thay tệp A bằng tệp B");
     assert.ok(
       await client.waitForFunction(`document.querySelector('[data-testid="regime-confirm-modal"]') !== null`, 10000),
       "Tệp khác hệ phải mở hộp thoại xác nhận thể thức",
@@ -407,12 +429,12 @@ test("Chặng 3: wizard ba bước, cổng dữ liệu, bảo toàn nguồn, lư
       })()`);
 
     const profileBefore = await client.evaluate<boolean>(
-      `Boolean(Array.from(document.querySelectorAll('[data-wizard-step="1"] button')).find(b => (b.textContent || '').includes('Hoa tiêu miền Bắc'))?.getAttribute('aria-pressed') === 'true')`,
+      `document.querySelector('[data-wizard-step="1"] [role="group"][aria-label="Mẫu cơ quan"] button')?.getAttribute('aria-pressed') === 'true'`,
     );
     assert.equal(profileBefore, false, "Ban đầu mẫu cơ quan phải là Cơ quan chung");
 
     assert.ok(
-      await client.clickByText("button", "Hoa tiêu miền Bắc"),
+      await client.clickByText("button", "Hoa tiêu MB"),
       "Phải chọn được mẫu cơ quan Hoa tiêu miền Bắc",
     );
     // Không chờ debounce 1000ms: bản nháp phải commit ngay sau thay đổi lựa chọn.

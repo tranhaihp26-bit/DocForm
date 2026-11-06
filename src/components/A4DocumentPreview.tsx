@@ -3,12 +3,14 @@ import { createPortal } from "react-dom";
 import DOMPurify from "dompurify";
 import { renderAsync } from "docx-preview";
 import { Packer } from "docx";
+import JSZip from "jszip";
 import { 
   FileText, ZoomIn, ZoomOut, Maximize2, Minimize2, 
   Printer, Download, FileCode, CheckCircle2, Layers,
   RefreshCw, Eye, Sparkles, LayoutGrid, AlertTriangle
 } from "lucide-react";
 import { detectEmbeddedHeader, detectEmbeddedSignature, generateND30DocxDocument, generateND30DocxBlob, parseRecipientLines } from "../utils/docxExport";
+import { SYSTEM_FORMAL_LINE_THICKNESS_CSS } from "../utils/formalLineThickness.ts";
 import { preparePreviewDocument, type PreviewDocumentSource } from "../utils/previewDocument.ts";
 import {
   COMPANY_HEADER_PROFILE_ID, COMPANY_HEADER_GEOMETRY_MM, COMPANY_MOTTO,
@@ -19,6 +21,7 @@ import {
   COMPANY_HEADER_HD05_PARENT_LINES, COMPANY_HEADER_HD05_ISSUER_LINES, COMPANY_HEADER_HD05_TITLE,
 } from "../canonical/hd05/companyHeaderHD05.ts";
 import { optimizeTableHtml } from "../utils/tableFormatUtils.ts";
+import { subjectUnderlineProofFromDocumentXml } from "../canonical/nd30/canonicalAudit.ts";
 
 export type DocumentData = PreviewDocumentSource;
 
@@ -39,7 +42,22 @@ export interface A4DocumentPreviewProps {
 // docx-preview does not currently apply the negative OOXML table indent nor render
 // shape lines (DrawingML/VML). Restore that placement and render crisp statutory dividers
 // in its HTML view so it matches the exported Word document.
-function enhanceDocxPreviewLinesAndGeometry(root: HTMLElement, isParty: boolean) {
+type SubjectUnderlinePreviewLine = { subjectText: string; widthTwips: number };
+
+function subjectUnderlinePreviewLine(xml: string): SubjectUnderlinePreviewLine | undefined {
+  const proof = subjectUnderlineProofFromDocumentXml(xml);
+  if (!proof.subject_text || !proof.width_twips) return undefined;
+  return { subjectText: proof.subject_text, widthTwips: proof.width_twips };
+}
+
+async function subjectUnderlinePreviewFromBlob(blob: Blob): Promise<SubjectUnderlinePreviewLine | undefined> {
+  const zip = await JSZip.loadAsync(await blob.arrayBuffer());
+  const xml = await zip.file("word/document.xml")?.async("string");
+  return xml ? subjectUnderlinePreviewLine(xml) : undefined;
+}
+
+function enhanceDocxPreviewLinesAndGeometry(root: HTMLElement, isParty: boolean, subjectLine?: SubjectUnderlinePreviewLine) {
+  const lineThickness = SYSTEM_FORMAL_LINE_THICKNESS_CSS;
   // 1. Phục hồi vị trí lề nếu là Company Header (bảo toàn logic gốc)
   if (isParty) {
     const table = Array.from(root.querySelectorAll("table"))
@@ -88,7 +106,7 @@ function enhanceDocxPreviewLinesAndGeometry(root: HTMLElement, isParty: boolean)
 
         if (borderPs.length > 0) {
           borderPs.forEach(p => {
-            p.style.setProperty("border-bottom", "1.2px solid #000", "important");
+            p.style.setProperty("border-bottom", lineThickness + " solid #000", "important");
             p.style.setProperty("display", "block", "important");
             p.style.setProperty("visibility", "visible", "important");
             p.style.setProperty("opacity", "1", "important");
@@ -103,7 +121,7 @@ function enhanceDocxPreviewLinesAndGeometry(root: HTMLElement, isParty: boolean)
           if (lastOrgP) {
             const line = document.createElement("div");
             line.className = "df-docx-line df-docx-line-issuer";
-            line.setAttribute("style", "width: 155px; max-width: 80%; height: 1.2px; background-color: #000; margin: 3px auto 5px auto;");
+            line.setAttribute("style", "width: 155px; max-width: 80%; height: " + lineThickness + "; background-color: #000; margin: 3px auto 5px auto;");
             lastOrgP.insertAdjacentElement("afterend", line);
           }
         }
@@ -118,7 +136,7 @@ function enhanceDocxPreviewLinesAndGeometry(root: HTMLElement, isParty: boolean)
 
         if (borderPs.length > 0) {
           borderPs.forEach(p => {
-            p.style.setProperty("border-bottom", "1.2px solid #000", "important");
+            p.style.setProperty("border-bottom", lineThickness + " solid #000", "important");
             p.style.setProperty("display", "block", "important");
             p.style.setProperty("visibility", "visible", "important");
             p.style.setProperty("opacity", "1", "important");
@@ -129,7 +147,7 @@ function enhanceDocxPreviewLinesAndGeometry(root: HTMLElement, isParty: boolean)
           if (mottoP) {
             const line = document.createElement("div");
             line.className = "df-docx-line df-docx-line-motto";
-            line.setAttribute("style", "width: 208px; max-width: 100%; height: 1.2px; background-color: #000; margin: 3px auto 5px auto;");
+            line.setAttribute("style", "width: 208px; max-width: 100%; height: " + lineThickness + "; background-color: #000; margin: 3px auto 5px auto;");
             mottoP.insertAdjacentElement("afterend", line);
           }
         }
@@ -145,48 +163,51 @@ function enhanceDocxPreviewLinesAndGeometry(root: HTMLElement, isParty: boolean)
         if (partyP) {
           const line = document.createElement("div");
           line.className = "df-docx-line df-docx-line-party";
-          line.setAttribute("style", "width: 208px; max-width: 100%; height: 1.2px; background-color: #000; margin: 3px auto 5px auto;");
+          line.setAttribute("style", "width: 208px; max-width: 100%; height: " + lineThickness + "; background-color: #000; margin: 3px auto 5px auto;");
           partyP.insertAdjacentElement("afterend", line);
         }
       }
     }
   }
 
-  // 3. Đường kẻ Trích yếu văn bản (phần giữa trang trước Body)
-  if (!isParty) {
+  // 3. docx-preview skips inline Shapes / misplaces relative:page VML lines.
+  // Dọn dẹp các thẻ SVG lỗi do docx-preview chuyển đổi từ VML absolute/page
+  const rogueSvgs = Array.from(root.querySelectorAll("svg")).filter(svg => {
+    const style = svg.getAttribute("style") || "";
+    const line = svg.querySelector("line");
+    const y1 = line?.getAttribute("y1");
+    return style.includes("position:absolute") || (y1 && parseFloat(y1) > 50);
+  });
+  rogueSvgs.forEach(svg => {
+    const parentP = svg.closest("p");
+    if (parentP && (parentP.textContent || "").trim().length === 0) {
+      parentP.style.display = "none";
+    } else {
+      svg.style.display = "none";
+    }
+  });
+
+  // Mirror the candidate line only when its actual OOXML contains a validated adjacent DrawingML/VML subject underline.
+  if (!isParty && subjectLine && !root.querySelector(".df-docx-line-subject")) {
     const allPs = Array.from(root.querySelectorAll("p"));
-    const borderPs = allPs.filter(p => {
-      if (headerTable?.contains(p)) return false;
-      const s = window.getComputedStyle(p);
-      return (s.borderBottomWidth && s.borderBottomWidth !== "0px" && !s.borderBottom.includes("none"));
-    });
-
-    if (borderPs.length > 0) {
-      borderPs.forEach(p => {
-        p.style.setProperty("border-bottom", "1.2px solid #000", "important");
-        p.style.setProperty("display", "block", "important");
-        p.style.setProperty("visibility", "visible", "important");
-        p.style.setProperty("opacity", "1", "important");
-      });
-    } else if (!root.querySelector(".df-docx-line-subject")) {
-      const knownDocTypes = ["THÔNG BÁO", "QUYẾT ĐỊNH", "KẾ HOẠCH", "BÁO CÁO", "TỜ TRÌNH", "CHỈ THỊ", "NGHỊ QUYẾT", "QUY ĐỊNH", "QUY CHẾ", "BIÊN BẢN", "CÔNG ĐIỆN", "HƯỚNG DẪN"];
-      const typeP = allPs.find(p => {
-        const t = (p.textContent || "").trim();
-        return knownDocTypes.includes(t) && !headerTable?.contains(p);
-      });
-
-      if (typeP) {
-        let cur = typeP.nextElementSibling;
-        while (cur && (cur.tagName === "P" && (cur.textContent || "").trim().length === 0)) {
-          cur = cur.nextElementSibling;
-        }
-        if (cur && cur.tagName === "P") {
-          const line = document.createElement("div");
-          line.className = "df-docx-line df-docx-line-subject";
-          line.setAttribute("style", "width: 155px; max-width: 60%; height: 1.2px; background-color: #000; margin: 4px auto 8px auto;");
-          cur.insertAdjacentElement("afterend", line);
-        }
+    const normalizeText = (value: string | null) => (value ?? "").normalize("NFC").replace(/\s/g, "");
+    const targetText = normalizeText(subjectLine.subjectText);
+    const subjectParagraphs = allPs.filter(p => !headerTable?.contains(p) && (
+      normalizeText(p.textContent) === targetText ||
+      (targetText.length > 20 && normalizeText(p.textContent).includes(targetText))
+    ));
+    if (subjectParagraphs.length >= 1) {
+      const subjectP = subjectParagraphs[0];
+      // Hide any empty fallback paragraph immediately following subject that contains docx-preview SVG
+      const nextP = subjectP.nextElementSibling;
+      if (nextP && nextP.tagName === "P" && nextP.querySelector("svg") && (nextP.textContent || "").trim().length === 0) {
+        (nextP as HTMLElement).style.display = "none";
       }
+      const line = document.createElement("div");
+      line.className = "df-docx-line df-docx-line-subject";
+      line.setAttribute("aria-hidden", "true");
+      line.setAttribute("style", "width: " + (subjectLine.widthTwips / 20) + "pt; max-width: 100%; height: " + lineThickness + "; background-color: #000; margin: 4px auto 8px auto;");
+      subjectP.insertAdjacentElement("afterend", line);
     }
   }
 
@@ -319,6 +340,7 @@ export const A4DocumentPreview: React.FC<A4DocumentPreviewProps> = ({
       try {
         const normalizedDoc = preparePreviewDocument(doc, isParty ? "party" : "administrative");
         const blob = await generateND30DocxBlob(normalizedDoc);
+        const subjectLine = await subjectUnderlinePreviewFromBlob(blob);
 
         if (!isMounted || !docxContainerRef.current) return;
 
@@ -335,7 +357,7 @@ export const A4DocumentPreview: React.FC<A4DocumentPreviewProps> = ({
           debug: false,
         });
         if (docxContainerRef.current) {
-          enhanceDocxPreviewLinesAndGeometry(docxContainerRef.current, isParty);
+          enhanceDocxPreviewLinesAndGeometry(docxContainerRef.current, isParty, subjectLine);
         }
 
         if (isMounted) {
@@ -369,6 +391,7 @@ export const A4DocumentPreview: React.FC<A4DocumentPreviewProps> = ({
       try {
         const normalizedDoc = preparePreviewDocument(doc, isParty ? "party" : "administrative");
         const blob = await generateND30DocxBlob(normalizedDoc);
+        const subjectLine = await subjectUnderlinePreviewFromBlob(blob);
         if (!isMounted || !modalDocxContainerRef.current) return;
 
         modalDocxContainerRef.current.innerHTML = "";
@@ -384,7 +407,7 @@ export const A4DocumentPreview: React.FC<A4DocumentPreviewProps> = ({
           debug: false,
         });
         if (modalDocxContainerRef.current) {
-          enhanceDocxPreviewLinesAndGeometry(modalDocxContainerRef.current, isParty);
+          enhanceDocxPreviewLinesAndGeometry(modalDocxContainerRef.current, isParty, subjectLine);
         }
       } catch (err) {
         console.warn("Modal docx-preview render error:", err);
@@ -1156,12 +1179,24 @@ export const CandidateDocumentPreview=React.memo(function CandidateDocumentPrevi
     setReady(false);setRenderedSha('');setError('');setGeometry(null);setZoomScale(null);setCurrentPage(1);host.current?.replaceChildren();
     const staging=document.createElement('div');
     const renderBytes=new Uint8Array(bytes);
-    const render=async()=>{const hash=await crypto.subtle.digest('SHA-256',renderBytes.buffer);const actualSha=[...new Uint8Array(hash)].map(b=>b.toString(16).padStart(2,'0')).join('');if(actualSha!==sha256)throw Error('Bytes bản xem không khớp ứng viên.');await renderAsync(renderBytes.buffer,staging,undefined,{inWrapper:true,breakPages:true,ignoreFonts:false,experimental:true});await document.fonts?.ready;const images=[...staging.querySelectorAll('img')];await Promise.all(images.map(image=>image.decode?.().catch(()=>undefined)));return actualSha;};
+    const render=async()=>{
+      const hash=await crypto.subtle.digest('SHA-256',renderBytes.buffer);
+      const actualSha=[...new Uint8Array(hash)].map(b=>b.toString(16).padStart(2,'0')).join('');
+      if(actualSha!==sha256)throw Error('Bytes bản xem không khớp ứng viên.');
+      const zip=await JSZip.loadAsync(renderBytes);
+      const xml=await zip.file('word/document.xml')?.async('string');
+      const subjectLine=xml?subjectUnderlinePreviewLine(xml):undefined;
+      await renderAsync(renderBytes.buffer,staging,undefined,{inWrapper:true,breakPages:true,ignoreFonts:false,experimental:true});
+      await document.fonts?.ready;
+      const images=[...staging.querySelectorAll('img')];
+      await Promise.all(images.map(image=>image.decode?.().catch(()=>undefined)));
+      return {actualSha,subjectLine};
+    };
     const nextFrame=()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())));
-    render().then(async actualSha=>{
+    render().then(async ({actualSha,subjectLine})=>{
       if(cancelled||!host.current)return;
       host.current.replaceChildren(...Array.from(staging.childNodes));
-      enhanceDocxPreviewLinesAndGeometry(host.current, companyHeaderRegime === 'party');
+      enhanceDocxPreviewLinesAndGeometry(host.current, companyHeaderRegime === 'party', subjectLine);
       await nextFrame();
       if(cancelled||!host.current)return;
       const wrapper=host.current.querySelector<HTMLElement>('.docx-wrapper');

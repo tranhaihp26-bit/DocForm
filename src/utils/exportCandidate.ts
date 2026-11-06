@@ -6,9 +6,10 @@ import { generateND30DocxUint8Array } from "./docxExport.ts";
 import { verifyCandidateExportFidelity, type CandidateExportVerificationResult } from "./tableRoundtrip.ts";
 import { verifyCandidateContentFidelity, type ContentFidelityResult } from "./candidateContentFidelity.ts";
 import { extractOoxmlEvidenceFromXml } from "../canonical/ruleEngine.ts";
+import { subjectUnderlineProofFromDocumentXml } from "../canonical/nd30/canonicalAudit.ts";
 import { canonicalWorkspaceValue, confirmedRemovedTableIds, freezeWorkspaceValue, hasWorkspaceApproval, workspaceInvariantErrors, type WorkspaceSnapshot, type WorkspaceState } from "./workspaceState.ts";
 import { isTransformedMetadataTable } from "./sourceTableInventory.ts";
-import { hasProfileHeaderShapeLines, hasReplaceableHeaderShapeLines } from "./sourceHeaderShapes.ts";
+import { hasProfileHeaderShapeLines, hasReplaceableHeaderShapeLines, hasReplaceableSubjectUnderlineShape } from "./sourceHeaderShapes.ts";
 import { hasStampedHoaTieuHeader } from "./hoaTieuHeaderStamp.ts";
 import { COMPANY_HEADER_PROFILE_ID } from "../canonical/nd30/companyHeader.ts";
 import { COMPANY_HEADER_HD05_PROFILE_ID } from "../canonical/hd05/companyHeaderHD05.ts";
@@ -111,14 +112,27 @@ export async function prepareExportCandidate(input: ExportCandidateSnapshot, gen
   const removed = new Set(working ? confirmedRemovedTableIds(working) : []);
   const tables = { ...formatData.importedTables };
   const replacedHeaderShapeBlocks: typeof sourceBlocks = [];
-  for (const block of sourceBlocks) {
+  const replaceableSubjectShapeBlocks: typeof sourceBlocks = [];
+  for (let i = 0; i < sourceBlocks.length; i++) {
+    const block = sourceBlocks[i];
     const reviewedBlock = snapshot.reviewBlocks.find(reviewed => reviewed.id === block.id);
     const effectiveMetadataBlock = reviewedBlock ? { ...block, role: reviewedBlock.role, tableModel: reviewedBlock.tableModel ?? block.tableModel } : block;
     if (block.kind === "table" && !block.tableModel) blockers.push(`unsupported_source_table_model:${block.id}`);
     if (/<(?:w:)?(?:drawing|pict|object|fldSimple|fldChar)\b/i.test(block.rawXml ?? "")) {
       const selectedProfile = formatData.regime === "administrative" ? COMPANY_HEADER_PROFILE_ID : COMPANY_HEADER_HD05_PROFILE_ID;
+      const namedAdministrativeSubject = formatData.regime === "administrative" &&
+        !/công\s*văn/i.test(formatData.documentType ?? "");
       if (formatData.headerProfile === selectedProfile && isTransformedMetadataTable(effectiveMetadataBlock, manifest, snapshot.structuredImport?.fields) &&
           hasReplaceableHeaderShapeLines(block.rawXml ?? "")) replacedHeaderShapeBlocks.push(block);
+      else if (block.kind === "paragraph" && namedAdministrativeSubject) {
+        const prevBlock = i > 0 ? sourceBlocks[i - 1] : null;
+        const effectiveSourceText = block.text.trim() ? block.text : (prevBlock?.text ?? "");
+        if (hasReplaceableSubjectUnderlineShape(block.rawXml ?? "", effectiveSourceText, formatData.subject)) {
+          replaceableSubjectShapeBlocks.push(block);
+        } else {
+          blockers.push(`unsupported_source_ooxml:${block.id}`);
+        }
+      }
       else blockers.push(`unsupported_source_ooxml:${block.id}`);
     }
     if (/<(?:img|svg|object|embed|iframe|video|audio|canvas)\b/i.test(block.html ?? "")) blockers.push(`unsupported_source_media:${block.id}`);
@@ -181,11 +195,20 @@ export async function prepareExportCandidate(input: ExportCandidateSnapshot, gen
   if (profileSelected && !profileShapesPresent) blockers.push("profile_header_not_stamped");
   for (const block of replacedHeaderShapeBlocks) if (replacedHeaderShapeBlocks.length !== 1 || !profileShapesPresent)
     blockers.push(`unsupported_source_ooxml:${block.id}`);
+  const subjectUnderlineProof = formatData.regime === "administrative" ? subjectUnderlineProofFromDocumentXml(xml, formatData.subject) : {};
+  const subjectUnderlineProven = typeof subjectUnderlineProof.subject_underline_fraction === "number" &&
+    subjectUnderlineProof.subject_underline_fraction >= 0.333 && subjectUnderlineProof.subject_underline_fraction <= 0.5;
+  const replacedSubjectBlockId = replaceableSubjectShapeBlocks.length === 1 && subjectUnderlineProven
+    ? replaceableSubjectShapeBlocks[0].id
+    : null;
+  for (const block of replaceableSubjectShapeBlocks) if (block.id !== replacedSubjectBlockId)
+    blockers.push(`unsupported_source_ooxml:${block.id}`);
   const profileHeaderLines = replacedHeaderShapeBlocks.length === 1 && profileShapesPresent
     ? formatData.regime === "administrative" ? 2 : 1 : 0;
   const contentFidelity = verifyCandidateContentFidelity(xml, formatData);
   const replacedHeaderBlockId = replacedHeaderShapeBlocks.length === 1 && profileShapesPresent ? replacedHeaderShapeBlocks[0].id : null;
-  const safetyManifest = manifest && replacedHeaderBlockId ? { ...manifest, unsupportedFeatures: manifest.unsupportedFeatures.filter(f => !(f.code === "drawing_or_image" && (f.blockId === replacedHeaderBlockId || f.tableId === replacedHeaderBlockId))) } : manifest;
+  const replacedShapeBlockIds = new Set([replacedHeaderBlockId, replacedSubjectBlockId].filter((id): id is string => Boolean(id)));
+  const safetyManifest = manifest && replacedShapeBlockIds.size ? { ...manifest, unsupportedFeatures: manifest.unsupportedFeatures.filter(f => !(f.code === "drawing_or_image" && replacedShapeBlockIds.has(f.blockId ?? f.tableId ?? ""))) } : manifest;
   const exportSafety = assessExportSafety(safetyManifest, { candidateFidelityResult: tableFidelity, roundtripVerified: tableFidelity.safe });
   const evidence = extractOoxmlEvidenceFromXml(xml, formatData.regime);
   const canRenderDiagnostic = generatedBytes.length > 0 && Boolean(xml) &&

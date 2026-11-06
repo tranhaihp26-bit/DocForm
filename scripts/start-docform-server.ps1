@@ -92,4 +92,3 @@ if (-not $ready) {
 }
 
 Write-Host "DocForm is running at http://localhost:5050/ (PID $serverProcessId)."
-Start-Process 'http://localhost:5050/'

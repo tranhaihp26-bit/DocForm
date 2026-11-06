@@ -5,7 +5,7 @@
  */
 import rawCatalog from "./rules.generated.json";
 import JSZip from "jszip";
-import { estimateTimesNewRomanWidthTwips } from "../../utils/docxExport.ts";
+import { estimateLongestSubjectLineWidthTwips, estimateTimesNewRomanWidthTwips } from "../../utils/docxExport.ts";
 
 export type CanonicalStatus = "PASS" | "FAIL" | "NOT_APPLICABLE" | "NOT_EVALUATED" | "NEEDS_REVIEW";
 export interface CanonicalRule {
@@ -45,9 +45,16 @@ export interface SectionEvidence {
 export interface HeaderLineEvidence {
   issuer_underline_fraction?: number;
   motto_underline_length_relation?: string;
+  subject_underline_fraction?: number;
 }
 
 export interface CanonicalAuditEvidence extends SectionEvidence, HeaderLineEvidence {}
+
+export interface SubjectUnderlineOoxmlProof {
+  subject_underline_fraction?: number;
+  width_twips?: number;
+  subject_text?: string;
+}
 
 const xmlAttr = (s: string, name: string): string | undefined => {
   const m = s.match(new RegExp(`(?:\\bw:)?${name}="([^"]+)"`));
@@ -157,10 +164,92 @@ export function headerLineEvidenceFromDocumentXml(xml: string): HeaderLineEviden
   return { issuer_underline_fraction, motto_underline_length_relation };
 }
 
+/**
+ * Measure only a named-document subject line whose adjacent OOXML paragraphs,
+ * inline DrawingML line, and same-width VML fallback form the supported pair.
+ */
+export function subjectUnderlineProofFromDocumentXml(xml: string, expectedSubject?: string): SubjectUnderlineOoxmlProof {
+  const paragraphs = [...xml.matchAll(/<w:p\b[\s\S]*?<\/w:p>/g)].map(match => match[0]);
+  const lineIndexes = paragraphs.flatMap((paragraph, index) =>
+    (paragraph.match(/<wp:docPr\b[^>]*name="ND30 Plain Line 3"/g) ?? []).length ? [index] : []);
+  if (lineIndexes.length !== 1) return {};
+  const lineIndex = lineIndexes[0];
+  const lineParagraph = paragraphs[lineIndex];
+  const subjectParagraph = paragraphs[lineIndex - 1] ?? "";
+  const textContent = (paragraph: string) => paragraph
+    .replace(/<w:br\b[^>]*\/?\s*>/g, "\n")
+    .replace(/<w:cr\b[^>]*\/?\s*>/g, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"').replace(/&apos;/g, "'");
+  const subjectText = textContent(subjectParagraph).normalize("NFC");
+  const lineText = textContent(lineParagraph).normalize("NFC").replace(/\s+/g, " ").trim();
+  if (lineText.length > 0) return {};
+
+  const decodeXml = (value: string) => value
+    .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"').replace(/&apos;/g, "'");
+  const normalize = (value: string) => decodeXml(value).normalize("NFC").replace(/\s+/g, " ").trim();
+
+  if (expectedSubject !== undefined && normalize(subjectText) !== normalize(expectedSubject)) return {};
+  if (!subjectText.trim() ||
+      !/<w:jc\b[^>]*w:val="center"/i.test(subjectParagraph) ||
+      !/<w:b\b(?![^>]*w:val="(?:0|false|off)")[^>]*\/?\s*>/i.test(subjectParagraph) ||
+      /<(?:w:object|w:fldSimple|w:fldChar|w:hyperlink|w:sdt|w:altChunk|a:blip|v:imagedata|v:textbox|wps:txbx|w:txbxContent)\b|\br:(?:embed|link|id)\s*=/i.test(subjectParagraph)) return {};
+
+  if (!lineParagraph.includes("<wp:inline") ||
+      /<wp:anchor\b|<wp:position[HV]\b|position:absolute|relative:page/i.test(lineParagraph) ||
+      (lineParagraph.match(/<w:drawing\b/g) ?? []).length !== 1 ||
+      (lineParagraph.match(/<w:pict\b/g) ?? []).length !== 1 ||
+      !/<a:prstGeom\b[^>]*prst="line"/.test(lineParagraph) ||
+      /<(?:w:object|w:fldSimple|w:fldChar|w:hyperlink|w:sdt|w:altChunk|a:blip|v:imagedata|v:textbox|wps:txbx|w:txbxContent)\b|\br:(?:embed|link|id)\s*=/i.test(lineParagraph) ||
+      !/<w:jc\b[^>]*w:val="center"/i.test(lineParagraph)) return {};
+
+  const drawingLine = lineParagraph.match(/<a:ln\b[^>]*>/i)?.[0] ?? "";
+  if (!/\bw="9525"/i.test(drawingLine)) return {};
+  const vmlStroke = lineParagraph.match(/<v:stroke\b[^>]*>/i)?.[0] ?? "";
+  const vmlLineTag = lineParagraph.match(/<v:line\b[^>]*>/i)?.[0] ?? "";
+  if (!/\bweight="0\.75pt"/i.test(vmlStroke) && !/\bweight="0\.75pt"/i.test(vmlLineTag)) return {};
+
+  const extent = lineParagraph.match(/<wp:extent\b([^>]*)\/?\s*>/i)?.[1] ?? "";
+  const drawingWidthEmu = Number(extent.match(/\bcx="(\d+)"/i)?.[1]);
+  const shapeExtent = lineParagraph.match(/<a:ext\b([^>]*)\/?\s*>/i)?.[1] ?? "";
+  const shapeWidthEmu = Number(shapeExtent.match(/\bcx="(\d+)"/i)?.[1]);
+  const shapeHeightEmu = Number(shapeExtent.match(/\bcy="(\d+)"/i)?.[1]);
+  const vmlLine = lineParagraph.match(/<v:line\b([^>]*)>/i)?.[1] ?? "";
+  const from = vmlLine.match(/\bfrom="([^"]+)"/i)?.[1];
+  const to = vmlLine.match(/\bto="([^"]+)"/i)?.[1];
+  const pointX = (point: string | undefined) => Number.parseFloat(point?.split(",")[0] ?? "NaN");
+  const pointY = (point: string | undefined) => Number.parseFloat(point?.split(",")[1] ?? "NaN");
+  const drawingWidthTwips = Math.round(drawingWidthEmu / 635);
+  const vmlWidthTwips = Math.round((pointX(to) - pointX(from)) * 20);
+  const vmlYFrom = pointY(from), vmlYTo = pointY(to);
+  const vmlStyle = vmlLine.match(/\bstyle="([^"]+)"/i)?.[1] ?? "";
+  if (!(drawingWidthTwips > 0) ||
+      shapeWidthEmu !== drawingWidthEmu || shapeHeightEmu !== 0 ||
+      !Number.isFinite(vmlWidthTwips) ||
+      Math.abs(drawingWidthTwips - vmlWidthTwips) > 1 ||
+      !Number.isFinite(vmlYFrom) || vmlYFrom !== vmlYTo ||
+      !/position:relative/i.test(vmlStyle) || /mso-position|position:absolute/i.test(vmlStyle) ||
+      !/<mc:Choice\b[\s\S]*?<w:drawing\b[\s\S]*?<\/mc:Choice>/.test(lineParagraph) ||
+      !/<mc:Fallback\b[\s\S]*?<w:pict\b[\s\S]*?<v:line\b/.test(lineParagraph)) return {};
+
+  const sizeHalfPoints = Number(subjectParagraph.match(/<w:sz\b[^>]*w:val="(\d+)"/)?.[1]);
+  const fontSizePt = sizeHalfPoints > 0 ? sizeHalfPoints / 2 : 13;
+  const longestLineTwips = estimateLongestSubjectLineWidthTwips(subjectText, fontSizePt, true);
+  if (!(longestLineTwips > 0)) return {};
+  return {
+    subject_underline_fraction: drawingWidthTwips / longestLineTwips,
+    width_twips: drawingWidthTwips,
+    subject_text: subjectText,
+  };
+}
+
 export function evidenceFromDocumentXml(xml: string): CanonicalAuditEvidence {
   return {
     ...sectionEvidenceFromDocumentXml(xml),
     ...headerLineEvidenceFromDocumentXml(xml),
+    subject_underline_fraction: subjectUnderlineProofFromDocumentXml(xml).subject_underline_fraction,
   };
 }
 
@@ -213,6 +302,16 @@ export function auditCanonicalND30(evidence?: CanonicalAuditEvidence, asOf = "20
         reason = result
           ? `Đường kẻ dưới cơ quan ban hành đo từ OOXML đạt ${(evidence.issuer_underline_fraction * 100).toFixed(1)}% (trong khoảng 33.3% - 50%).`
           : "Độ dài đường kẻ cơ quan ban hành không nằm trong khoảng 1/3 đến 1/2 độ dài dòng chữ.";
+      }
+    } else if (r.id === "ND30.PL1.I.II.5B.NAMED_SUBJECT_UNDERLINE_RANGE") {
+      if (evidence?.subject_underline_fraction !== undefined) {
+        actual = evidence.subject_underline_fraction;
+        const min = Number(r.constraint.min), max = Number(r.constraint.max);
+        const result = evidence.subject_underline_fraction >= min && evidence.subject_underline_fraction <= max;
+        status = result ? "PASS" : "FAIL";
+        reason = result
+          ? `Đường kẻ dưới trích yếu đo từ OOXML đạt ${(evidence.subject_underline_fraction * 100).toFixed(1)}% độ dài dòng hiển thị dài nhất.`
+          : "Độ dài đường kẻ dưới trích yếu không nằm trong khoảng 1/3 đến 1/2 độ dài dòng hiển thị dài nhất.";
       }
     } else if (r.constraint.type === "semantic_review") {
       status = "NEEDS_REVIEW";

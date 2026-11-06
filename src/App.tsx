@@ -2627,7 +2627,9 @@ export default function App() {
   const step1SubstepIndex = step1Substeps.findIndex(item => item.phase === step1Phase);
   type SidebarItem = { id: string; label: string; selector?: string; phase?: ImportStepPhase };
   const sidebarItemsByStep: Record<1 | 2 | 3, SidebarItem[]> = {
-    1: [{ id: "df-step1-flow", label: "Nguồn và lựa chọn" }],
+    1: step1Flow
+      ? step1Substeps.map(({ phase, label }) => ({ id: `df-step1-stage-${phase}`, label, phase }))
+      : [{ id: "df-step1-flow", label: "Nguồn và lựa chọn" }],
     2: [
       { id: "df-step2-groups-before", label: "Phần đầu · Nhóm 01–05" },
       { id: "df-step2-body", label: "Nội dung văn bản · Body" },
@@ -3809,7 +3811,7 @@ function formatDocxDownloadFilename(rawTitle: string, regime: 'state' | 'party',
       : {
           label: "BẢN XUẤT DOCX",
           title: candidatePending ? "Đang tạo bản xem" : isCandidateEligibleForExport(visibleCandidate) ? "Có thể tải DOCX" : isCandidateEligibleForReviewDownload(visibleCandidate) ? "Có thể tải bản đối chiếu" : visibleCandidate ? "Bản xuất bị khóa" : "Chưa có bản DOCX",
-          detail: candidatePending ? "Đang dựng DOCX từ bản soạn." : isCandidateEligibleForExport(visibleCandidate) ? "Đối chiếu không ghi nhận cảnh báo." : isCandidateEligibleForReviewDownload(visibleCandidate) ? "Bản đối chiếu chưa được xác nhận; chỉ dùng để rà soát, không phát hành." : visibleCandidate ? "Bản xem không đủ điều kiện tải; hãy đối chiếu hoặc tải tệp gốc." : "Chưa tạo được bản xuất từ bản soạn.",
+          detail: candidatePending ? "Đang dựng DOCX từ bản soạn." : isCandidateEligibleForExport(visibleCandidate) ? "Đối chiếu không ghi nhận cảnh báo." : isCandidateEligibleForReviewDownload(visibleCandidate) ? "Bản đối chiếu dùng để rà soát trong Word trước khi phát hành." : visibleCandidate ? "Bản xem chưa đủ điều kiện tải; hãy đối chiếu hoặc tải tệp gốc." : "Chưa tạo được bản xuất từ bản soạn.",
           tone: candidatePending ? "neutral" : isCandidateEligibleForExport(visibleCandidate) ? "ready" : visibleCandidate ? "review" : "neutral",
         };
   const partitionBlocksForProposalReview = reviewBlocks.length > 0 ? reviewBlocks : (structuredImport?.blocks || uploadedBlocks);

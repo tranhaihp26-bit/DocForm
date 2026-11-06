@@ -91,6 +91,16 @@ describe("HD05 Wide Header V3 & Body Role-Based Formatting Verification", () => 
     const ev = extractOoxmlEvidenceFromXml(xml, "party");
     const audit = evaluateDocumentRules(docData, "party", ev);
     assert.ok(audit, "Audit must execute successfully");
+    assert.equal(ev.has_hd05_shape_line, true, "Canonical evidence must recognize the approved 204.35pt DrawingML/VML profile line");
+    const shapeLineRule = audit.results.find((rule: any) => rule.ruleId === "PROFILE.HD05.HOA_TIEU_MB.SHAPE_LINE_TITLE");
+    assert.equal(shapeLineRule?.status, "PASS", "The approved HD05 profile line must pass its company-profile rule");
+    const missingFallbackEvidence = extractOoxmlEvidenceFromXml(
+      xml.replace(/<mc:Fallback>[\s\S]*?<\/mc:Fallback>/, "<mc:Fallback/>"),
+      "party",
+    );
+    assert.equal(missingFallbackEvidence.has_hd05_shape_line, false, "A missing VML fallback must not pass profile evidence");
+    const wrongWidthEvidence = extractOoxmlEvidenceFromXml(xml.replaceAll("2595245", "2628900"), "party");
+    assert.equal(wrongWidthEvidence.has_hd05_shape_line, false, "A DrawingML width different from the approved profile must not pass");
     const indentRule = audit.results.find((rule: any) => rule.ruleId === "HD05-BODY-FIRST-LINE-INDENT");
     assert.equal(indentRule?.status, "PASS", "Generated 567 dxa HD05 body indent must pass its rule");
   });

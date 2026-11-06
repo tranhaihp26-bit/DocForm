@@ -141,7 +141,7 @@ export function assessExportSafety(
     if (!violations.some(v => v.code === "unverified_roundtrip")) {
       violations.push({
         code: "unverified_roundtrip",
-        messageVi: "Bảng biểu từ tệp DOCX nhập khẩu chưa được chứng minh roundtrip bảo toàn ô gộp/lưới OOXML an toàn trên bản xuất này.",
+        messageVi: "Bảng biểu từ tệp Word gốc chưa bảo đảm giữ nguyên cấu trúc ô gộp và kích thước cột khi xuất sang tệp mới.",
         canDownloadOriginal,
       });
     }
@@ -153,7 +153,7 @@ export function assessExportSafety(
       decision: "reject",
       violations,
       canDownloadOriginal,
-      userNotice: `Xuất bản Word biến đổi bị từ chối để bảo vệ toàn vẹn dữ liệu. Lý do: ${errorSummary} Bạn vẫn có thể xem trước, rà soát hoặc tải lại tệp Word gốc.`,
+      userNotice: `Tệp Word xuất ra cần đối chiếu lại để bảo toàn dữ liệu gốc. Lý do: ${errorSummary} Bạn có thể xem trước, rà soát hoặc tải lại tệp gốc.`,
     };
   }
 

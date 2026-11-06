@@ -698,6 +698,9 @@ export function validateND30Compliance(
   }
 
   // 4. Số và ký hiệu văn bản
+  const trimmedReferenceNumber = typeof doc.referenceNumber === "string" ? doc.referenceNumber.trim() : "";
+  const administrativeSerialNotAssigned = !isParty &&
+    /^Số:\s*[/-]/i.test(trimmedReferenceNumber);
   if (isPlaceholderValue(doc.referenceNumber)) {
     issues.push({
       id: "referenceNumber_empty",
@@ -706,6 +709,14 @@ export function validateND30Compliance(
       message: isParty
         ? "Văn bản chưa có số ký hiệu chính thức theo quy định Hướng dẫn số 05-HD/VPTW (đang sử dụng placeholder)."
         : "Văn bản chưa có số ký hiệu chính thức theo quy định Điều 10 NĐ 30/2020/NĐ-CP (đang sử dụng placeholder).",
+      severity: "warning",
+    });
+  } else if (administrativeSerialNotAssigned) {
+    issues.push({
+      id: "referenceNumber_missing",
+      field: "referenceNumber",
+      title: "Số và ký hiệu văn bản chưa được cấp",
+      message: "Giữ trống phần số để bổ sung sau khi được cấp; văn bản chưa sẵn sàng ban hành.",
       severity: "warning",
     });
   } else if (isParty) {

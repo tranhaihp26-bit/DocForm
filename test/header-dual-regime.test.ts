@@ -3,7 +3,10 @@ import JSZip from "jszip";
 import { 
   generateND30DocxDocument, 
   generateND30DocxBuffer, 
-  getStyleProfile 
+  getStyleProfile,
+  ND30_SHAPE_LINE_1_XML,
+  ND30_SHAPE_LINE_2_XML,
+  HD05_SHAPE_LINE_TITLE_XML,
 } from "../src/utils/docxExport.ts";
 import { 
   type DocumentFormatType, 
@@ -35,6 +38,25 @@ import {
 console.log("==================================================================");
 console.log(" BỘ KIỂM THỬ TÁCH BIỆT HAI HỆ THỐNG THỂ THỨC (NĐ 30 & HD 05)");
 console.log("==================================================================\n");
+
+function assertFormalLineFallbackThickness(xml: string, id: string, label: string) {
+  const line = xml.match(new RegExp('<v:line\\b(?=[^>]*\\bid="' + id + '")[\\s\\S]*?<\\/v:line>'))?.[0];
+  assert.ok(line, label + ": VML fallback line is present");
+  assert.match(line!, /<v:stroke\b[^>]*\bweight="0\.75pt"/, label + ": VML fallback line must be 0.75 pt");
+}
+
+function assertFormalDrawingLineThickness(xml: string, label: string) {
+  const lines = [...xml.matchAll(/<a:ln\b[^>]*>/g)].map(match => match[0]);
+  assert.ok(lines.length > 0, label + ": DrawingML system lines are present");
+  assert.ok(lines.every(line => /\bw="9525"/.test(line)), label + ": every DrawingML system line must be 0.75 pt (9525 EMU)");
+}
+
+assertFormalDrawingLineThickness(ND30_SHAPE_LINE_1_XML, "NĐ30 hệ thống line 1");
+assertFormalLineFallbackThickness(ND30_SHAPE_LINE_1_XML, "ND30 Plain Line 1", "NĐ30 hệ thống line 1");
+assertFormalDrawingLineThickness(ND30_SHAPE_LINE_2_XML, "NĐ30 hệ thống line 2");
+assertFormalLineFallbackThickness(ND30_SHAPE_LINE_2_XML, "ND30 Plain Line 2", "NĐ30 hệ thống line 2");
+assertFormalDrawingLineThickness(HD05_SHAPE_LINE_TITLE_XML, "HD05 hệ thống line tiêu đề");
+assertFormalLineFallbackThickness(HD05_SHAPE_LINE_TITLE_XML, "_x0000_s1026", "HD05 hệ thống line tiêu đề");
 
 async function main() {
   let passedCount = 0;
@@ -137,6 +159,9 @@ async function main() {
     assert.ok(xml.includes('name="ND30 Plain Line 2"'), "DrawingML Shape Line 2 hiện diện");
     assert.ok(xml.includes('id="ND30 Plain Line 1"'), "VML Fallback Line 1 hiện diện");
     assert.ok(xml.includes('id="ND30 Plain Line 2"'), "VML Fallback Line 2 hiện diện");
+    assertFormalDrawingLineThickness(xml, "NĐ30 Hoa Tiêu header");
+    assertFormalLineFallbackThickness(xml, "ND30 Plain Line 1", "NĐ30 đường kẻ cơ quan");
+    assertFormalLineFallbackThickness(xml, "ND30 Plain Line 2", "NĐ30 đường kẻ tiêu ngữ");
 
     // Đánh giá kiểm chuẩn tự động đo Shape Line
     const evidence = evidenceFromDocumentXml(xml);
@@ -242,8 +267,15 @@ async function main() {
 
     // Kiểm tra Shape Line tiêu đề Đảng (Straight Connector 1)
     assert.ok(xml.includes('name="Straight Connector 1"'), "DrawingML Straight Connector 1 hiện diện");
-    assert.ok(xml.includes('id="Straight Connector 1"'), "VML Fallback Straight Connector 1 hiện diện");
-    assert.ok(xml.includes('cx="2628900"'), "Độ rộng Shape Line 207pt (2628900 EMU) khớp 100% độ dài dòng chữ");
+    assert.match(
+      xml,
+      /<mc:Fallback>[\s\S]*?<v:line\b[^>]*\bid="_x0000_s1026"[^>]*\bo:spid="_x0000_s1026"[\s\S]*?<\/mc:Fallback>/,
+      "VML fallback line with its internal shape ID and shape reference is present",
+    );
+    assert.ok(xml.includes('cx="2595245"'), "Độ rộng Shape Line 204.35pt (2595245 EMU) khớp profile HD05 V3");
+    assert.ok(xml.includes('width:204.35pt'), "VML fallback dùng cùng độ rộng với DrawingML");
+    assertFormalDrawingLineThickness(xml, "HD05 Hoa Tiêu header");
+    assertFormalLineFallbackThickness(xml, "_x0000_s1026", "HD05 đường kẻ tiêu đề Đảng");
 
     // Kiểm tra không có underline dưới cơ quan Đảng
     const evidence = extractHD05EvidenceFromXml(xml);

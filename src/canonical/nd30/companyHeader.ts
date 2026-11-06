@@ -124,7 +124,7 @@ export function createCompanyHeaderTable(referenceNumber?: string, locationAndDa
             width: { size: SOURCE_TABLE_TWIPS.right, type: WidthType.DXA },
             borders: INVISIBLE,
             margins: { top: 0, bottom: 0, left: 0, right: 0 },
-            children: [centered([RUN(cleanDate, 13, false, true)], 320, 0)],
+            children: [rightAligned([RUN(cleanDate, 13, false, true)], 320, 0)],
           }),
         ],
       }),

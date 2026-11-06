@@ -3,9 +3,25 @@ import type { DocumentFormatType } from "../shared/schemas/document.schema.ts";
 import { COMPANY_HEADER_PROFILE_ID, COMPANY_HEADER_PARENT, COMPANY_HEADER_ISSUER, COMPANY_DEFAULT_NUMBER, COMPANY_DEFAULT_DATE } from "../canonical/nd30/companyHeader.ts";
 import { COMPANY_HEADER_HD05_PROFILE_ID, COMPANY_HEADER_HD05_PARENT, COMPANY_HEADER_HD05_ISSUER, COMPANY_HEADER_HD05_DEFAULT_NUMBER, COMPANY_HEADER_HD05_REFERENCE_DATE } from "../canonical/hd05/companyHeaderHD05.ts";
 import { ND30_HOA_TIEU_TABLE_XML, ND30_HOA_TIEU_SETTINGS_XML, HD05_HOA_TIEU_TABLE_XML, HD05_HOA_TIEU_SETTINGS_XML } from "./hoaTieuHeaderReferenceXml.ts";
+import { SYSTEM_FORMAL_LINE_THICKNESS_EMU, SYSTEM_FORMAL_LINE_THICKNESS_PT } from "./formalLineThickness.ts";
 
 const normalized = (value: string) => value.normalize("NFC").replace(/\s+/g, " ").trim().toLocaleUpperCase("vi-VN");
 const xmlText = (value: string) => value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+function normalizeSystemFormalLineThickness(tableXml: string): string {
+  const drawingML = tableXml.replace(/(<a:ln\b[^>]*\bw=")\d+(")/g, "$1" + SYSTEM_FORMAL_LINE_THICKNESS_EMU + "$2");
+  return drawingML.replace(/<v:line\b[\s\S]*?<\/v:line>/g, line => {
+    const stroke = line.match(/<v:stroke\b[^>]*\/>/)?.[0];
+    const weightAttribute = ' weight="' + SYSTEM_FORMAL_LINE_THICKNESS_PT + 'pt"';
+    if (stroke) {
+      const weightedStroke = /\bweight="/.test(stroke)
+        ? stroke.replace(/\bweight="[^"]*"/, 'weight="' + SYSTEM_FORMAL_LINE_THICKNESS_PT + 'pt"')
+        : stroke.replace(/\/>$/, weightAttribute + "/>");
+      return line.replace(stroke, weightedStroke);
+    }
+    return line.replace(/(<v:line\b[^>]*>)/, '$1<v:stroke weight="' + SYSTEM_FORMAL_LINE_THICKNESS_PT + 'pt"/>');
+  });
+}
 
 function profileParts(data: DocumentFormatType) {
   const administrative = data.regime === "administrative" && data.headerProfile === COMPANY_HEADER_PROFILE_ID;
@@ -25,7 +41,7 @@ function stampedTable(data: DocumentFormatType): { table: string; settings: stri
   const parts = profileParts(data);
   if (!parts) return null;
   return {
-    table: parts.table
+    table: normalizeSystemFormalLineThickness(parts.table)
       .replace(`>${parts.number}</w:t>`, `>${xmlText(data.referenceNumber?.trim() || parts.number)}</w:t>`)
       .replace(`>${parts.date}</w:t>`, `>${xmlText(data.locationAndDate?.trim() ?? "")}</w:t>`),
     settings: parts.settings,

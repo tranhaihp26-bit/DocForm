@@ -1681,10 +1681,15 @@ export function extractOoxmlEvidenceFromXml(
     xml.includes('id="ND30 Plain Line 1"') &&
     xml.includes('id="ND30 Plain Line 2"');
 
-  const has_hd05_shape_line =
-    xml.includes('name="Straight Connector 1"') &&
-    xml.includes('id="Straight Connector 1"') &&
-    xml.includes('cx="2628900"');
+  const has_hd05_shape_line = Array.from(
+    xml.matchAll(/<mc:AlternateContent\b[^>]*>([\s\S]*?)<\/mc:AlternateContent>/g),
+  ).some(([, alternateContent]) => {
+    const drawing = alternateContent.match(/<mc:Choice\b[^>]*Requires="wps"[^>]*>([\s\S]*?)<\/mc:Choice>/)?.[1] ?? "";
+    const fallback = alternateContent.match(/<mc:Fallback>([\s\S]*?)<\/mc:Fallback>/)?.[1] ?? "";
+    return /<wp:docPr\b[^>]*name="Straight Connector 1"/.test(drawing) &&
+      /<wp:extent\b[^>]*cx="2595245"/.test(drawing) &&
+      /<v:line\b[^>]*id="_x0000_s1026"[^>]*o:spid="_x0000_s1026"[^>]*style="[^"]*width:204\.35pt[^"]*"[^>]*>/.test(fallback);
+  });
 
   const baseResult = {
     header_table_width_twips,

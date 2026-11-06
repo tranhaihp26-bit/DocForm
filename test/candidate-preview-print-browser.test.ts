@@ -6,7 +6,7 @@ import crypto from 'node:crypto';
 import {CdpClient,startTestServer} from './support/browserHarness.ts';
 import {generateND30DocxBuffer} from '../src/utils/docxExport.ts';
 
-const evidenceDir='docs/superpowers/audits/2026-10-20-uiux-m1-evidence';
+const evidenceDir = process.env.DOCFORM_EVIDENCE_DIR || 'docs/superpowers/audits/2026-10-20-uiux-m1-evidence';
 
 async function seedCurrentCandidate(c:CdpClient, sourceBytes:Uint8Array, bodyTexts:string[]){
  const hash=crypto.createHash('sha256').update(sourceBytes).digest('hex');
