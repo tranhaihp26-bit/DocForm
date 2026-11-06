@@ -11,8 +11,6 @@ import { deriveImportStatus, reconstructFromReviewedBlocks } from "./importRevie
 import { generateRuleBasedProposals } from "../server/reviewProposals.ts";
 import type { ParsedImport } from "./importState.ts";
 import type { OriginalDocumentSnapshot, SaveSourceBlobResult } from "./draftStore.ts";
-import { COMPANY_HEADER_PARENT, COMPANY_HEADER_ISSUER, COMPANY_HEADER_PROFILE_ID } from "../canonical/nd30/companyHeader.ts";
-import { COMPANY_HEADER_HD05_PARENT, COMPANY_HEADER_HD05_ISSUER, COMPANY_HEADER_HD05_PROFILE_ID } from "../canonical/hd05/companyHeaderHD05.ts";
 import type {
   DocumentState,
   PartitionProposal,
@@ -163,15 +161,9 @@ export function prepareImportedFileBundle(
     parsed.structured
   );
 
-  const normalizeAgency = (value: string) => value.normalize("NFC").replace(/\s+/g, " ").trim().toLocaleUpperCase("vi-VN");
-  const selectedProfile = effectiveRegime === "state" &&
-      normalizeAgency(reconstructed.fields.orgHeader1 || "") === normalizeAgency(COMPANY_HEADER_PARENT) &&
-      normalizeAgency(reconstructed.fields.orgHeader2 || "") === normalizeAgency(COMPANY_HEADER_ISSUER)
-    ? COMPANY_HEADER_PROFILE_ID
-    : effectiveRegime === "party" &&
-      normalizeAgency(reconstructed.fields.orgHeader1 || "") === normalizeAgency(COMPANY_HEADER_HD05_PARENT) &&
-      normalizeAgency(reconstructed.fields.orgHeader2 || "") === normalizeAgency(COMPANY_HEADER_HD05_ISSUER)
-      ? COMPANY_HEADER_HD05_PROFILE_ID : "generic";
+  // Agency evidence is preserved for Step 1 profile decision; it is NOT consent.
+  // Never auto-select the company profile during a new file import.
+  const selectedProfile = "generic" as const;
 
   const newDoc: DocumentState = {
     headerProfile: selectedProfile,
