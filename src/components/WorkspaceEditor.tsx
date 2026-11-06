@@ -7,7 +7,9 @@ import { assessTableCellCapabilities, workspaceNodeTableId, type EditorSafety } 
 import { canEnterWorkspaceStep, type EditableNode, type WorkspaceSnapshot } from '../utils/workspaceState.ts';
 import type { WorkspaceAction } from '../utils/workspaceTransactions.ts';
 import type { TableModel } from '../shared/tableModel.ts';
+import type { PartitionAiProviderKind } from '../shared/partitionAiProtocol.ts';
 import { isPlaceholderValue, type DocumentState, type ND30ComplianceReport } from '../shared/schemas/document.schema.ts';
+import { aiProviderDisplayName } from '../utils/aiProviderLabels.ts';
 import { WorkspaceCanvasEditor } from './ND30Editor.tsx';
 import { useAccessibleDialog } from '../utils/useAccessibleDialog.ts';
 import { BUILT_IN_ISSUER_PROFILES, loadIssuerProfiles, saveIssuerProfiles, type IssuerProfile } from '../utils/issuerProfiles.ts';
@@ -365,7 +367,7 @@ export function WorkspaceEditor({
   onPartition: () => void;
   onRefine: (a: 'proofread' | 'formalize', nodeId?: string) => void;
   refining: boolean;
-  aiProvider?: 'gemini' | 'chatgpt';
+  aiProvider?: PartitionAiProviderKind;
   chatGPTReady?: boolean;
   onAiSettings?: () => void;
   canContinue: boolean;
@@ -621,7 +623,7 @@ export function WorkspaceEditor({
           ? <div className="df-ws-ai-target"><strong>{activeBodyNode.editableNodeId}</strong><p>{selectedText.slice(0, 180) || 'Đoạn chưa có chữ.'}{selectedText.length > 180 ? '…' : ''}</p></div>
           : <p className="df-ws-ai-target">{selected === 'body' ? 'Chọn một đoạn có thể sửa trong Body để bắt đầu.' : 'AI hiện chỉ hỗ trợ đoạn trong Body; phụ lục và ô bảng không được gửi.'}</p>}
         <h3 className="df-ws-rail-section-title">Công cụ AI hỗ trợ</h3>
-        <p className="df-ws-ai-approval">Khi nhấn công cụ, nội dung đoạn đang chọn được gửi tới {aiProvider === 'chatgpt' ? 'ChatGPT plan' : 'Gemini'}. Đề xuất chỉ áp dụng sau khi bạn duyệt.</p>
+        <p className="df-ws-ai-approval" data-testid="ai-refine-disclosure">Khi nhấn một công cụ, bạn đồng ý gửi nội dung đoạn đang chọn tới {aiProviderDisplayName(aiProvider)} cho đúng thao tác đó. Chỉ nội dung đoạn này được gửi; đề xuất chỉ áp dụng sau khi bạn duyệt.</p>
         {aiProvider === 'chatgpt' && !chatGPTReady && <button type="button" className="df-ws-check-details" onClick={onAiSettings}>Mở cài đặt chung để kết nối ChatGPT plan <span aria-hidden="true">→</span></button>}
         <div className="df-ws-ai-actions">
           <button type="button" data-ai-action="proofread" data-ai-target-node={activeBodyNode?.editableNodeId ?? ''} disabled={selected !== 'body' || refining || !activeBodyNode || (aiProvider === 'chatgpt' && !chatGPTReady)} onClick={() => activeBodyNode && onRefine('proofread', activeBodyNode.editableNodeId)}>

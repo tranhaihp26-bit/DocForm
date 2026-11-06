@@ -495,7 +495,9 @@
   .df-import-step .df-import-status { max-width: 100%; }
   .df-import-step .df-import-appendix { grid-template-columns: 18px minmax(0, 1fr); }
   .df-import-step .df-import-appendix > span:last-child { grid-column: 2; }
-  .df-import-step .df-import-actions { align-items: stretch; flex-direction: column; }
+  .df-import-step .df-import-actions { align-items: stretch; flex-direction: column; flex-wrap: nowrap; }
+  .df-import-step .df-import-actions > .df-import-action-hint { order: -1; flex: 0 0 auto; width: 100%; min-width: 0; overflow-wrap: anywhere; text-align: left; }
+  .df-import-step .df-import-actions > button { flex: 0 0 auto; width: 100%; min-width: 0; }
   .df-import-step .df-import-continue { width: 100%; }
 }
 

@@ -153,6 +153,10 @@ describe('Workspace appendix state, migration and restoration', () => {
     assert.equal(workspaceEditorSafety('<p><img src="synthetic.png"></p>').editable, false);
     assert.equal(workspaceEditorSafety('<p style="font-size:15pt">Kept style</p>').editable, false);
     assert.equal(workspaceEditorSafety('<table><tr><td rowspan="2">Merged</td></tr></table>').editable, false);
+    assert.equal(workspaceEditorSafety('<p>Trước<span class="docx-page-break" data-page-break="true" title="Ngắt trang"></span>sau</p>').editable, true,
+      "Explicit source page-break marker should be safe to retain in the editor");
+    assert.equal(workspaceEditorSafety('<p><span class="arbitrary">Không rõ</span></p>').editable, false,
+      "Unrecognized spans remain outside the editor-safe subset");
   });
 
   it('source blob saves and loads are detached and a retained hash cannot be overwritten', async () => {

@@ -106,6 +106,33 @@ test("Task 1.5: upload token is bound to regime contextKey and invalidated by re
   assert.equal(uploadToken.signal.aborted, true);
 });
 
+test("late upload parse result is ignored after the session is invalidated", async () => {
+  const gate = createDocumentSessionGate();
+  const uploadToken = gate.begin("upload", "state");
+
+  let resolveExtraction!: (value: string) => void;
+  const delayedExtraction = new Promise<string>((resolve) => {
+    resolveExtraction = resolve;
+  });
+  let committedResult: string | undefined;
+  const completion = delayedExtraction.then((result) => {
+    if (gate.isCurrent(uploadToken, "state")) committedResult = result;
+  });
+
+  // Mirrors a regime switch, template change, or restore while local extraction is pending.
+  gate.invalidate();
+  assert.equal(uploadToken.signal.aborted, true, "Invalidation must abort the upload signal");
+
+  resolveExtraction("Synthetic_Gamma extraction");
+  await completion;
+
+  assert.equal(
+    committedResult,
+    undefined,
+    "A delayed parse result from the previous session must not be committed",
+  );
+});
+
 test("Task 1.6: draft_restore token is cancelled by cancelKind('draft_restore') or invalidate() when user interacts after mount", () => {
   const gate = createDocumentSessionGate();
   const restoreToken = gate.begin("draft_restore");

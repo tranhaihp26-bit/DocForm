@@ -3,8 +3,9 @@
  *
  * Contracts under test (from the Stage-3 plan / acceptance minutes):
  *  (a) "bản nhập chưa duyệt không được ... cho vào Xuất như tài liệu hợp lệ"
- *      -> dismissing the "Đối Chiếu & Phân Vùng" review dialog with
- *         "Hủy bỏ" must NOT leave the export path open.
+ *      -> after the user opens "Xem và duyệt nguồn", dismissing the
+ *         "Đối Chiếu & Phân Vùng" review dialog with "Hủy bỏ" must NOT leave
+ *         the export path open.
  *  (b) "✓ chỉ khi bước thực sự hoàn thành; không được dựa vào currentStep"
  *      -> the stepper completion mark must not flip when the user merely
  *         navigates back to step 1.
@@ -165,10 +166,22 @@ test("AUDIT PROBE: export gate must not open for an unapproved import review; st
     const before = await client.evaluate<any>(readStepper);
     console.log("[probe] stepper before upload:", JSON.stringify(before));
 
+    const choseUpload = await client.evaluate<boolean>(`(() => {
+      const b = Array.from(document.querySelectorAll("button")).find(x => x.textContent && x.textContent.includes("Tải tài liệu có sẵn"));
+      if (b) { b.click(); return true; } return false;
+    })()`);
+    assert.ok(choseUpload, "start flow must offer the current upload-document option");
     await client.uploadFile('input[type="file"]', fileAPath);
+    const reviewEntry = await client.waitForFunction(
+      `Array.from(document.querySelectorAll("button")).some(b => b.textContent && b.textContent.trim() === "Rà soát phân vùng nội dung")`, 15000);
+    assert.ok(reviewEntry, "current upload flow must offer an explicit source-review action");
+    await client.evaluate(`(() => {
+      const b = Array.from(document.querySelectorAll("button")).find(x => x.textContent && x.textContent.trim() === "Rà soát phân vùng nội dung");
+      if (b) b.click();
+    })()`);
     const modal = await client.waitForFunction(
-      `document.body.textContent.includes("Đối Chiếu & Phân Vùng Tài Liệu Tải Lên")`, 15000);
-    assert.ok(modal, "side-by-side review modal must open after upload");
+      `document.querySelector('[data-testid="side-by-side-modal"]') !== null`, 15000);
+    assert.ok(modal, "side-by-side review modal must open after the user requests source review");
 
     // ---- dismiss the review WITHOUT confirming ("Hủy bỏ") ----------------
     const cancelled = await client.evaluate<boolean>(`(() => {

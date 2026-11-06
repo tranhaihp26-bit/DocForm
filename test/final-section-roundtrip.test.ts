@@ -2,16 +2,43 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import JSZip from "jszip";
 import { segmentSourceBlocks } from "../src/server/structuralSegmenter.ts";
+import { classifyTable } from "../src/server/tableRoleClassifier.ts";
+import { embeddedRecipientsSignatureTable } from "../src/shared/embeddedSignatureTable.ts";
 import { reconstructFromReviewedBlocks, reconstructAppendixHtml } from "../src/utils/importReview.ts";
 import { applySingleProposal, applyAllProposalsSequentially } from "../src/utils/proposalState.ts";
 import { generateND30DocxUint8Array } from "../src/utils/docxExport.ts";
 import { verifyCandidateContentFidelity } from "../src/utils/candidateContentFidelity.ts";
+import { semanticHtmlParagraphs } from "../src/utils/candidateContentFidelity.ts";
 import { prepareExportCandidate, type ExportCandidateSnapshot } from "../src/utils/exportCandidate.ts";
 import { createWorkspaceSnapshot } from "../src/utils/workspaceState.ts";
 import { approveWorkspacePartition } from "../src/utils/workspaceTransactions.ts";
 import type { SourceBlock, DocumentState, DocumentFormatType, ReviewProposal } from "../src/shared/schemas/document.schema.ts";
 
 describe("Task 3 & 4: Final Section and Appendix Roundtrip Contract", () => {
+  it("preserves an inline source page break in the exported DOCX", async () => {
+    const bytes = await generateND30DocxUint8Array({
+      regime: "administrative",
+      documentType: "THÔNG BÁO",
+      subject: "Thử nghiệm ngắt trang nguồn",
+      bodyHtml: '<p>Đoạn trước<span class="docx-page-break" data-page-break="true" title="Ngắt trang"></span>đoạn sau</p>',
+    } as DocumentFormatType);
+    const zip = await JSZip.loadAsync(bytes);
+    const xml = await zip.file("word/document.xml")?.async("string");
+    assert.ok(xml);
+    assert.match(xml, /<w:br\b[^>]*w:type="page"/,
+      "Ngắt trang nội dòng từ nguồn phải được giữ trong candidate DOCX");
+    assert.match(xml, /Đoạn trước[\s\S]*đoạn sau/,
+      "Văn bản hai phía của ngắt trang phải được giữ theo đúng thứ tự");
+  });
+
+  it("compares an explicit page break as a semantic paragraph boundary", () => {
+    assert.deepEqual(
+      semanticHtmlParagraphs('<p>Trước ngắt<span class="docx-page-break" data-page-break="true"></span>sau ngắt</p>'),
+      ["Trước ngắt", "sau ngắt"],
+      "Candidate fidelity should compare text on each side of a page break separately",
+    );
+  });
+
   it("Task 3: Appendix source title/reference/content blocks output metadata exactly once", async () => {
     // 1. Synthetic source blocks mimicking pilot structure
     const blocks: SourceBlock[] = [
@@ -233,7 +260,7 @@ describe("Task 3 & 4: Final Section and Appendix Roundtrip Contract", () => {
       { id: "s", index: 5, kind: "table", role: "appendix", text: "NGƯỜI LẬP | GIÁM ĐỐC", tableShape: { rows: 2, columns: 2 }, tableData: [["NGƯỜI LẬP", "GIÁM ĐỐC"], ["Người mẫu A", "Người mẫu B"]] },
     ];
     const result = segmentSourceBlocks(blocks, { filename: "synthetic.docx", fileType: "docx" });
-    assert.equal(Boolean(result.fields.signName?.value), false);
+    assert.equal(Boolean(result.fields.signName?.value), false, JSON.stringify(result.fields, null, 2));
     assert.equal(Boolean(result.fields.signTitle?.value), false);
     assert.equal(result.appendices[0].extractionStatus, "needs_review");
     assert.deepEqual(result.appendices[0].sourceBlockIds, ["a", "c", "s"]);
@@ -335,6 +362,118 @@ describe("Task 3 & 4: Final Section and Appendix Roundtrip Contract", () => {
     const segmented = segmentSourceBlocks(blocks, { filename: "tb.docx", fileType: "docx" });
     assert.equal(segmented.fields.signTitle?.value, "GIÁM ĐỐC");
     assert.equal(segmented.fields.signName?.value, "Nguyễn Đức Thành", "Tên người ký phải giữ nguyên hoa/thường ban đầu, không ép uppercase");
+  });
+
+  it("Task 4: One physical footer table maps recipients and signer by cell while preserving the table in Body", () => {
+    const blocks: SourceBlock[] = [
+      { id: "footer_head", index: 0, kind: "paragraph", role: "unclassified", text: "THÔNG BÁO" },
+      { id: "footer_subject", index: 1, kind: "paragraph", role: "unclassified", text: "Về việc phối hợp" },
+      { id: "footer_body", index: 2, kind: "paragraph", role: "unclassified", text: "Các đơn vị thực hiện nhiệm vụ theo thông báo." },
+      {
+        id: "footer_table", index: 3, kind: "table", role: "unclassified",
+        text: "Nơi nhận: - Ban Giám đốc; - Lưu: VT. | GIÁM ĐỐC Nguyễn Văn Mẫu",
+        tableShape: { rows: 1, columns: 2 },
+        tableData: [["Nơi nhận:\n- Ban Giám đốc;\n- Lưu: VT.", "GIÁM ĐỐC\nNguyễn Văn Mẫu"]],
+      },
+    ];
+
+    const segmented = segmentSourceBlocks(blocks, { filename: "synthetic-footer.docx", fileType: "docx", standardType: "administrative" });
+    const footer = (segmented.blocks || []).find(block => block.id === "footer_table");
+
+    assert.equal(footer?.role, "body", "A mixed physical table stays intact in Body for source fidelity");
+    assert.equal(segmented.fields.recipients?.value, "Nơi nhận:\n- Ban Giám đốc;\n- Lưu: VT.");
+    assert.equal(segmented.fields.signTitle?.value, "GIÁM ĐỐC");
+    assert.equal(segmented.fields.signName?.value, "Nguyễn Văn Mẫu");
+    assert.deepEqual(segmented.fields.recipients?.sourceCell, { rowIndex: 0, colIndex: 0 });
+    assert.deepEqual(segmented.fields.signTitle?.sourceCell, { rowIndex: 0, colIndex: 1 });
+    assert.deepEqual(segmented.fields.signName?.sourceCell, { rowIndex: 0, colIndex: 1 });
+    assert.ok(segmented.body.html.includes("GIÁM ĐỐC"), "The exact physical source table remains in the body roundtrip");
+  });
+
+  it("Task 4 regression: a multi-line signing formula with committee authority stays one mixed footer table", () => {
+    const table: SourceBlock = {
+      id: "footer_table_committee_chair", index: 3, kind: "table", role: "unclassified",
+      text: "Nơi nhận: - Như trên; - Lưu: VT. | TM. BAN CHẤP HÀNH | CHỦ TỊCH | Người Mẫu",
+      tableShape: { rows: 1, columns: 2 },
+      tableData: [["Nơi nhận:\n- Như trên;\n- Lưu: VT.", "TM. BAN CHẤP HÀNH\nCHỦ TỊCH\nNgười Mẫu"]],
+    };
+    const blocks: SourceBlock[] = [
+      { id: "committee_head", index: 0, kind: "paragraph", role: "unclassified", text: "QUYẾT ĐỊNH" },
+      { id: "committee_subject", index: 1, kind: "paragraph", role: "unclassified", text: "Về việc ban hành quy chế" },
+      { id: "committee_body", index: 2, kind: "paragraph", role: "unclassified", text: "Nội dung quyết định." },
+      table,
+    ];
+
+    const classification = classifyTable(table, blocks.slice(0, 3), "administrative");
+    const segmented = segmentSourceBlocks(blocks, { filename: "synthetic-committee-footer.docx", fileType: "docx", standardType: "administrative" });
+    const retained = segmented.blocks?.find(block => block.id === table.id);
+
+    assert.equal(classification.owner, "body", "The physical mixed footer table must not be detached as a signer-only table");
+    assert.equal(embeddedRecipientsSignatureTable(table)?.signTitle, "TM. BAN CHẤP HÀNH\nCHỦ TỊCH");
+    assert.equal(retained?.role, "body");
+    assert.equal(segmented.fields.recipients?.value, "Nơi nhận:\n- Như trên;\n- Lưu: VT.");
+    assert.equal(segmented.fields.signTitle?.value, "TM. BAN CHẤP HÀNH\nCHỦ TỊCH");
+    assert.equal(segmented.fields.signName?.value, "Người Mẫu");
+    assert.deepEqual(segmented.fields.recipients?.sourceCell, { rowIndex: 0, colIndex: 0 });
+    assert.deepEqual(segmented.fields.signTitle?.sourceCell, { rowIndex: 0, colIndex: 1 });
+    assert.deepEqual(segmented.fields.signName?.sourceCell, { rowIndex: 0, colIndex: 1 });
+  });
+
+  it("Task 4: One-line chức danh và họ tên trong bảng Nơi nhận vẫn được tách theo đúng ô nguồn", () => {
+    const table: SourceBlock = {
+      id: "footer_table_inline_signer", index: 3, kind: "table", role: "unclassified",
+      text: "Nơi nhận: - Lãnh đạo cơ quan | GIÁM ĐỐC Nguyễn Văn Mẫu",
+      tableShape: { rows: 1, columns: 2 },
+      tableData: [["Nơi nhận:\n- Lãnh đạo cơ quan", "GIÁM ĐỐC Nguyễn Văn Mẫu"]],
+      html: "<table><tr><td>Nơi nhận:<br/>- Lãnh đạo cơ quan</td><td>GIÁM ĐỐC Nguyễn Văn Mẫu</td></tr></table>",
+    };
+    const blocks: SourceBlock[] = [
+      { id: "head", index: 0, kind: "paragraph", role: "unclassified", text: "THÔNG BÁO" },
+      { id: "subject", index: 1, kind: "paragraph", role: "unclassified", text: "Về việc phối hợp" },
+      { id: "body", index: 2, kind: "paragraph", role: "unclassified", text: "Các đơn vị thực hiện nhiệm vụ theo thông báo." },
+      table,
+    ];
+
+    const segmented = segmentSourceBlocks(blocks, { filename: "synthetic-inline-footer.docx", fileType: "docx", standardType: "administrative" });
+    const retained = segmented.blocks?.find(block => block.id === table.id);
+    assert.equal(retained?.role, "body", "The mixed physical table remains intact for source fidelity");
+    assert.equal(segmented.fields.recipients?.value, "Nơi nhận:\n- Lãnh đạo cơ quan");
+    assert.equal(segmented.fields.signTitle?.value, "GIÁM ĐỐC");
+    assert.equal(segmented.fields.signName?.value, "Nguyễn Văn Mẫu");
+    assert.deepEqual(segmented.fields.signTitle?.sourceCell, { rowIndex: 0, colIndex: 1 });
+    assert.deepEqual(segmented.fields.signName?.sourceCell, { rowIndex: 0, colIndex: 1 });
+  });
+
+  it("Task 4: Bảng cuối bổ sung các trường còn thiếu khi nơi nhận đã được nhận diện riêng", () => {
+    const footer: SourceBlock = {
+      id: "footer_table_partial_fields", index: 5, kind: "table", role: "unclassified",
+      text: "Nơi nhận: - Lãnh đạo cơ quan | GIÁM ĐỐC Nguyễn Văn Mẫu",
+      tableShape: { rows: 1, columns: 2 },
+      tableData: [["Nơi nhận:\n- Lãnh đạo cơ quan", "GIÁM ĐỐC Nguyễn Văn Mẫu"]],
+    };
+    const blocks: SourceBlock[] = [
+      { id: "head_partial", index: 0, kind: "paragraph", role: "unclassified", text: "THÔNG BÁO" },
+      { id: "subject_partial", index: 1, kind: "paragraph", role: "unclassified", text: "Về việc phối hợp" },
+      { id: "body_partial", index: 2, kind: "paragraph", role: "unclassified", text: "Các đơn vị thực hiện nhiệm vụ theo thông báo." },
+      { id: "recipients_partial", index: 3, kind: "paragraph", role: "unclassified", text: "Nơi nhận:\n- Lãnh đạo cơ quan" },
+      { id: "recipient_filing_partial", index: 4, kind: "paragraph", role: "unclassified", text: "- Lưu: VT." },
+      footer,
+    ];
+
+    const segmented = segmentSourceBlocks(blocks, { filename: "synthetic-partial-footer.docx", fileType: "docx", standardType: "administrative" });
+    assert.deepEqual(embeddedRecipientsSignatureTable(footer)?.signTitle, "GIÁM ĐỐC");
+    assert.ok(segmented.fields.recipients?.value?.includes("Nơi nhận:") && segmented.fields.recipients?.value?.includes("- Lưu: VT."));
+    assert.equal(segmented.fields.signTitle?.value, "GIÁM ĐỐC", `Missing signer title should be filled from the physical footer cell: ${JSON.stringify(segmented.fields.signTitle)}`);
+    assert.equal(segmented.fields.signName?.value, "Nguyễn Văn Mẫu", `Missing signer name should be filled from the same source cell: ${JSON.stringify(segmented.fields.signName)}`);
+    assert.equal(segmented.blocks?.find(block => block.id === footer.id)?.role, "body", "The physical footer table stays intact in Body");
+
+    const reviewedBlocks = (segmented.blocks || []).map(block => block.id === "recipients_partial"
+      ? { ...block, role: "recipients" as const }
+      : block);
+    const reconstructed = reconstructFromReviewedBlocks(reviewedBlocks, "state", segmented);
+    assert.equal(reconstructed.fields.recipients, "Nơi nhận:\n- Lãnh đạo cơ quan\n- Lưu: VT.");
+    assert.equal(reconstructed.fields.signTitle, "GIÁM ĐỐC", "Reconstruction should fill the signer title when recipient paragraphs already supply a field");
+    assert.equal(reconstructed.fields.signName, "Nguyễn Văn Mẫu", "Reconstruction should fill the signer name from the preserved body table");
   });
 
   it("Task 4: Multi-column signature table with Recipients + 2 signers keeps pairs synchronized with spacer column", () => {

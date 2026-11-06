@@ -565,12 +565,12 @@ export function reconstructFromReviewedBlocks(
 
   // Semantic fields may live in two cells of a single physical Body table.
   // Preserve that table in Body and derive the fields from the current cells.
-  if (!signTitle && !signName && !recipients) {
+  if (!signTitle || !signName || !recipients) {
     const embedded = bodyBlocks.map(embeddedRecipientsSignatureTable).find(Boolean);
     if (embedded) {
-      signTitle = embedded.signTitle;
-      signName = embedded.signName;
-      recipients = embedded.recipients;
+      if (!signTitle) signTitle = embedded.signTitle;
+      if (!signName) signName = embedded.signName;
+      if (!recipients) recipients = embedded.recipients;
     }
   }
 

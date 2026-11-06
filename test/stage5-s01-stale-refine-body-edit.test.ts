@@ -86,18 +86,44 @@ test("Chặng 5: đề xuất AI tinh chỉnh cũ không được áp khi thân 
     await client.waitForFunction(
       `document.body.textContent.includes("Đối Chiếu & Phân Vùng Tài Liệu Tải Lên")`, 15000
     );
-    await client.clickByText("button", "Đồng Ý Đưa Vào Studio Soạn Thảo");
+    await client.clickByText("button", "Tiếp tục đưa vào Studio soạn thảo");
     await new Promise((r) => setTimeout(r, 700));
+    const profileChoice = await client.evaluate<boolean>(`Boolean(document.querySelector('[data-action="confirm-generic-profile"]'))`);
+    if (profileChoice) {
+      await client.evaluate(`document.querySelector('[data-action="confirm-generic-profile"]')?.click()`);
+      await new Promise((r) => setTimeout(r, 400));
+    }
 
-    // Sang Bước 2 và mở tab "Gợi ý AI"
+    // Sang Bước 2, mở ngữ cảnh trợ lý và chọn một đoạn Body có thể sửa.
     await client.clickStep(2);
     await client.waitForFunction(`document.querySelector('[data-wizard-step="2"]') !== null`, 8000);
-    await client.evaluate(`(() => { const t = document.getElementById("df-tab-ai"); if (t) t.click(); })()`);
-    await new Promise((r) => setTimeout(r, 400));
+    await client.evaluate(`document.querySelector('.df-step-context-toggle')?.click()`);
+    assert.ok(await client.waitForFunction(`(() => { const el = document.querySelector('[data-workspace-node-capability="editable"] [contenteditable="true"]'); return Boolean(el && el.getClientRects().length); })()`, 10000),
+      "Editor phải hoàn tất kiểm tra khả năng sửa trước khi chọn đoạn");
+    const editorPoint = await client.evaluate<any>(`(() => { const r = document.querySelector('[data-workspace-node-capability="editable"] [contenteditable="true"]')?.getBoundingClientRect(); return r ? { x: r.left + Math.min(24, r.width / 2), y: r.top + Math.min(16, r.height / 2) } : null; })()`);
+    assert.ok(editorPoint, "Phải tìm thấy vị trí đoạn Body có thể sửa");
+    await client.send("Input.dispatchMouseEvent", { type: "mousePressed", x: editorPoint.x, y: editorPoint.y, button: "left", clickCount: 1 });
+    await client.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: editorPoint.x, y: editorPoint.y, button: "left", clickCount: 1 });
+    const canProofread = await client.waitForFunction(`document.querySelector('button[data-ai-action="proofread"]')?.disabled === false`, 8000);
+    if (!canProofread) {
+      const diagnostic = await client.evaluate<any>(`(() => ({
+        step: document.querySelector('[data-current-step]')?.getAttribute('data-current-step'),
+        bodyText: document.body.innerText.slice(-1600),
+        stepButtons: Array.from(document.querySelectorAll('[data-step]')).map(el => ({ text: (el.textContent || '').trim(), allowed: el.getAttribute('data-step-allowed'), complete: el.getAttribute('data-step-complete') })),
+        contextOpen: document.querySelector('.df-step-layout-workspace')?.getAttribute('data-context-open'),
+        nodes: Array.from(document.querySelectorAll('[data-workspace-node]')).map(node => ({
+          capability: node.getAttribute('data-workspace-node-capability'),
+          text: (node.textContent || '').slice(0, 100),
+          editors: node.querySelectorAll('[contenteditable="true"]').length,
+        })),
+        action: document.querySelector('button[data-ai-action="proofread"]')?.outerHTML,
+        panel: document.querySelector('#df-ws-ai-panel')?.outerHTML.slice(0, 300),
+      }))()`);
+      assert.fail(`Không chọn được đoạn Body để rà chính tả: ${JSON.stringify(diagnostic)}`);
+    }
 
-    // Bắt đầu "Sửa chính tả" (response bị giữ)
-    const clicked = await client.clickByText("button", "chính tả");
-    assert.ok(clicked, "Nút 'Sửa chính tả' phải tồn tại ở Bước 2");
+    // Bắt đầu rà chính tả (response bị giữ).
+    await client.evaluate(`document.querySelector('button[data-ai-action="proofread"]')?.click()`);
     assert.ok(
       await client.waitForFunction(`window.__refineCalls.length === 1`, 8000),
       "Phải gửi một yêu cầu AI tinh chỉnh"
@@ -158,7 +184,7 @@ test("Chặng 5: đề xuất AI tinh chỉnh cũ không được áp khi thân 
       };
     })()`);
 
-    await client.clickByText("button", "chính tả");
+    await client.evaluate(`document.querySelector('button[data-ai-action="proofread"]')?.click()`);
     assert.ok(
       await client.waitForFunction(`window.__refineCalls.length === 1`, 8000),
       "Phải gửi yêu cầu AI tinh chỉnh lần hai"

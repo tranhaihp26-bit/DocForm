@@ -37,7 +37,7 @@ export function WorkspaceExport({candidate,complianceReport,complianceRevision,p
  const regimeLabel=candidate?.formatData.regime==='party'?'Văn bản Đảng · Hướng dẫn 05':'Hành chính · Nghị định 30';
  const companyHeaderRegime=candidate&&candidate.formatData.headerProfile===(candidate.formatData.regime==='party'?COMPANY_HEADER_HD05_PROFILE_ID:COMPANY_HEADER_PROFILE_ID)?candidate.formatData.regime:undefined;
 
- return <main data-wizard-step="3" className="df-workspace-export" data-candidate-state={!candidate?'missing':candidate.safe?'safe':candidate.downloadable?'warning':'blocked'} data-candidate-safe={candidate?String(candidate.safe):undefined} data-candidate-instance={candidate?.instanceId} data-candidate-revision={candidate?.revision} data-candidate-sha={candidate?.sha256}>
+ return <main data-wizard-step="3" className="df-workspace-export" data-candidate-state={!candidate?'missing':candidate.safe?'safe':'blocked'} data-candidate-safe={candidate?String(candidate.safe):undefined} data-candidate-instance={candidate?.instanceId} data-candidate-revision={candidate?.revision} data-candidate-sha={candidate?.sha256}>
   <h1 className="sr-only">Xem &amp; xuất</h1>
 
   <div className="df-step-layout" data-context-open={String(contextOpen)}>

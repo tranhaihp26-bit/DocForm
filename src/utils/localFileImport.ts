@@ -1,4 +1,4 @@
-import { extractBlocksFromDocx, extractBlocksFromTxt } from "../server/blockExtractor.ts";
+import { extractBlocksFromDocx, extractBlocksFromTxt, UnsupportedDocxContentError } from "../server/blockExtractor.ts";
 import { segmentSourceBlocks } from "../server/structuralSegmenter.ts";
 import { parseImportResponse, type ParsedImport } from "./importState.ts";
 import { computeSourceHash, saveSourceBlob, type SaveSourceBlobResult } from "./draftStore.ts";
@@ -53,7 +53,8 @@ export async function extractLocalFile(file: File): Promise<LocalFileExtraction>
   } else {
     try {
       extracted = await extractBlocksFromDocx(bytes);
-    } catch {
+    } catch (error) {
+      if (error instanceof UnsupportedDocxContentError) throw error;
       throw new Error("Tệp tin không đúng định dạng Microsoft Word (DOCX) hợp lệ hoặc đã bị hỏng.");
     }
   }
@@ -108,12 +109,22 @@ export function segmentLocalExtraction(
   );
   const tableIds = tableBlocks.map((b) => b.id);
   const unsupportedFeatures: UnsupportedFeature[] = [];
+  const seenUnsupportedFeatures = new Set<string>();
+  const addUnsupportedFeature = (feature: UnsupportedFeature) => {
+    const key = `${feature.code}:${feature.tableId ?? ""}:${feature.blockId ?? ""}:${feature.description}`;
+    if (seenUnsupportedFeatures.has(key)) return;
+    seenUnsupportedFeatures.add(key);
+    unsupportedFeatures.push(feature);
+  };
   for (const tb of tableBlocks) {
     if (tb.rawXml) {
-      unsupportedFeatures.push(...scanRawTableXmlFeatures(tb.rawXml, tb.id, tb.id));
+      scanRawTableXmlFeatures(tb.rawXml, tb.id, tb.id).forEach(addUnsupportedFeature);
     } else if (tb.unsupportedFeatures && tb.unsupportedFeatures.length > 0) {
-      unsupportedFeatures.push(...tb.unsupportedFeatures);
+      tb.unsupportedFeatures.forEach(addUnsupportedFeature);
     }
+  }
+  for (const block of blocksForManifest) {
+    block.unsupportedFeatures?.forEach(addUnsupportedFeature);
   }
 
   const manifest: ImportFidelityManifest = {

@@ -13,6 +13,7 @@ export function normalizeSemanticText(value: string): string {
 export function semanticHtmlParagraphs(html: string): string[] {
   return decodeHtmlEntities(html.replace(/<!--[\s\S]*?-->/g, "")
     .replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gi, "")
+    .replace(/<span\b(?=[^>]*\bdata-page-break\s*=\s*(["'])true\1)[^>]*>[\s\S]*?<\/span\s*>/gi, "\n")
     .replace(/<br\b[^>]*\/?\s*>/gi, "\n")
     .replace(/<\/(?:p|div|h[1-6]|li|td|th|tr|table|ul|ol)>/gi, "\n")
     .replace(/<[^>]+>/g, ""))

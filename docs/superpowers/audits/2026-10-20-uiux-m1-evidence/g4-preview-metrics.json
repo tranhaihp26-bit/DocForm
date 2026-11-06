@@ -1,0 +1,37 @@
+{
+  "candidateSha": "fbd0af37a79ddc6d4b4c7c196db9cfb011220e0871f484c8dc009382972b211e",
+  "candidateDownloadSha": "fbd0af37a79ddc6d4b4c7c196db9cfb011220e0871f484c8dc009382972b211e",
+  "previewSha": "fbd0af37a79ddc6d4b4c7c196db9cfb011220e0871f484c8dc009382972b211e",
+  "renderedPageCount": 2,
+  "pageDimensionsCssPx": [
+    {
+      "width": 769,
+      "height": 1087
+    },
+    {
+      "width": 769,
+      "height": 1087
+    }
+  ],
+  "fit": "true",
+  "actual100PercentPan": {
+    "pressed": "true",
+    "innerWidth": 777,
+    "scrollWidth": 801,
+    "docWidth": 1440
+  },
+  "mobile100PercentPan": {
+    "innerWidth": 338,
+    "scrollWidth": 801,
+    "docWidth": 390
+  },
+  "originalSha": "a698f8bcb35cad9ce1eb693c5b82751fb7c7fbab8726c550bc605f0f3da10a18",
+  "originalDownloadSha": "a698f8bcb35cad9ce1eb693c5b82751fb7c7fbab8726c550bc605f0f3da10a18",
+  "isolatedPrint": {
+    "sha": "fbd0af37a79ddc6d4b4c7c196db9cfb011220e0871f484c8dc009382972b211e",
+    "instance": "cff89b46-d4fa-4967-9e25-bf47d50de212",
+    "containsCandidateBody": true,
+    "containsAppTitle": false
+  },
+  "staleCandidateStopped": true
+}

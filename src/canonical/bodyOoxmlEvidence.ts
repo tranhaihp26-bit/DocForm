@@ -15,6 +15,7 @@ export type ParagraphSemanticRole =
   | "recipients"
   | "signature"
   | "appendix_header"
+  | "separator"
   | "empty_spacer";
 
 export interface DirectParagraphEvidence {
@@ -57,6 +58,9 @@ export function detectParagraphRole(
   const trimmed = text.trim();
   if (!trimmed) return "empty_spacer";
 
+  // A visible horizontal divider is a layout marker, not a body paragraph.
+  if (/^[-—–_*·•\s]{3,}$/.test(trimmed)) return "separator";
+
   // 1. Phụ lục
   if (/^(PHỤ LỤC|PHU LUC|KÈM THEO|KEM THEO)/i.test(trimmed)) {
     return "appendix_header";
@@ -80,7 +84,7 @@ export function detectParagraphRole(
 
   // 5. Trích yếu nội dung: chỉ nhận diện là trích yếu tiêu đề khi độ dài ngắn (<= 150 ký tự), 
   // không căn đều hai bên (vì văn bản thân bài thường căn đều hai bên "both")
-  if (/^(V\/v|Về việc|Ve viec)\b/i.test(trimmed) && alignment !== "both" && trimmed.length <= 150) {
+  if (/^(?:V\/v\b|Về(?:\s|$)|Ve viec\b)/i.test(trimmed) && alignment !== "both" && trimmed.length <= 150) {
     return "subject";
   }
 

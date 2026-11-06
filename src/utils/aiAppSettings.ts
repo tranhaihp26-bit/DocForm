@@ -32,7 +32,7 @@ export function loadAiApplicationSettings(storage: KeyValueStorage | null = brow
       typeof value === "object" && value !== null &&
       "version" in value && value.version === SETTINGS_VERSION &&
       "defaultProvider" in value &&
-      (value.defaultProvider === "gemini" || value.defaultProvider === "chatgpt")
+      (value.defaultProvider === "gemini" || value.defaultProvider === "openai_api" || value.defaultProvider === "chatgpt")
     ) {
       return { defaultProvider: value.defaultProvider, preferencePersisted: true, storageAvailable: true };
     }
@@ -46,7 +46,7 @@ export function saveAiDefaultProvider(
   provider: PartitionAiProviderKind,
   storage: KeyValueStorage | null = browserStorage(),
 ): boolean {
-  if (!storage || (provider !== "gemini" && provider !== "chatgpt")) return false;
+  if (!storage || (provider !== "gemini" && provider !== "openai_api" && provider !== "chatgpt")) return false;
   try {
     storage.setItem(STORAGE_KEY, JSON.stringify({ version: SETTINGS_VERSION, defaultProvider: provider }));
     return true;

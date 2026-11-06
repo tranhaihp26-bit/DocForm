@@ -1,5 +1,41 @@
 # Third-party vendored SDK is not part of DocForm's first-party code graph.
 vendor/
 
+# This graph supports coding navigation only. Exclude document and media data
+# even if a caller accidentally omits --code-only from a Graphify command.
+docs/
+fixtures/
+test/fixtures/
+group-b-evidence/
+*.md
+*.markdown
+*.rst
+*.txt
+*.doc
+*.docx
+*.odt
+*.pdf
+*.xls
+*.xlsx
+*.ods
+*.ppt
+*.pptx
+*.odp
+*.png
+*.jpg
+*.jpeg
+*.tif
+*.tiff
+*.bmp
+*.gif
+*.svg
+*.mp3
+*.wav
+*.m4a
+*.mp4
+*.mov
+*.avi
+*.zip
+
 # Generated graph output must not be fed back into extraction.
 graphify-out/

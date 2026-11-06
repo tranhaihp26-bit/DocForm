@@ -165,7 +165,7 @@ class CdpClient {
 }
 
 const MODAL_SELECTOR = '[data-testid="regime-confirm-modal"]';
-const SIDE_BY_SIDE_TEXT = "Đối Chiếu & Phân Vùng Tài Liệu Tải Lên";
+const SIDE_BY_SIDE_TEXT = "Kiểm tra nội dung tài liệu";
 
 test("Chặng 2 browser: regime evidence modal, cancel keeps A, stale pending invalidated, body 'chi bộ' ignored, insufficient confirm, party commit keeps 'Số '", async () => {
   const serverPort = 5062;
@@ -232,13 +232,9 @@ test("Chặng 2 browser: regime evidence modal, cancel keeps A, stale pending in
 
     const closeSideBySide = async () => {
       await client.evaluate(`(() => {
-        const modalTitle = Array.from(document.querySelectorAll("h2")).find(h => h.textContent && h.textContent.includes("Đối Chiếu & Phân Vùng"));
-        if (modalTitle) {
-          const header = modalTitle.closest("div.bg-slate-50");
-          const btns = header ? Array.from(header.querySelectorAll("button")) : [];
-          const closeX = btns[btns.length - 1];
-          if (closeX) closeX.click();
-        }
+        const modal = document.querySelector('[data-testid="side-by-side-modal"]');
+        const close = modal?.querySelector('button[aria-label="Đóng hộp thoại đối chiếu nguồn"]');
+        if (close) close.click();
       })()`);
       await new Promise((r) => setTimeout(r, 250));
     };
@@ -257,6 +253,16 @@ test("Chặng 2 browser: regime evidence modal, cancel keeps A, stale pending in
     assert.ok(
       await client.waitForFunction(`document.querySelector('[data-wizard-step="1"]') !== null`, 8000),
       "Step 1 (Tải & nhận diện) mounted",
+    );
+    assert.equal(
+      await client.evaluate<boolean>(`(() => {
+        const entry = Array.from(document.querySelectorAll("button")).find(b => b.textContent && b.textContent.includes("Tải tài liệu có sẵn"));
+        if (!entry) return false;
+        entry.click();
+        return true;
+      })()`),
+      true,
+      "Start the current upload flow before choosing its source file",
     );
 
     // --- 1) Party source while "state" is chosen => evidence modal appears ---
@@ -289,7 +295,16 @@ test("Chặng 2 browser: regime evidence modal, cancel keeps A, stale pending in
     assert.ok(await client.waitForFunction(`document.querySelector('${MODAL_SELECTOR}') === null`, 5000), "Cancel must close the modal");
 
     // Chặng 3: chưa có nguồn thật thì không được mở bước Xuất (kể cả bấm trực tiếp).
-    await client.clickByText("button", "Xuất");
+    assert.equal(
+      await client.evaluate<boolean>(`(() => {
+        const step = document.querySelector('.df-workspace-sidebar button[data-step="3"]');
+        if (!step) return false;
+        step.click();
+        return true;
+      })()`),
+      true,
+      "The current Step 3 control must be reachable for a gate check",
+    );
     await new Promise((r) => setTimeout(r, 300));
     assert.equal(
       await client.evaluate<string>(`document.querySelector('[data-current-step]')?.getAttribute('data-current-step')`),
@@ -297,7 +312,10 @@ test("Chặng 2 browser: regime evidence modal, cancel keeps A, stale pending in
       "Export step must stay blocked when no real source has been chosen",
     );
     assert.ok(
-      await client.waitForFunction(`document.querySelector('[data-gate-notice="source-required"]') !== null`, 3000),
+      await client.waitForFunction(`(() => {
+        const status = document.querySelector('.df-toast[role="status"][aria-live="polite"]');
+        return Boolean(status?.textContent?.includes('trước khi xem và xuất văn bản'));
+      })()`, 3000),
       "Blocked export must explain that a source is required",
     );
     assert.equal(
@@ -309,14 +327,20 @@ test("Chặng 2 browser: regime evidence modal, cancel keeps A, stale pending in
     // --- 3) Body "chi bộ" with a matching administrative header => no modal ---
     await client.uploadFile('input[type="file"]', adminBodyPath);
     assert.ok(
-      await client.waitForFunction(`document.body.textContent.includes(${JSON.stringify(SIDE_BY_SIDE_TEXT)})`, 10000),
-      "Administrative source matching the chosen regime must auto-proceed",
+      await client.waitForFunction(`Array.from(document.querySelectorAll("button")).some(b => b.textContent && b.textContent.trim() === "Rà soát phân vùng nội dung")`, 10000),
+      "Matching administrative source must be available for the user's explicit partition review",
     );
     assert.equal(
       await client.evaluate<boolean>(`document.querySelector('${MODAL_SELECTOR}') !== null`),
       false,
       "No confirmation modal when strong evidence matches the chosen regime",
     );
+    await client.evaluate(`(() => {
+      const button = Array.from(document.querySelectorAll("button")).find(b => b.textContent && b.textContent.trim() === "Rà soát phân vùng nội dung");
+      button?.click();
+    })()`);
+    assert.ok(await client.waitForFunction(`document.querySelector('[data-testid="side-by-side-modal"]') !== null`, 8000),
+      "User review action must open the source-partition modal");
     const adminCommitted = await client.evaluate<{ hasChibo: boolean; hasKeHoach: boolean }>(`(() => {
       const modal = Array.from(document.querySelectorAll("div")).find(d => d.textContent && d.textContent.includes(${JSON.stringify(SIDE_BY_SIDE_TEXT)}));
       const text = modal ? modal.textContent : document.body.textContent;

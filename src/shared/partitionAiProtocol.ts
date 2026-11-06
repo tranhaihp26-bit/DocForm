@@ -2,7 +2,7 @@ import type { SourceBlock, SourceRegion } from "./schemas/document.schema.ts";
 
 export const PARTITION_AI_SCHEMA_VERSION = 1 as const;
 
-export type PartitionAiProviderKind = "gemini" | "chatgpt";
+export type PartitionAiProviderKind = "gemini" | "openai_api" | "chatgpt";
 
 export type PartitionAiRegime = "administrative" | "party";
 
@@ -136,7 +136,7 @@ export function validatePartitionAiRequest(value: unknown): PartitionAiRequestVa
     return { valid: false, reason: "Yêu cầu AI có trường ngoài schema hoặc không phải object." };
   }
   if (value.consent !== true) return { valid: false, reason: "Chưa có xác nhận cho phép gửi nguồn lên AI." };
-  if (value.provider !== undefined && value.provider !== "gemini" && value.provider !== "chatgpt") {
+  if (value.provider !== undefined && value.provider !== "gemini" && value.provider !== "openai_api" && value.provider !== "chatgpt") {
     return { valid: false, reason: "Nhà cung cấp AI không hợp lệ." };
   }
   if (value.schemaVersion !== PARTITION_AI_SCHEMA_VERSION) return { valid: false, reason: "Phiên bản schema yêu cầu AI không được hỗ trợ." };
@@ -268,8 +268,8 @@ export function validatePartitionAiResponse(
       value.schemaVersion !== PARTITION_AI_SCHEMA_VERSION || value.requestId !== request.requestId ||
       value.regime !== request.regime || value.sourceGeneration !== request.sourceGeneration ||
       value.partitionRevision !== request.partitionRevision || value.totalBlocks !== request.blocks.length ||
-      (value.provider !== undefined && value.provider !== "gemini" && value.provider !== "chatgpt") ||
-      (request.provider === "chatgpt" && value.provider !== "chatgpt") ||
+      (value.provider !== undefined && value.provider !== "gemini" && value.provider !== "openai_api" && value.provider !== "chatgpt") ||
+      (request.provider !== undefined && value.provider !== request.provider) ||
       (value.provider !== undefined && value.provider !== (request.provider ?? "gemini")) ||
       typeof value.requestFingerprint !== "string" || !/^[a-f0-9]{16}$/.test(value.requestFingerprint) ||
       !Array.isArray(value.aiReviewedBlockIds) || !Array.isArray(value.failedBlockIds) ||

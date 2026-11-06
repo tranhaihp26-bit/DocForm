@@ -2,7 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { transformSync } from "esbuild";
-import { getSchema } from "@tiptap/core";
+import { Extension, getSchema } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import TextAlign from "@tiptap/extension-text-align";
 import { Table, TableRow, TableHeader, TableCell } from "@tiptap/extension-table";
@@ -10,6 +10,8 @@ import { Table, TableRow, TableHeader, TableCell } from "@tiptap/extension-table
 import type { SourceBlock, ReviewProposal, DocumentState } from "../src/shared/schemas/document.schema.ts";
 import { applySingleProposal, type CanonicalWorkflowState } from "../src/utils/proposalState.ts";
 import { reconstructFromReviewedBlocks } from "../src/utils/importReview.ts";
+import { restoreWorkspaceVersion } from "../src/utils/workspacePersistence.ts";
+import { commitVersionRestore } from "../src/utils/importSessionLifecycle.ts";
 
 const createBlock = (id: string, text = "SAME", html = `<p>${text}</p>`): SourceBlock => ({
   id,
@@ -122,8 +124,8 @@ describe("Task 2: Document State Identity & Canonical Alignment", () => {
     assert.ok(from >= 0 && to > from, "PreserveTable section must exist in ND30Editor.tsx");
 
     const code = transformSync(source.slice(from, to), { loader: "ts", format: "esm" }).code;
-    const factory = new Function("Table", "TableCell", code + "; return {PreserveTable,PreserveTableCell};");
-    const { PreserveTable, PreserveTableCell } = factory(Table, TableCell);
+    const factory = new Function("Table", "TableCell", "Extension", code + "; return {PreserveTable,PreserveTableCell};");
+    const { PreserveTable, PreserveTableCell } = factory(Table, TableCell, Extension);
 
     const schema = getSchema([
       StarterKit.configure({ heading: { levels: [1, 2, 3] } }),
@@ -157,6 +159,7 @@ describe("Task 2: Document State Identity & Canonical Alignment", () => {
       setDoc: (d: any) => { s.doc = d; },
       setStandardType: () => {},
       setSuccessMsg: () => {},
+      setErrorMsg: () => {},
       setReviewBlocks: (b: any[]) => { s.blocks = b; },
     };
     const fn = new Function("deps", `const {${Object.keys(deps).join(",")}} = deps;\n${code}\nreturn restoreVersion;`)(deps);
@@ -228,25 +231,51 @@ describe("Task 2: Document State Identity & Canonical Alignment", () => {
     const to = source.indexOf("  const applyQuickFix = ", from);
     assert.ok(from >= 0 && to > from);
     const code = transformSync(source.slice(from, to), { loader: "ts", format: "esm" }).code;
-    const state: { doc: any; blocks: SourceBlock[] } = { doc: { bodyHtml: "<p>NEW</p>" }, blocks: [createBlock("new", "NEW")] };
-    const imported = { blocks: [createBlock("new", "NEW")] };
+    const state: { doc: any; blocks: SourceBlock[]; structuredImport: any; uploadedBlocks: SourceBlock[] } = {
+      doc: { bodyHtml: "<p>NEW</p>" },
+      blocks: [createBlock("new", "NEW")],
+      structuredImport: { blocks: [createBlock("new", "NEW")] },
+      uploadedBlocks: [createBlock("new", "NEW")],
+    };
     const deps = {
-      setDoc: (d: any) => { state.doc = d; },
-      setStandardType: () => {},
+      doc: { bodyHtml: "<p>NEW</p>" },
+      standardType: "state",
+      originalSnapshot: null,
+      restoreWorkspaceVersion,
+      commitVersionRestore,
+      createInitialImportSessionState: () => ({}),
+      applyImportSessionState: (session: any) => {
+        state.doc = session.doc;
+        state.blocks = session.reviewBlocks;
+        state.structuredImport = session.structuredImport;
+        state.uploadedBlocks = session.uploadedBlocks;
+      },
+      invalidateActiveAiSession: () => {},
+      installWorkspace: (snapshot: any) => {
+        state.doc = snapshot.doc;
+        state.blocks = snapshot.reviewBlocks;
+        state.structuredImport = snapshot.structuredImport;
+      },
+      canEnterWorkspaceStep: () => true,
+      setCurrentStep: () => {},
+      setUserSemanticDecisions: () => {},
+      setSourceOrigin: () => {},
+      setDocTypeOverride: () => {},
+      setImportReviewApprovedSourceHash: () => {},
       setSuccessMsg: () => {},
-      setReviewBlocks: (b: SourceBlock[]) => { state.blocks = b; },
+      setErrorMsg: () => {},
     };
     new Function("deps", `const {${Object.keys(deps).join(",")}} = deps;\n${code}\nreturn restoreVersion;`)(deps)({
+      id: "restored-version",
       data: { bodyHtml: "<p>OLD</p>" },
       standardType: "state",
       title: "Synthetic",
       timestamp: "2026-10-17",
     });
     assert.ok(source.includes("const blocksToUse = reviewBlocks.length > 0 ? reviewBlocks : (structuredImport?.blocks || uploadedBlocks);"));
-    const effective = state.blocks.length > 0 ? state.blocks : (imported?.blocks || []);
-    assert.deepStrictEqual(
-      { restored: state.doc.bodyHtml, reconstructed: reconstructFromReviewedBlocks(effective, "state").bodyHtml },
-      { restored: "<p>OLD</p>", reconstructed: "<p>OLD</p>" }
-    );
+    const effective = state.blocks.length > 0 ? state.blocks : (state.structuredImport?.blocks || state.uploadedBlocks);
+    assert.equal(state.doc.bodyHtml, "<p>OLD</p>");
+    assert.ok(!effective.some((block: SourceBlock) => block.id === "new" || block.text.includes("NEW")),
+      "Restored version must not fall back to the newer document's source blocks");
   });
 });

@@ -94,3 +94,25 @@ test("the generic profile does not conflict with a different organization", () =
   assert.equal(result.sourceProfile, "other");
   assert.equal(result.profileMismatch, false);
 });
+
+test("explicit template provenance takes precedence over a legacy template name in uploadedFileName", () => {
+  assert.equal(sourceMismatch.isImportedFileSource({
+    sourceOrigin: "system_template",
+    originalSnapshot: { sourceType: "system_template" } as any,
+    fileName: "Kế hoạch công tác",
+  }), false);
+  assert.equal(sourceMismatch.isImportedFileSource({
+    sourceOrigin: "none",
+    originalSnapshot: { sourceType: "system_template" } as any,
+    fileName: "Kế hoạch công tác",
+  }), false);
+});
+
+test("imported-file provenance stays authoritative and legacy filename fallback remains available", () => {
+  assert.equal(sourceMismatch.isImportedFileSource({ sourceOrigin: "uploaded_file" }), true);
+  assert.equal(sourceMismatch.isImportedFileSource({
+    sourceOrigin: "none",
+    originalSnapshot: { sourceType: "uploaded_file" } as any,
+  }), true);
+  assert.equal(sourceMismatch.isImportedFileSource({ sourceOrigin: "none", fileName: "Legacy.docx" }), true);
+});

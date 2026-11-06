@@ -42,3 +42,18 @@ test("AI and semantic review details are optional disclosures with useful defaul
   assert.match(source, /data-semantic-technical-details/u);
   assert.match(source, /Xem bố cục trang gốc/u);
 });
+
+test("Step 1 exposes unresolved groups and renders office-friendly semantic labels", () => {
+  const source = fs.readFileSync("src/components/ImportStepView.tsx", "utf8");
+  assert.match(source, /data-testid="recognition-attention-summary"/u);
+  assert.match(source, /semanticLabelForOfficeWorker\(row\.label\)/u);
+  assert.match(source, /row\.scope==="body"\?"Thân văn bản"/u);
+});
+
+test("source visual failures give a next step in the primary status message", () => {
+  const source = fs.readFileSync("src/components/ImportStepView.tsx", "utf8");
+  const display = fs.readFileSync("src/utils/step1OfficeWorkerDisplay.ts", "utf8");
+  assert.match(source, /getSourceVisualFailureMessage/u);
+  assert.match(display, /Bạn vẫn có thể duyệt nội dung đã trích bên dưới hoặc mở tệp gốc bằng Word/u);
+  assert.match(display, /Chưa dựng đủ trang để đối chiếu/u);
+});

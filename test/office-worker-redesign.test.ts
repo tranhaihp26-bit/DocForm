@@ -414,7 +414,17 @@ console.log("\n--- TEST 7: Kiểm toán ruleEngine (Hợp lệ / Sai / Thiếu O
   };
   const validHd05Eval = evaluateDocumentRules(companyHd05Doc, "party", validHd05Ev);
   assert.ok(validHd05Eval.canonicalStats.counts.PASS >= 10, `HD05 hợp lệ phải có >= 10 rule PASS (thực tế: ${validHd05Eval.canonicalStats.counts.PASS})`);
-  assert.equal(validHd05Eval.canonicalStats.counts.FAIL, 0, "HD05 hợp lệ phải có 0 rule FAIL");
+  assert.equal(
+    validHd05Eval.canonicalStats.counts.FAIL,
+    0,
+    `HD05 hợp lệ phải có 0 rule FAIL: ${JSON.stringify({
+      failures: validHd05Eval.results.filter(result => result.status === "FAIL"),
+      bodyParagraphs: (validHd05Ev as any).body_evidence?.directParagraphs?.map((paragraph: any) => ({
+        text: paragraph.text, role: paragraph.role, isEligibleBody: paragraph.isEligibleBody,
+        alignment: paragraph.alignment, lineRule: paragraph.lineRule, lineSpacingDxa: paragraph.lineSpacingDxa,
+      })),
+    }, null, 2)}`
+  );
   assert.equal(
     validHd05Eval.results.find(r => r.ruleId === "PROFILE.HD05.HOA_TIEU_MB.TABLE_WIDTH")?.status,
     "PASS"

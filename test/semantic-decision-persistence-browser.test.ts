@@ -59,7 +59,7 @@ test("restores semantic approval and applied Body formatting after IndexedDB rel
     assert.equal(await client.waitForFunction(`document.querySelector(${JSON.stringify(unitSelector)})?.textContent?.includes('Đã xác nhận')&&document.querySelector(${JSON.stringify(unitSelector)})?.textContent?.includes('Đã áp dụng quy tắc vào đúng đoạn Body')`), true, "Approval and formatting should both survive another IndexedDB reload");
     assert.equal(await client.clickByText("button", "Xem tóm tắt"), true);
     assert.equal(await client.waitForFunction(`document.querySelector('[data-flow-phase="ready"]')!==null`), true);
-    assert.equal(await client.clickByText("button", "Sang Bước 2: Soạn"), true);
+    assert.equal(await client.clickByText("button", "Tiếp tục đưa vào Studio soạn thảo"), true);
     assert.equal(await client.waitForFunction(`document.querySelector('[data-current-step="2"]')!==null`), true);
     assert.equal(await client.waitForFunction(`Boolean(document.querySelector('.df-workspace-prose p[data-df-line-spacing="1.15"][data-df-first-line-indent="1.27cm"]'))`), true, "Workspace editor schema should preserve the exact rule attributes");
     assert.equal(await client.evaluate(`document.querySelector('[data-editor-readonly]')===null`), true, "The formatted simple paragraph should remain editable");

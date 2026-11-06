@@ -1,0 +1,22 @@
+{
+  "sha256": "9385ca88d1496b9819d03187b47c6e20045c498b54b2c4c865ff642b630caf5a",
+  "dimensions": {
+    "sha": "9385ca88d1496b9819d03187b47c6e20045c498b54b2c4c865ff642b630caf5a",
+    "pages": [
+      {
+        "width": 1122.53125,
+        "height": 793.71875
+      },
+      {
+        "width": 1122.53125,
+        "height": 793.71875
+      }
+    ],
+    "mode": "true"
+  },
+  "fit": {
+    "paperWidth": 290.4223327636719,
+    "scrollWidth": 388,
+    "outerWidth": 390
+  }
+}

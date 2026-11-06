@@ -85,19 +85,24 @@ test("full-text browser flow requires consent, reports partial, retries only fai
         return realFetch(input,init);
       };
     })()`);
+    assert.equal(await pointerClickText(client, 'summary', "Đối chiếu bằng AI (tùy chọn)"), true,
+      "Optional AI review details should be opened only for this test flow");
     assert.equal(await client.evaluate<boolean>(`document.querySelector('[data-testid="full-text-provider-consent"]')?.checked===false`), true,
       "Consent starts unchecked for this source");
     assert.equal(await client.evaluate<number>(`window.__fullTextCalls.length`), 0, "Opening the panel sends no request");
     assert.equal(await pointerClickText(client, 'button', "Kiểm kê văn bản trích xuất trên máy"), true);
-    assert.equal(await client.waitForFunction(`Boolean(document.querySelector('[data-testid="full-text-manifest-inventory"]')?.textContent.includes('word/document.xml')&&document.querySelector('[data-testid="full-text-manifest-inventory"]')?.textContent.includes('1 đoạn'))`), true,
-      "The local inventory exposes the included package part and extracted segment count before transmission");
+    assert.equal(await client.waitForFunction(`Boolean(document.querySelector('[data-testid="full-text-manifest-inventory"]')?.textContent.includes('Đoạn văn có thể gửi: 1'))`), true,
+      "The local inventory exposes the extracted segment count before transmission");
+    assert.equal(await pointerClickText(client, 'summary', "Xem nội dung sẽ gửi và phần bị loại"), true);
+    assert.equal(await client.waitForFunction(`Boolean(document.querySelector('[data-testid="full-text-manifest-inventory"]')?.textContent.includes('Nội dung văn bản chính · 1 đoạn văn'))`), true,
+      "The expanded inventory describes the included source part in user-facing language");
     assert.equal(await client.evaluate<number>(`window.__fullTextCalls.length`), 0, "Local inventory construction sends no request");
     assert.equal(await pointerClick(client, '[data-testid="full-text-provider-consent"]'), true);
     assert.equal(await client.evaluate<boolean>(`document.querySelector('[data-testid="full-text-provider-consent"]')?.checked`), true);
     assert.equal(await client.evaluate<number>(`window.__fullTextCalls.length`), 0, "Consent alone does not send the text");
     assert.equal(await pointerClickText(client, 'button', "Gửi toàn bộ văn bản trích xuất để rà soát"), true);
-    assert.equal(await client.waitForFunction(`window.__fullTextCalls.length===1&&document.querySelector('[data-testid="full-text-review-progress"]')?.textContent.includes('Coverage một phần')`, 15000), true,
-      "The first synthetic provider failure is shown as partial coverage");
+    assert.equal(await client.waitForFunction(`window.__fullTextCalls.length===1&&document.querySelector('[data-testid="full-text-review-progress"]')?.textContent.includes('Còn đoạn chưa có phản hồi')`, 15000), true,
+      "The first synthetic provider failure is shown as partial coverage in user-facing language");
     const firstRequest = await client.evaluate<any>(`window.__fullTextCalls[0]`);
     assert.equal(firstRequest.provider, "gemini");
     assert.equal(firstRequest.textScope, "all_extracted_text");

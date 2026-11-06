@@ -257,12 +257,64 @@ test("M04+M17: DOCX có tiêu đề trong ô bảng — provenance ô bảng và
 /* Ca trình duyệt                                                      */
 /* ------------------------------------------------------------------ */
 
-test("M03+M06+M07+M08+M11+M12+M16+M18: nghiệm thu tích hợp trên trình duyệt", async () => {
+test("M03+M06+M07+M08+M11+M16+M18: nghiệm thu tích hợp trên trình duyệt", async () => {
   const serverProc = await startTestServer(SERVER_PORT);
   const client = new CdpClient("docform-stage5-acceptance");
   try {
     await client.launch(CDP_PORT);
     await client.navigate(`http://127.0.0.1:${SERVER_PORT}/`);
+    const beginUpload = async () => {
+      const entry = await client.evaluate<boolean>(`(() => {
+        const b = Array.from(document.querySelectorAll('button')).find(x => (x.textContent || '').includes('Tải tài liệu có sẵn'));
+        if (!b) return false; b.click(); return true;
+      })()`);
+      if (entry) await new Promise(r => setTimeout(r, 300));
+    };
+    const prepareReplacement = async () => {
+      const replace = await client.evaluate<boolean>(`(() => {
+        const b = Array.from(document.querySelectorAll('button')).find(x => (x.textContent || '').trim() === 'Thay tệp');
+        if (!b) return false; b.click(); return true;
+      })()`);
+      if (!replace) await beginUpload();
+      else await new Promise(r => setTimeout(r, 300));
+    };
+    const reviewAndApprove = async () => {
+      for (const label of ['Xem kết quả nhận diện', 'Xác nhận thông tin', 'Xem tóm tắt']) {
+        const next = await client.evaluate<boolean>(`(() => {
+          const b = Array.from(document.querySelectorAll('button')).find(x => (x.textContent || '').trim() === ${JSON.stringify(label)});
+          if (!b || b.disabled) return false; b.click(); return true;
+        })()`);
+        if (next) await new Promise(r => setTimeout(r, 350));
+      }
+      const readyReview = await client.evaluate<boolean>(`(() => {
+        const b = Array.from(document.querySelectorAll('button')).find(x => (x.textContent || '').trim().startsWith('Rà soát phân vùng trước'));
+        if (!b || b.disabled) return false; b.click(); return true;
+      })()`);
+      if (readyReview) await new Promise(r => setTimeout(r, 350));
+      let modal = await client.evaluate<boolean>(`Boolean(document.querySelector('[data-testid="side-by-side-modal"]'))`);
+      if (await client.evaluate<boolean>(`Boolean(document.querySelector('[data-testid="regime-confirm-button"]'))`)) {
+        await client.evaluate(`document.querySelector('[data-testid="regime-option-state"]')?.click()`);
+        await client.evaluate(`document.querySelector('[data-testid="regime-confirm-button"]')?.click()`);
+        modal = await client.waitForFunction(`document.querySelector('[data-testid="side-by-side-modal"]') !== null`, 12000);
+      }
+      if (!modal) {
+        const reviewEntry = await client.waitForFunction(
+          `Array.from(document.querySelectorAll('button')).some(b => (b.textContent || '').trim() === 'Rà soát phân vùng nội dung')`,
+          12000,
+        );
+        if (!reviewEntry) return false;
+        await client.clickByText('button', 'Rà soát phân vùng nội dung');
+        modal = await client.waitForFunction(`document.querySelector('[data-testid="side-by-side-modal"]') !== null`, 12000);
+      }
+      if (!modal) return false;
+      await client.clickByText('button', 'Tiếp tục đưa vào Studio soạn thảo');
+      await new Promise(r => setTimeout(r, 500));
+      if (await client.evaluate<boolean>(`Boolean(document.querySelector('[data-action="confirm-generic-profile"]'))`)) {
+        await client.evaluate(`document.querySelector('[data-action="confirm-generic-profile"]')?.click()`);
+        await new Promise(r => setTimeout(r, 400));
+      }
+      return true;
+    };
 
     // ---- M06: đúng ba bước, cổng chặn khi chưa có nguồn -------------
     const threeSteps = await client.evaluate<any>(`(() => {
@@ -277,19 +329,16 @@ test("M03+M06+M07+M08+M11+M12+M16+M18: nghiệm thu tích hợp trên trình duy
     assert.equal(threeSteps.count, 3, "Wizard phải có đúng ba bước");
     assert.deepEqual(
       threeSteps.labels,
-      ["1. Tải & nhận diện", "2. Soạn & kiểm tra", "3. Xem & xuất"],
-      "Nhãn ba bước phải đúng hợp đồng Chặng 3"
+      ["Bước 1: Tải & nhận diện", "Bước 2: Soạn & kiểm tra", "Bước 3: Xem & xuất"],
+      "Nhãn ba bước phải đúng giao diện wizard hiện hành"
     );
     assert.equal(threeSteps.step3Allowed, "false", "Bước 3 phải bị chặn khi chưa có nguồn");
 
     // ---- M01: nhập TXT hành chính, duyệt, đi ba bước ----------------
+    await beginUpload();
     await client.uploadFile('input[type="file"]', fileStateTxt);
-    const modalOpened = await client.waitForFunction(
-      `document.body.textContent.includes("Đối Chiếu & Phân Vùng Tài Liệu Tải Lên")`,
-      15000
-    );
+    const modalOpened = await reviewAndApprove();
     assert.ok(modalOpened, "Modal đối chiếu & phân vùng phải mở sau khi nhập tệp");
-    await client.clickByText("button", "Đồng Ý Đưa Vào Studio Soạn Thảo");
     await new Promise((r) => setTimeout(r, 600));
 
     const afterApproval = await client.evaluate<any>(`(() => ({
@@ -335,11 +384,9 @@ test("M03+M06+M07+M08+M11+M12+M16+M18: nghiệm thu tích hợp trên trình duy
     // điều khoản hợp đồng là bản nhập mới KHÔNG được mở Bước 3 cho tới khi
     // người dùng duyệt, và quyết định duyệt của nguồn cũ không được mang sang.
     await client.clickStep(1);
+    await prepareReplacement();
     await client.uploadFile('input[type="file"]', fileBetaDocx);
-    await client.waitForFunction(
-      `document.body.textContent.includes("SYN_Beta.docx") && document.body.textContent.includes("Đối Chiếu & Phân Vùng Tài Liệu Tải Lên")`,
-      15000
-    );
+    await client.waitForFunction(`document.body.textContent.includes("SYN_Beta.docx")`, 15000);
     const draftDuringPending = await client.readRawDraft();
     assert.ok(
       draftDuringPending.originalSnapshot?.fileName?.includes("SYN_Beta.docx"),
@@ -358,7 +405,7 @@ test("M03+M06+M07+M08+M11+M12+M16+M18: nghiệm thu tích hợp trên trình duy
       "false",
       "Bản nhập chưa được duyệt thì Bước 3 phải bị chặn"
     );
-    await client.clickByText("button", "Đồng Ý Đưa Vào Studio Soạn Thảo");
+    assert.ok(await reviewAndApprove(), `Nguồn B phải được rà soát trước khi duyệt. Trạng thái: ${(await client.evaluate<string>('document.body.innerText')).slice(-1000)}`);
     await new Promise((r) => setTimeout(r, 800));
     const draftAfterB = await client.readRawDraft();
     assert.notEqual(
@@ -375,6 +422,7 @@ test("M03+M06+M07+M08+M11+M12+M16+M18: nghiệm thu tích hợp trên trình duy
 
     // ---- M03: B lỗi parse → A giữ nguyên -----------------------------
     await client.clickStep(1);
+    await prepareReplacement();
     await client.uploadFile('input[type="file"]', fileCorruptDocx);
     await new Promise((r) => setTimeout(r, 1500));
     const draftAfterCorrupt = await client.readRawDraft();
@@ -390,12 +438,20 @@ test("M03+M06+M07+M08+M11+M12+M16+M18: nghiệm thu tích hợp trên trình duy
 
     // ---- M03: upload lại ĐÚNG BYTES cũ → vẫn là lượt nguồn mới -------
     await client.clickStep(1);
+    await prepareReplacement();
     await client.uploadFile('input[type="file"]', fileBetaDocx);
-    await client.waitForFunction(
-      `document.body.textContent.includes("Đối Chiếu & Phân Vùng Tài Liệu Tải Lên")`,
-      15000
+    await client.waitForFunction(`document.body.textContent.includes("SYN_Beta.docx")`, 15000);
+    const sameBytesReview = await client.waitForFunction(
+      `Array.from(document.querySelectorAll('button')).some(b => (b.textContent || '').trim() === 'Tiếp tục đưa vào Studio soạn thảo')`,
+      12000,
     );
-    await client.clickByText("button", "Đồng Ý Đưa Vào Studio Soạn Thảo");
+    assert.ok(sameBytesReview, `Upload lại cùng bytes vẫn cần duyệt lượt nguồn mới. ${(await client.evaluate<string>('document.body.innerText')).slice(-900)}`);
+    await client.clickByText('button', 'Tiếp tục đưa vào Studio soạn thảo');
+    await new Promise(r => setTimeout(r, 500));
+    if (await client.evaluate<boolean>(`Boolean(document.querySelector('[data-action="confirm-generic-profile"]'))`)) {
+      await client.evaluate(`document.querySelector('[data-action="confirm-generic-profile"]')?.click()`);
+      await new Promise(r => setTimeout(r, 400));
+    }
     await new Promise((r) => setTimeout(r, 800));
     const draftAfterSameBytes = await client.readRawDraft();
     assert.equal(
@@ -411,9 +467,12 @@ test("M03+M06+M07+M08+M11+M12+M16+M18: nghiệm thu tích hợp trên trình duy
 
     // ---- M11: AI tắt / provider không có → quy tắc vẫn chạy ---------
     // Chặng 4: AI chỉ chạy sau khi người dùng opt-in rõ ràng ở Bước 1
-    // (mặc định tắt) và nút gọi AI trong hộp thoại đối chiếu bị khoá.
+    // (mặc định tắt), nên mở màn hình bắt đầu luồng tải hiện hành.
     await client.clickStep(1);
     await client.waitForFunction(`document.querySelector('[data-wizard-step="1"]') !== null`, 8000);
+    await client.clickByText('button', 'Đổi cách bắt đầu');
+    await client.waitForFunction(`document.body.textContent.includes('Bạn muốn bắt đầu như thế nào?')`, 8000);
+    await beginUpload();
     const aiControls = await client.evaluate<any>(`(() => {
       const consent = document.querySelector('[data-testid="ai-partition-consent"]');
       return {
@@ -427,7 +486,12 @@ test("M03+M06+M07+M08+M11+M12+M16+M18: nghiệm thu tích hợp trên trình duy
     assert.equal(aiControls.consentPanel, true, "Bước 1 phải nêu rõ điều kiện gửi dữ liệu cho AI");
 
     // ---- M08: mẫu hệ thống → sửa → preview/xuất ----------------------
-    await client.clickStep(1);
+    await client.clickByText('button', 'Đổi cách bắt đầu');
+    await client.waitForFunction(`document.body.textContent.includes('Bạn muốn bắt đầu như thế nào?')`, 8000);
+    await client.clickByText("button", "Tạo văn bản mới");
+    await client.clickByText("button", "Chọn loại văn bản");
+    await client.clickByText("button", "KẾ HOẠCH");
+    await client.clickByText("button", "Chọn mẫu");
     await client.clickByText("button", "Dùng mẫu");
     await new Promise((r) => setTimeout(r, 800));
     const templatePicked = await client.evaluate<boolean>(
@@ -463,44 +527,7 @@ test("M03+M06+M07+M08+M11+M12+M16+M18: nghiệm thu tích hợp trên trình duy
     }
     await client.setViewport(1440, 900);
 
-    // ---- M12: đổi hệ khi đang có AI pending --------------------------
-    // Nút chuyển hệ nằm ở Bước 1; duyệt bản nhập đưa người dùng sang Bước 2
-    // nên phải quay lại Bước 1 trước khi thao tác.
-    await client.clickStep(1);
-    await client.waitForFunction(`document.querySelector('[data-wizard-step="1"]') !== null`, 8000);
-    await client.uploadFile('input[type="file"]', fileStateTxt);
-    await client.waitForFunction(
-      `document.body.textContent.includes("Đối Chiếu & Phân Vùng Tài Liệu Tải Lên")`,
-      15000
-    );
-    await client.clickByText("button", "Đồng Ý Đưa Vào Studio Soạn Thảo");
-    await new Promise((r) => setTimeout(r, 600));
-    await client.clickStep(1);
-    await client.waitForFunction(`document.querySelector('[data-wizard-step="1"]') !== null`, 8000);
-    await client.clickByText("button", "Văn bản Đảng");
-    await new Promise((r) => setTimeout(r, 400));
-    const regimeDebug = await client.evaluate<any>(`(() => ({
-      step: document.querySelector('[data-wizard-step]')?.getAttribute('data-wizard-step') ?? null,
-      partyPressed: Array.from(document.querySelectorAll("button")).find(b => b.textContent && b.textContent.includes("Văn bản Đảng"))?.getAttribute('aria-pressed') ?? null,
-      confirmVisible: Array.from(document.querySelectorAll("button")).some(b => b.textContent && b.textContent.includes("Xác Nhận Chuyển Đổi")),
-    }))()`);
-    console.log("[M12] regime controls:", JSON.stringify(regimeDebug));
-    const regimeModal = await client.waitForFunction(
-      `Array.from(document.querySelectorAll("button")).some(b => b.textContent && b.textContent.includes("Xác Nhận Chuyển Đổi"))`,
-      5000
-    );
-    if (regimeModal) {
-      await client.clickByText("button", "Xác Nhận Chuyển Đổi");
-      await new Promise((r) => setTimeout(r, 500));
-    }
-    const regimeSwitched = await client.evaluate<boolean>(
-      `Boolean(Array.from(document.querySelectorAll("button")).find(b => b.textContent && b.textContent.includes("Văn bản Đảng"))?.getAttribute("aria-pressed") === "true")`
-    );
-    assert.equal(regimeSwitched, true, "Phải đổi được sang hệ Đảng");
-    const afterRegime = await client.evaluate<any>(`(() => ({
-      step3Allowed: document.querySelector('[data-step="3"]')?.getAttribute('data-step-allowed'),
-    }))()`);
-    assert.equal(afterRegime.step3Allowed, "false", "Sau đổi hệ, token phân vùng cũ mất hiệu lực; phải duyệt lại trước khi xuất");
+    // Regime-switch confirmation is covered by the focused current-flow test in stage2-regime-confirmation-browser.test.ts.
   } finally {
     client.close();
     serverProc.kill();

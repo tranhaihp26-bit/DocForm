@@ -105,7 +105,7 @@ export function SafeRegimeModal({
           <div className="space-y-2 text-xs leading-relaxed text-[#52607A]">
             <p className="flex items-start gap-2">
               <CheckCircle2 className="w-4 h-4 text-[#127955] shrink-0 mt-0.5" />
-              <span><strong className="text-[#17233D]">Bảo toàn dữ liệu:</strong> Toàn bộ nội dung văn bản, bảng biểu, danh sách, phụ lục và chữ ký được giữ nguyên.</span>
+              <span><strong className="text-[#17233D]">Giữ lại nội dung:</strong> Nội dung và tệp nguồn đang có vẫn được giữ trong phiên; phần chưa hỗ trợ cần đối chiếu với tệp gốc trước khi xuất.</span>
             </p>
             <p className="flex items-start gap-2">
               <CheckCircle2 className="w-4 h-4 text-[#127955] shrink-0 mt-0.5" />

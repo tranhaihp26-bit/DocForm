@@ -8,7 +8,7 @@
 
 ---
 
-## 1. Tính Năng & Mức Độ Hoàn Thiện Đã Xác Minh
+## 1. Tính Năng Chính
 
 - 🏛️ **Hai chế độ thể thức độc lập:** Cách ly hoàn toàn bộ quy tắc giữa Nhà nước (`administrative`) và Đảng (`party`). Mỗi chế độ quản lý đúng **9 nhóm thành phần chính** và các nhóm bổ sung có điều kiện (phụ lục, mật, khẩn, chỉ dẫn phát hành, bản sao, khổ trang).
 - 🛡️ **Bảo toàn cấu trúc nội dung và bảng biểu:** Bóc tách tệp Word `.docx` và `.txt` giữ nguyên nội dung đoạn văn, số lượng bảng biểu, ô gộp (`gridSpan`/`vMerge`), thuộc tính chống tách hàng (`cantSplit`), hàng tiêu đề lặp lại (`tblHeader`) và phụ lục.
@@ -18,7 +18,10 @@
   - Số nhóm thành phần đã nhận diện: `x/9 nhóm thành phần`.
   - Số việc người dùng cần xử lý: `y việc cần xử lý`.
   - Số quy tắc kiểm định bằng chứng thực tế từ OOXML: `PASS: a | FAIL: f | Chưa kiểm định: b | Cần rà soát: r | Không áp dụng: c`.
-- 🔄 **Lưu trữ nháp và chuyển hệ an toàn:** Tự động lưu bản nháp vào IndexedDB (báo lỗi trung thực nếu IndexedDB không khả dụng) và hỗ trợ chuyển đổi khứ hồi giữa hai hệ thể thức (`SafeRegimeModal`) kèm lịch sử phiên bản.
+- 🧭 **Wizard 3 bước:** Bước 1 nhập nguồn và xác nhận hệ/loại/profile, Bước 2 soạn thảo, Bước 3 tạo ứng viên DOCX, xem đối chiếu, tải xuống hoặc in bản tham khảo.
+- 🤖 **Rà soát văn bản có người duyệt:** Có rà soát khối/đoạn và rà soát toàn văn đã trích xuất. Khi chọn Gemini hoặc ChatGPT plan, ứng dụng gửi văn bản đã trích xuất theo thao tác có đồng ý; kết quả được căn về vị trí nguồn và vẫn chờ người dùng xem/áp dụng.
+- 🔒 **Giới hạn dữ liệu AI rõ ràng:** Luồng rà soát toàn văn gửi manifest text theo chunk, không gửi byte DOCX/PDF hay ảnh trang đến AI và không khẳng định AI đã xem bố cục. Dựng hình nguồn là xử lý cục bộ riêng. Sự đồng ý gửi dữ liệu gắn với tệp/ngữ cảnh và provider đã chọn.
+- 💾 **Lưu trữ nháp và chuyển hệ an toàn:** Tự động lưu bản nháp hiện hành vào IndexedDB, lưu byte nguồn độc lập và báo lỗi trung thực nếu lưu bền vững không khả dụng. Hỗ trợ chuyển đổi giữa hai hệ thể thức (`SafeRegimeModal`) cùng lịch sử phiên bản.
 - 📝 **So sánh trực quan (Visual Diff):** Cho phép đối chiếu bản đề xuất, bản gốc ban đầu và chế độ xem Diff từng từ (`inlineHtml`) trước khi xuất file Word.
 
 ---
@@ -77,11 +80,18 @@ Khi theo dõi các thông số kiểm định, cần phân biệt rõ hai loại
 | `npx tsx test/header-dual-regime.test.ts` | Kiểm định hình học phần đầu NĐ 30 và HD 05 (Generic & Hoa Tiêu MB) |
 | `npm run test:body:tables` | Kiểm định định dạng và bảo toàn cấu trúc bảng biểu ([`test/table-and-body-format.test.ts`](test/table-and-body-format.test.ts)) |
 | `npm run test:import:segments` | Kiểm định độ chính xác của phân đoạn cấu trúc tài liệu ([`test/import-segments.test.ts`](test/import-segments.test.ts)) |
+| `npx tsx test/full-text-review-endpoint.test.ts` | Kiểm định hợp đồng endpoint rà soát toàn văn đã trích xuất |
+| `npx tsx test/semantic-ai-alignment.test.ts` | Kiểm định căn quan sát AI về đúng anchor nguồn |
+| `npx tsx test/profile-decision-gate.test.ts` | Kiểm định chặn quyết định profile khi chưa khớp nguồn/ngữ cảnh |
+| `npx tsx test/export-candidate-contract.test.ts` | Kiểm định hợp đồng ứng viên xuất hiện hành |
+
+Các lệnh trên là điểm bắt đầu trong repository. Danh sách test không đồng nghĩa chúng đã chạy đạt ở checkout hiện tại; hãy chạy lại test phù hợp khi xác nhận một thay đổi.
 
 ---
 
 ## 5. Tài Liệu Hướng Dẫn Kỹ Thuật
 
 Dành cho lập trình viên và coding agent khi tiếp cận dự án:
-- 📖 [**AGENTS.md**](AGENTS.md) — Nguyên tắc cốt lõi, thứ tự đọc file theo nhiệm vụ, quy tắc bảo toàn dữ liệu và checklist hoàn tất thay đổi.
-- 🗺️ [**docs/CODEBASE_MAP.md**](docs/CODEBASE_MAP.md) — Bản đồ chi tiết toàn bộ mã nguồn: Nhiệm vụ → File cần đọc → Luồng dữ liệu → Bài test kiểm chứng và hướng dẫn tra cứu nhanh *"Nếu cần sửa X, bắt đầu ở đâu"*.
+- 📖 [**AGENTS.md**](AGENTS.md) — Quy tắc toàn dự án, quy trình làm việc và định tuyến đến hướng dẫn chỉ áp dụng cho thư mục đang sửa.
+- 🗺️ [**docs/CODEBASE_MAP.md**](docs/CODEBASE_MAP.md) — Mục lục tác vụ → file → test; chỉ đọc phần cần dùng, không cần tải toàn bộ bản đồ cho mỗi nhiệm vụ.
+- 🔐 [**docs/SIWC_LOCAL.md**](docs/SIWC_LOCAL.md) — Thiết lập ChatGPT plan local, consent, xử lý credential và giới hạn provider/file/visual.

@@ -71,12 +71,6 @@ test("AI partition browser flow: opt-in route, role-free full source, partial co
     await client.launch(CDP_PORT);
     await client.navigate(`http://127.0.0.1:${SERVER_PORT}/`);
 
-    assert.equal(
-      await client.evaluate<boolean>(`document.querySelector('[data-testid="ai-partition-consent"]')?.checked`),
-      false,
-      "AI consent must default to off",
-    );
-
     await client.evaluate(`(() => {
       window.__aiCalls = [];
       window.__aiPending = [];
@@ -109,13 +103,25 @@ test("AI partition browser flow: opt-in route, role-free full source, partial co
 
     await client.uploadFile('input[aria-label="Chọn tệp Word hoặc văn bản"]', fileA);
     assert.ok(await client.waitForFunction(`document.querySelector('[data-wizard-step="1"]')?.getAttribute('data-has-source') === 'true'`, 20000));
+    assert.equal(
+      await client.evaluate<boolean>(`document.querySelector('[data-testid="ai-partition-consent"]')?.checked`),
+      false,
+      "AI consent must default to off after a source is loaded",
+    );
     await new Promise(resolve => setTimeout(resolve, 400));
     assert.equal(await client.evaluate<number>(`window.__aiCalls.length`), 0, "No AI request may run while consent is off");
 
     await client.evaluate(`(() => document.querySelector('[data-testid="ai-partition-consent"]').click())()`);
-    assert.ok(await client.waitForFunction(`document.querySelector('[data-testid="ai-partition-progress"]')?.textContent.includes('1/2')`, 5000),
-      "The client must display chunk progress before the final AI response arrives");
-    assert.ok(await client.waitForFunction(`window.__aiCalls.length === 1 && document.querySelector('[data-testid="ai-partition-status"]')?.textContent.includes('AI đã kiểm tra')`, 15000));
+    const progressVisible = await client.waitForFunction(`document.querySelector('[data-testid="ai-partition-progress"]')?.textContent.includes('1/2')`, 5000);
+    if (!progressVisible) {
+      const progressDiagnostic = await client.evaluate<any>(`(() => ({
+        progress: document.querySelector('[data-testid="ai-partition-progress"]')?.textContent || null,
+        status: document.querySelector('[data-testid="ai-partition-status"]')?.textContent || null,
+        calls: window.__aiCalls.length,
+      }))()`);
+      assert.fail(`The client must display chunk progress before the final AI response arrives: ${JSON.stringify(progressDiagnostic)}`);
+    }
+    assert.ok(await client.waitForFunction(`window.__aiCalls.length === 1 && document.querySelector('[data-testid="ai-partition-status"]')?.textContent.includes('Gemini đã rà soát · chờ duyệt')`, 15000));
     assert.equal(await client.evaluate<boolean>(`Boolean(document.querySelector('[data-testid="ai-partition-progress"]'))`), false,
       "Live progress should clear after the validated final response");
 
@@ -160,7 +166,6 @@ test("AI partition browser flow: opt-in route, role-free full source, partial co
     })()`);
     assert.equal(applyTarget, "partition-proposal-block-5", "The validated AI suggestion must be applicable by one explicit user action");
 
-    await client.evaluate(`(() => document.querySelector('button[aria-label="Đóng hộp thoại đối chiếu nguồn"]')?.click())()`);
     await client.evaluate(`(() => {
       const consent = document.querySelector('[data-testid="ai-partition-consent"]');
       consent.click();
@@ -168,10 +173,15 @@ test("AI partition browser flow: opt-in route, role-free full source, partial co
       consent.click();
     })()`);
     assert.ok(await client.waitForFunction(`window.__aiCalls.length === 2 && window.__aiPending.length === 1`, 5000));
+    await client.evaluate(`(() => document.querySelector('button[aria-label="Đóng hộp thoại đối chiếu nguồn"]')?.click())()`);
 
     await client.evaluate(`window.__aiMode = 'defer'`);
     await client.uploadFile('input[aria-label="Chọn tệp Word hoặc văn bản"]', fileB);
-    assert.ok(await client.waitForFunction(`document.body.textContent.includes('B_FULL_SOURCE_MARKER') && window.__aiCalls.length === 3 && window.__aiPending.length === 2`, 20000));
+    assert.ok(await client.waitForFunction(`document.body.textContent.includes('B_FULL_SOURCE_MARKER') && Boolean(document.querySelector('[data-testid="ai-partition-consent"]'))`, 20000));
+    assert.equal(await client.evaluate<boolean>(`document.querySelector('[data-testid="ai-partition-consent"]')?.checked`), false,
+      "Consent for source A must not carry over to the newly selected source B");
+    await client.evaluate(`document.querySelector('[data-testid="ai-partition-consent"]').click()`);
+    assert.ok(await client.waitForFunction(`window.__aiCalls.length === 3 && window.__aiPending.length === 2`, 15000));
     assert.ok(await client.evaluate<boolean>(`window.__aiCalls[2].blocks.some(block => block.text.includes('B_FULL_SOURCE_MARKER'))`));
     const bProgressBeforeStale = await client.evaluate<string>(`document.querySelector('[data-testid="ai-partition-progress"]')?.textContent || ''`);
     assert.ok(bProgressBeforeStale.includes("0/2"), "New source B should own the live progress while its AI response is pending");
@@ -186,7 +196,7 @@ test("AI partition browser flow: opt-in route, role-free full source, partial co
     assert.equal(await client.evaluate<boolean>(`document.body.textContent.includes('B_FULL_SOURCE_MARKER')`), true);
 
     assert.equal(await client.evaluate<boolean>(`window.__resolvePendingAi(1)`), true);
-    assert.ok(await client.waitForFunction(`document.querySelector('[data-testid="ai-partition-status"]')?.textContent.includes('AI đã kiểm tra')`, 15000));
+    assert.ok(await client.waitForFunction(`document.querySelector('[data-testid="ai-partition-status"]')?.textContent.includes('Gemini đã rà soát · chờ duyệt')`, 15000));
 
     await client.clickByText("button", "Đối chiếu nguồn");
     await client.evaluate(`(() => {
@@ -229,7 +239,21 @@ test("AI partition browser flow: opt-in route, role-free full source, partial co
 
     await client.evaluate(`window.__aiMode = 'error'`);
     await client.uploadFile('input[aria-label="Chọn tệp Word hoặc văn bản"]', fileB);
-    assert.ok(await client.waitForFunction(`window.__aiCalls.length === 5 && document.querySelector('[data-testid="ai-partition-status"]')?.textContent.includes('Chỉ quy tắc nội bộ')`, 20000));
+    assert.ok(await client.waitForFunction(`Boolean(document.querySelector('[data-testid="ai-partition-consent"]'))`, 20000));
+    assert.equal(await client.evaluate<boolean>(`document.querySelector('[data-testid="ai-partition-consent"]')?.checked`), false,
+      "Re-uploading the same bytes creates a new consent scope");
+    await client.evaluate(`document.querySelector('[data-testid="ai-partition-consent"]').click()`);
+    const fallbackVisible = await client.waitForFunction(`window.__aiCalls.length === 5 && document.querySelector('[data-testid="ai-partition-status"]')?.textContent.includes('Quy tắc nội bộ')`, 20000);
+    if (!fallbackVisible) {
+      const fallbackDiagnostic = await client.evaluate<any>(`(() => ({
+        calls: window.__aiCalls.length,
+        pending: window.__aiPending.length,
+        status: document.querySelector('[data-testid="ai-partition-status"]')?.textContent || null,
+        consent: document.querySelector('[data-testid="ai-partition-consent"]')?.checked ?? null,
+        source: document.querySelector('[data-wizard-step="1"]')?.getAttribute('data-has-source') || null,
+      }))()`);
+      assert.fail(`Local-rule fallback did not settle after same-byte re-upload: ${JSON.stringify(fallbackDiagnostic)}`);
+    }
     assert.equal(await client.evaluate<number>(`window.__aiCalls[4].sourceGeneration === ${pendingGeneration} ? 1 : 0`), 0,
       "Re-uploading identical bytes must create a new source generation");
     assert.equal(await client.evaluate<number>(`document.querySelectorAll('[data-proposal-source="gemini_ai"]').length`), 0,

@@ -11,8 +11,9 @@ test('Workspace dialogs and export controls support keyboard use and readable co
  const port=5118,server=await startTestServer(port),c=new CdpClient('docform-g4-a11y');
  try{
   await c.launch(9618);await c.navigate(`http://127.0.0.1:${port}/`);await seed(c);await c.reload();
-  assert.equal(await c.waitForFunction(`Array.from(document.querySelectorAll('button')).some(button=>button.textContent?.includes('Đối chiếu nguồn'))`,15000),true);
-  assert.equal(await c.clickByText('button','Đối chiếu nguồn'),true);
+  await c.clickByText('button','Tiếp tục tài liệu hiện tại');
+  assert.equal(await c.waitForFunction(`Array.from(document.querySelectorAll('button')).some(button=>button.textContent?.includes('Xem và duyệt nguồn'))`,15000),true);
+  assert.equal(await c.clickByText('button','Xem và duyệt nguồn'),true);
   assert.equal(await c.waitForFunction(`Boolean(document.querySelector('[role="dialog"][aria-modal="true"]'))`),true);
   assert.equal(await c.waitForFunction(`document.querySelector('[role="dialog"]')?.contains(document.activeElement)`,5000),true,'Opening the dialog moves focus inside');
   await c.evaluate(`(()=>{const d=document.querySelector('[role="dialog"]'),items=[...d.querySelectorAll('button:not([disabled]),select')].filter(e=>e.offsetWidth);items.at(-1).focus()})()`);
@@ -20,7 +21,7 @@ test('Workspace dialogs and export controls support keyboard use and readable co
   assert.equal(await c.evaluate(`document.querySelector('[role="dialog"]').contains(document.activeElement)`),true,'Tab stays inside the dialog');
   await c.send('Input.dispatchKeyEvent',{type:'keyDown',key:'Escape',code:'Escape'});
   assert.equal(await c.waitForFunction(`document.querySelector('[role="dialog"]')===null`),true,'Escape closes the dialog');
-  assert.equal(await c.evaluate(`document.activeElement?.textContent?.includes('Đối chiếu nguồn')`),true,'Closing returns focus to the opener');
+  assert.equal(await c.evaluate(`document.activeElement?.textContent?.includes('Xem và duyệt nguồn')`),true,'Closing returns focus to the opener');
   await c.clickStep(3);assert.equal(await c.waitForFunction(`document.querySelector('[data-candidate-safe="true"]')!==null`,15000),true);
   assert.equal(await c.waitForFunction(`Boolean(document.querySelector('[data-preview-bytes-sha]'))`,15000),true);
   await c.evaluate(`(()=>{document.dispatchEvent(new KeyboardEvent('keydown',{key:'Tab',bubbles:true}));document.querySelector('[data-candidate-print]')?.focus()})()`);

@@ -14,7 +14,7 @@ import { type DocumentFormatType, DocumentFormatSchema } from "../src/shared/sch
 import { COMPANY_HEADER_PROFILE_ID } from "../src/canonical/nd30/companyHeader.ts";
 import { COMPANY_HEADER_HD05_PROFILE_ID } from "../src/canonical/hd05/companyHeaderHD05.ts";
 import { extractOoxmlEvidenceFromXml, evaluateDocumentRules } from "../src/canonical/ruleEngine.ts";
-import { computeDraftRevisionKey } from "../src/App.tsx";
+import { computeDraftRevisionKey } from "../src/utils/draftRevisionKey.ts";
 
 // Force-disable nodebuffer support in JSZip to strictly simulate a browser environment
 (JSZip.support as any).nodebuffer = false;

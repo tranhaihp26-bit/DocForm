@@ -20,7 +20,7 @@ function waitForSyntheticPartial(signal: AbortSignal): Promise<void> {
     const timeout = setTimeout(() => {
       signal.removeEventListener("abort", onAbort);
       resolve();
-    }, 650);
+    }, 1200);
     const onAbort = () => {
       clearTimeout(timeout);
       reject(new DOMException("Synthetic provider aborted.", "AbortError"));

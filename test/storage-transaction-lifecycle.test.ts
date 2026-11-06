@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { saveSourceBlob, loadSourceBlob, saveDraft, awaitTransactionCommit } from "../src/utils/draftStore.ts";
+import { saveSourceBlob, loadSourceBlob, saveDraft, awaitTransactionCommit, computeSourceHash } from "../src/utils/draftStore.ts";
 
 describe("Task 1: Storage Transaction Lifecycle & Verification", () => {
   it("B04: Do not report persistence if transaction aborts after request success or microtask", async () => {
@@ -12,6 +12,11 @@ describe("Task 1: Storage Transaction Lifecycle & Verification", () => {
           error: null,
           objectStore() {
             return {
+              get() {
+                const req: any = { result: undefined };
+                queueMicrotask(() => req.onsuccess?.());
+                return req;
+              },
               put() {
                 const req: any = {};
                 queueMicrotask(() => {
@@ -40,14 +45,15 @@ describe("Task 1: Storage Transaction Lifecycle & Verification", () => {
     };
 
     let result: any;
+    const bytes = new Uint8Array([1]).buffer;
     try {
       result = await saveSourceBlob({
-        hash: "lifecycle-delayed-abort",
+        hash: await computeSourceHash(bytes),
         fileName: "synthetic.docx",
         fileType: "docx",
         fileSize: 1,
         uploadedAt: "2026-10-17",
-        bytes: new Uint8Array([1]).buffer,
+        bytes,
       });
       await new Promise(resolve => setTimeout(resolve, 20));
     } finally {
@@ -55,7 +61,7 @@ describe("Task 1: Storage Transaction Lifecycle & Verification", () => {
       else (globalThis as any).indexedDB = old;
     }
 
-    const loaded = await loadSourceBlob("lifecycle-delayed-abort");
+    const loaded = await loadSourceBlob(await computeSourceHash(bytes));
     assert.equal(aborted, true, "Transaction must have aborted");
     assert.equal(result.persisted, false, "Must not report persisted=true on aborted transaction");
     assert.equal(result.storage, "memory", "Must fall back to memory");

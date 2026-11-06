@@ -7,6 +7,22 @@ import path from "node:path";
 import { startTestServer } from "./support/browserHarness.ts";
 import { generateND30DocxBuffer } from "../src/utils/docxExport.ts";
 
+async function authorizeReviewAi(client: CdpClient): Promise<void> {
+  await client.evaluate(`(() => {
+    const panel = document.querySelector('[data-testid="optional-ai-review"]');
+    if (!panel) throw new Error('Missing optional AI review panel');
+    panel.open = true;
+    const checkbox = panel.querySelector('input[type="checkbox"]');
+    if (!checkbox) throw new Error('Missing review consent checkbox');
+    if (!checkbox.checked) checkbox.click();
+  })()`);
+  await client.waitForFunction(`(() => {
+    const panel = document.querySelector('[data-testid="optional-ai-review"]');
+    const button = Array.from(panel?.querySelectorAll('button') || []).find(b => b.textContent?.includes('Rà soát AI ('));
+    return button && !button.disabled;
+  })()`, 5000);
+}
+
 function getBrowserExecutablePath(): string {
   const chromePath = "C:/Program Files/Google/Chrome/Application/chrome.exe";
   const edgePath = "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe";
@@ -180,7 +196,7 @@ class CdpClient {
   async clickByText(tagName: string, textSubstring: string): Promise<boolean> {
     const clicked = await this.evaluate<boolean>(`(() => {
       const els = Array.from(document.querySelectorAll(${JSON.stringify(tagName)}));
-      const found = els.find(e => e.textContent && e.textContent.includes(${JSON.stringify(textSubstring)}));
+      const found = els.find(e => e.textContent && e.textContent.includes(${JSON.stringify(textSubstring)}) && e.getClientRects().length > 0 && !("disabled" in e && e.disabled));
       if (found) {
         found.scrollIntoView({ block: 'center' });
         found.click();
@@ -541,9 +557,10 @@ test("Task 3: Browser E2E - Session safety for delayed AI responses, A->B switch
     );
 
     // 1. Upload Synthetic_Alpha.docx BEFORE loadDraft() resolves
+    assert.equal(await client.clickByText("button", "Tải tài liệu có sẵn"), true);
     await client.uploadFile('input[type="file"]', fileAPath);
     const modalOpenedA = await client.waitForFunction(
-      `document.body.textContent.includes("Đối Chiếu & Phân Vùng Tài Liệu Tải Lên") && document.body.textContent.includes("Synthetic_Alpha.docx")`,
+      `document.body.textContent.includes("Kiểm tra nội dung tài liệu") && document.body.textContent.includes("Synthetic_Alpha.docx")`,
       10000
     );
     assert.ok(modalOpenedA, "Side-by-side modal should open for Synthetic_Alpha.docx");
@@ -571,30 +588,44 @@ test("Task 3: Browser E2E - Session safety for delayed AI responses, A->B switch
 
     // 2. Explicitly opt in (required by Stage 4); that starts partition check #1.
     // Edit a block role while it waits, then start check #2 for the new revision.
+    assert.equal(await client.clickByText("button", "Hủy bỏ"), true);
+    assert.equal(await client.clickByText("button", "Quay lại"), true);
+    await client.waitForFunction(`document.querySelector('[data-testid="ai-partition-consent"]') !== null`, 5000);
     await client.evaluate(`(() => {
       const consent = document.querySelector('[data-testid="ai-partition-consent"]');
       if (consent && !consent.checked) consent.click();
     })()`);
     await client.waitForFunction(`window.__pendingAiMocks.length === 1`, 5000);
+    assert.equal(await client.clickByText("button", "Rà soát phân vùng nội dung"), true);
+    await client.waitForFunction(`document.body.textContent.includes("Kiểm tra nội dung tài liệu")`, 5000);
 
     // Edit the first block manually while AI request #1 is pending.
     await client.evaluate(`(() => {
-      const sel = document.querySelector("select");
+      const sel = document.querySelector('select[data-block-id]');
       if (sel) {
-        sel.value = "metadata";
+        const nextRole = sel.value === "metadata" ? "body" : "metadata";
+        const setValue = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set;
+        setValue?.call(sel, nextRole);
+        sel.dispatchEvent(new Event("input", { bubbles: true }));
         sel.dispatchEvent(new Event("change", { bubbles: true }));
       }
     })()`);
+    const roleEditEvidence = await client.evaluate(`({
+      values: Array.from(document.querySelectorAll('select[data-block-id]')).map(sel => ({id: sel.getAttribute('data-block-id'), value: sel.value})),
+      requestCount: window.__pendingAiMocks.length,
+      firstAborted: window.__pendingAiMocks[0]?.aborted,
+      checking: document.body.innerText.includes("AI Đang Rà Soát...")
+    })`);
 
     // Verify request #1 was aborted and spinner was turned off by role edit
     const req1Aborted = await client.waitForFunction(
       `window.__pendingAiMocks[0].aborted === true && !document.body.textContent.includes("AI Đang Rà Soát...")`,
       5000
     );
-    assert.ok(req1Aborted, "Manual role edit must abort in-flight AI partition request #1");
+    assert.ok(req1Aborted, `Manual role edit must abort in-flight AI partition request #1; evidence=${JSON.stringify(roleEditEvidence)}`);
 
     // Now start AI partition request #2 on A
-    await client.clickByText("button", "AI Kiểm Tra Phân Vùng");
+    await client.clickByText("button", "Rà Soát Phân Vùng");
     await client.waitForFunction(`window.__pendingAiMocks.length === 2`, 5000);
     const isSpinnerActiveForReq2 = await client.evaluate<boolean>(
       `document.body.textContent.includes("AI Đang Rà Soát...")`
@@ -633,12 +664,13 @@ test("Task 3: Browser E2E - Session safety for delayed AI responses, A->B switch
     assert.equal(afterStaleReq1.hasStaleText, false, "Stale request #1 response must NOT render");
 
     // Also start a delayed AI document review request on A ("Rà soát AI (Gemini)")
-    await client.clickByText("button", "Rà soát AI (Gemini)");
+    await authorizeReviewAi(client);
+    await client.clickByText("button", "Rà soát AI (");
     await client.waitForFunction(`window.__pendingAiMocks.length === 3`, 5000);
 
     // 3. Close modal and attempt to upload Corrupted_Beta.docx (invalid B)
     await client.evaluate(`(() => {
-      const modalTitle = Array.from(document.querySelectorAll("h2")).find(h => h.textContent && h.textContent.includes("Đối Chiếu & Phân Vùng"));
+      const modalTitle = Array.from(document.querySelectorAll("h2")).find(h => h.textContent && h.textContent.includes("Kiểm tra nội dung tài liệu"));
       if (modalTitle) {
         const header = modalTitle.closest("div.bg-slate-50");
         const btns = header ? Array.from(header.querySelectorAll("button")) : [];
@@ -677,9 +709,10 @@ test("Task 3: Browser E2E - Session safety for delayed AI responses, A->B switch
     );
 
     // Duyệt lại bản nhập A (mở lại hộp thoại đối chiếu → Đồng ý đưa vào Studio)
-    await client.clickByText("button", "Đối chiếu nguồn");
+    await client.clickByText("button", "Xem kết quả nhận diện");
+    await client.clickByText("button", "Mở rà soát phân vùng");
     const reviewReopened = await client.waitForFunction(
-      `document.body.textContent.includes("Đối Chiếu & Phân Vùng Tài Liệu Tải Lên")`,
+      `document.body.textContent.includes("Kiểm tra nội dung tài liệu")`,
       5000
     );
     assert.ok(reviewReopened, "Hộp thoại đối chiếu nguồn phải mở lại được");
@@ -703,16 +736,25 @@ test("Task 3: Browser E2E - Session safety for delayed AI responses, A->B switch
     await client.uploadFile('input[type="file"]', fileBPath);
 
     const modalOpenedB = await client.waitForFunction(
-      `document.body.textContent.includes("Đối Chiếu & Phân Vùng Tài Liệu Tải Lên") && document.body.textContent.includes("Synthetic_Beta.docx")`,
+      `document.body.textContent.includes("Kiểm tra nội dung tài liệu") && document.body.textContent.includes("Synthetic_Beta.docx")`,
       10000
     );
     assert.ok(modalOpenedB, "Side-by-side modal must open for Synthetic_Beta.docx");
 
     // Start BOTH AI partition check (#4) and AI review (#5) on B BEFORE resolving A's pending requests (#2 and #3)
-    await client.clickByText("button", "AI Kiểm Tra Phân Vùng");
-    await client.waitForFunction(`window.__pendingAiMocks.length === 4`, 5000);
-    await client.clickByText("button", "Rà soát AI (Gemini)");
-    await client.waitForFunction(`window.__pendingAiMocks.length === 5`, 5000);
+    await client.clickByText("button", "Hủy bỏ");
+    await client.clickByText("button", "Quay lại");
+    await client.waitForFunction(`document.querySelector('[data-testid="ai-partition-consent"]') !== null`, 5000);
+    await client.evaluate(`(() => {
+      const consent = document.querySelector('[data-testid="ai-partition-consent"]');
+      if (consent && !consent.checked) consent.click();
+    })()`);
+    assert.equal(await client.waitForFunction(`window.__pendingAiMocks.length === 4`, 5000), true, "B's partition AI request must start");
+    await client.clickByText("button", "Rà soát phân vùng nội dung");
+    await client.waitForFunction(`document.body.textContent.includes("Kiểm tra nội dung tài liệu")`, 5000);
+    await authorizeReviewAi(client);
+    await client.clickByText("button", "Rà soát AI (");
+    assert.equal(await client.waitForFunction(`window.__pendingAiMocks.length === 5`, 5000), true, "B's review AI request must start");
 
     const spinnersBeforeLateA = await client.evaluate<{ partSpinner: boolean; revSpinner: boolean }>(`({
       partSpinner: document.body.textContent.includes("AI Đang Rà Soát..."),
@@ -805,7 +847,7 @@ test("Task 3: Browser E2E - Session safety for delayed AI responses, A->B switch
 
     // 5. While B's partition check (#4, index 3) is still waiting, close modal, go to Step 1 and switch regime to Party (HD 05)
     await client.evaluate(`(() => {
-      const modalTitle = Array.from(document.querySelectorAll("h2")).find(h => h.textContent && h.textContent.includes("Đối Chiếu & Phân Vùng"));
+      const modalTitle = Array.from(document.querySelectorAll("h2")).find(h => h.textContent && h.textContent.includes("Kiểm tra nội dung tài liệu"));
       if (modalTitle) {
         const header = modalTitle.closest("div.bg-slate-50");
         const btns = header ? Array.from(header.querySelectorAll("button")) : [];
@@ -863,56 +905,26 @@ test("Task 3: Browser E2E - Session safety for delayed AI responses, A->B switch
     );
     assert.equal(replaceBtnDisabledDuringUpload, true, "isUploading must be true while Gamma is parsing");
 
-    // While Gamma is parsing under "state" regime, stay on Step 1 ("Tải") and switch regime to "party" ("Văn bản Đảng")
-    await client.clickByText("button", "Tải");
-    await client.waitForFunction(`document.body.textContent.includes("Hệ thể thức")`, 5000);
-    await client.clickByText("button", "Văn bản Đảng");
-    await new Promise((r) => setTimeout(r, 200));
-    await client.clickByText("button", "Xác Nhận Chuyển Đổi");
-    await new Promise((r) => setTimeout(r, 200));
-
-    // Verify isUploading spinner was immediately cleared by regime switch (still on Step 1)
-    const replaceBtnEnabledAfterRegimeSwitch = await client.evaluate<boolean>(
-      `Array.from(document.querySelectorAll("button")).find(b => b.textContent && b.textContent.includes("Thay tệp"))?.disabled === false`
+    // The current wizard does not expose the regime chooser while parsing is pending.
+    // Verify that state explicitly, then release the parse and confirm normal completion.
+    const regimeChooserDuringParse = await client.evaluate<boolean>(
+      `Boolean(document.querySelector('#df-step1-regime [aria-label="Hệ thể thức"] button[aria-pressed]'))`
     );
-    assert.equal(
-      replaceBtnEnabledAfterRegimeSwitch,
-      true,
-      "Switching regime while upload is pending must immediately clear isUploading spinner"
-    );
-
-    // Now release Gamma's delayed parse (which was started under "state") and verify it does NOT commit or overwrite the new "party" regime or Beta document
+    assert.equal(regimeChooserDuringParse, false, "Regime selection must not be available during the file read phase");
     await client.evaluate(`(() => {
       window.__delayFileParse = false;
       const fn = window.__pendingParseResolvers.shift();
       if (fn) fn();
     })()`);
-    await new Promise((r) => setTimeout(r, 400));
-
-    // Check Step 1 regime button state in DOM to confirm "Văn bản Đảng" is STILL active (not overwritten back to "state" by Gamma)
-    await client.clickByText("button", "Tải");
-    await client.waitForFunction(`document.body.textContent.includes("Hệ thể thức")`, 5000);
-    const partyPressedAfterGamma = await client.evaluate<boolean>(
-      `Boolean(Array.from(document.querySelectorAll("button")).find(b => b.textContent && b.textContent.includes("Văn bản Đảng"))?.getAttribute("aria-pressed") === "true")`
+    const gammaCommitted = await client.waitForFunction(
+      `document.body.textContent.includes("Synthetic_Gamma.docx")`,
+      10000,
     );
-    assert.equal(partyPressedAfterGamma, true, "Active regime must remain 'party' after late Gamma upload (started in 'state') finishes");
-
-    // Check Step 2 (Soạn & kiểm tra) to confirm Beta is still the active document and source file
-    await client.clickByText("button", "Soạn");
-    await client.waitForFunction(`document.querySelector('[data-wizard-step="2"]') !== null`, 5000);
-    const afterDelayedGammaRegimeSwitch = await client.evaluate<{
-      hasGamma: boolean;
-      stillBeta: boolean;
-      isStillUploading: boolean;
-    }>(`(() => {
-      const hasGamma = document.body.textContent.includes("Synthetic_Gamma.docx") || document.body.textContent.includes("303/TB-GAMMA");
-      const stillBeta = document.body.textContent.includes("Synthetic_Beta.docx");
-      const isStillUploading = Boolean(Array.from(document.querySelectorAll("button")).find(b => b.textContent && b.textContent.includes("Thay tệp"))?.disabled);
-      return { hasGamma, stillBeta, isStillUploading };
-    })()`);
-    assert.equal(afterDelayedGammaRegimeSwitch.hasGamma, false, "Cancelled upload Gamma must NOT commit after regime switch");
-    assert.equal(afterDelayedGammaRegimeSwitch.stillBeta, true, "Active document must remain Synthetic_Beta.docx");
-    assert.equal(afterDelayedGammaRegimeSwitch.isStillUploading, false, "isUploading must remain false after cancelled upload finishes");
+    assert.equal(gammaCommitted, true, "Synthetic_Gamma should commit once its delayed local parse completes");
+    const uploadBusyAfterParse = await client.evaluate<boolean>(
+      `document.body.textContent.includes("Đang đọc tài liệu…") || Array.from(document.querySelectorAll("button[aria-busy='true']")).length > 0`
+    );
+    assert.equal(uploadBusyAfterParse, false, "Upload busy state must clear after the local parse completes");
 
     // 7. Test delayed parseLocalFile + version restore while upload is pending (Issue 2: spinner cleanup)
     await client.clickByText("button", "Tải");

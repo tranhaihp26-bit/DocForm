@@ -5,7 +5,8 @@ import JSZip from "jszip";
 import type { DocumentState, AppendixDocument, SourceBlock } from "../src/shared/schemas/document.schema.ts";
 import { tableModelToHtmlView, type TableModel } from "../src/shared/tableModel.ts";
 import { COMPANY_HEADER_PROFILE_ID } from "../src/canonical/nd30/companyHeader.ts";
-import { COMPANY_HEADER_HD05_PROFILE_ID } from "../src/canonical/hd05/companyHeaderHD05.ts";
+import { applyCompanyProfile } from "../src/canonical/nd30/companyHeader.ts";
+import { COMPANY_HEADER_HD05_PROFILE_ID, applyCompanyHD05Profile } from "../src/canonical/hd05/companyHeaderHD05.ts";
 import { composeDocumentFormatData } from "../src/utils/documentComposer.ts";
 import { createExportCandidateManager, exportCandidateKey, prepareExportCandidate, type ExportCandidateSnapshot } from "../src/utils/exportCandidate.ts";
 import { generateND30DocxUint8Array, candidateSectionName } from "../src/utils/docxExport.ts";
@@ -34,7 +35,13 @@ describe("Workspace A: real composer and immutable candidate", () => {
   it("both regimes and generic/company profiles use the real product composer", async () => {
     for (const standardType of ["state", "party"] as const) for (const company of [false, true]) {
       const s = snapshot(); s.standardType = standardType;
-      if (company) s.doc.headerProfile = standardType === "party" ? COMPANY_HEADER_HD05_PROFILE_ID : COMPANY_HEADER_PROFILE_ID;
+      if (company) {
+        const profileInput = { ...s.doc, orgHeader1: "", orgHeader2: "" };
+        s.doc = standardType === "party"
+          ? applyCompanyHD05Profile(profileInput)
+          : applyCompanyProfile(profileInput);
+      }
+      else s.doc.headerProfile = "generic";
       if (standardType === "party") s.doc.referenceNumber = "Số 01-KH/TN";
       const composed = composeDocumentFormatData(s), candidate = await prepareExportCandidate(s);
       assert.deepEqual(candidate.formatData, composed);
