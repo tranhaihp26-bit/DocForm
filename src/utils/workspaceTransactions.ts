@@ -1,4 +1,4 @@
-import type { AppendixDocument, DocumentState, SourceBlock, SourceRegion, TableModel } from '../shared/schemas/document.schema.ts';
+import type { AppendixDocument, DocumentState, SourceBlock, SourceRegion, TableModel, RecipientBlock } from '../shared/schemas/document.schema.ts';
 import { reconstructFromReviewedBlocks, validateReviewedBlocks } from './importReview.ts';
 import { escapeHtml, splitTopLevelHtml } from './proposalState.ts';
 import { tableModelToHtmlView } from '../shared/tableModel.ts';
@@ -18,6 +18,7 @@ export type WorkspaceAction =
   | { type: 'editFields'; fields: Partial<Record<keyof DocumentState, string>> }
   | { type: 'setProfile'; profile: NonNullable<DocumentState['headerProfile']> }
   | { type: 'setNationalHeaderOmitted'; omitted: boolean }
+  | { type: 'setRecipientHeader'; recipientHeader?: RecipientBlock }
   | { type: 'applyIssuerProfile'; orgHeader1: string; orgHeader2: string; profile?: NonNullable<DocumentState['headerProfile']> }
   | { type: 'editBody'; html: string }
   | { type: 'editAppendix'; id: string; html: string }
@@ -86,6 +87,11 @@ export function transactWorkspace(input: WorkspaceSnapshot, expectedRevision: nu
   let event: PendingEvent;
   const app = 'id' in action ? s.doc.appendices?.find(a => a.id === action.id) : undefined;
   switch (action.type) {
+    case 'setRecipientHeader': {
+      s.doc.recipientHeader = action.recipientHeader;
+      event = { action: 'edit', kind: 'field', targetId: 'recipientHeader', sourceRefs: [] };
+      break;
+    }
     case 'setNationalHeaderOmitted': {
       s.doc.omitNationalHeader = action.omitted;
       event={action:'edit',kind:'field',targetId:'omitNationalHeader',sourceRefs:[]};break;

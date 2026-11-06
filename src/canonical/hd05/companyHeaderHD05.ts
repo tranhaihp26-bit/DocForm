@@ -32,12 +32,13 @@ export const COMPANY_HEADER_HD05_TITLE = "ĐẢNG CỘNG SẢN VIỆT NAM";
 export const COMPANY_HEADER_HD05_REFERENCE_DATE = "Hải Phòng, ngày … tháng … năm 2026";
 export const COMPANY_HEADER_HD05_DEFAULT_NUMBER = "Số …-…/ĐU";
 
-// Kích thước đo đạc từ mẫu header-reference.docx: 5580 + 4590 = 10170 twips, thụt lề -540 twips.
+// Kích thước đo đạc từ mẫu Wide Header V3 (DEMO_HD05_DangUy_CongTy_WideHeader_2Dong(3).docx):
+// 5540 + 4440 = 9980 twips, thụt lề -593 twips.
 export const COMPANY_HEADER_HD05_TABLE_TWIPS = Object.freeze({
-  width: 10170,
-  left: 5580,
-  right: 4590,
-  indent: -540,
+  width: 9980,
+  left: 5540,
+  right: 4440,
+  indent: -593,
 });
 const SOURCE_TABLE_TWIPS = COMPANY_HEADER_HD05_TABLE_TWIPS;
 
@@ -141,29 +142,49 @@ export function createCompanyHeaderHD05Table(
             borders: INVISIBLE,
             margins: { top: 0, bottom: 0, left: 0, right: 0 },
             children: [
-              ...org1Lines.map(line => centered([RUN(line, 14)], 360, 0)),
-              ...org2Lines.map(line => centered([RUN(line, 14, true)], 360, 0)),
+              ...org1Lines.map(line => centered([RUN(line, 14)], 340, 0)),
+              ...org2Lines.map(line => centered([RUN(line, 14, true)], 340, 0)),
               // Dấu * căn giữa dưới tên cơ quan ban hành theo HD05 Phần II.I.2.2.1
-              centered([RUN("*", 14)], 360, 40),
-              // Số ký hiệu cân đối dưới dấu * (chỉ tạo khi có số, không tự ép placeholder vào văn bản không có số)
-              ...(cleanRef ? [centered([RUN(cleanRef, 14)], 360, 0)] : []),
+              centered([RUN("*", 14)], 300, 0),
+              // Số ký hiệu cân đối dưới dấu * (Before 1pt / 20 twips theo V3)
+              ...(cleanRef ? [new Paragraph({
+                alignment: AlignmentType.CENTER,
+                spacing: { line: 340, lineRule: "exact", before: 20, after: 0 },
+                keepLines: true,
+                children: [RUN(cleanRef, 14)],
+              })] : []),
             ],
           }),
 
-          // Cột phải: ĐẢNG CỘNG SẢN VIỆT NAM (15pt đậm), Shape Line chuẩn 207pt (4140 twips), Địa danh & Ngày tháng (14pt nghiêng)
+          // Cột phải: ĐẢNG CỘNG SẢN VIỆT NAM (15pt đậm, căn giữa), Shape Line chuẩn 72.09mm, đoạn đệm 19pt, Ngày tháng (14pt nghiêng, căn giữa)
           new TableCell({
             width: { size: colRight, type: WidthType.DXA },
             borders: INVISIBLE,
             margins: { top: 0, bottom: 0, left: 0, right: 0 },
             children: [
-              ...(showNationalHeader ? [rightAligned([
-                // Placeholder sẽ được hoán đổi thành DrawingML & VML Shape Line nguyên bản từ mẫu Word
-                new TextRun({ text: "[[HD05_SHAPE_LINE_TITLE]]" }),
-                RUN(COMPANY_HEADER_HD05_TITLE, 15, true),
-              ], 400, 180)] : []),
-              rightAligned([
-                RUN(cleanDate, 14, false, true),
-              ], 360, 0),
+              ...(showNationalHeader ? [
+                new Paragraph({
+                  alignment: AlignmentType.CENTER,
+                  spacing: { line: 380, lineRule: "exact", before: 0, after: 0 },
+                  keepLines: true,
+                  children: [
+                    new TextRun({ text: "[[HD05_SHAPE_LINE_TITLE]]" }),
+                    RUN(COMPANY_HEADER_HD05_TITLE, 15, true),
+                  ],
+                }),
+                new Paragraph({
+                  alignment: AlignmentType.CENTER,
+                  spacing: { line: 380, lineRule: "exact", before: 0, after: 0 },
+                  keepLines: true,
+                  children: [new TextRun({ text: "" })],
+                }),
+              ] : []),
+              new Paragraph({
+                alignment: AlignmentType.CENTER,
+                spacing: { line: 380, lineRule: "exact", before: 100, after: 0 },
+                keepLines: true,
+                children: [RUN(cleanDate, 14, false, true)],
+              }),
             ],
           }),
         ],

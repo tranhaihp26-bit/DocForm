@@ -1,7 +1,8 @@
 import type { 
   StructuredImport, 
   SourceBlock, 
-  AppendixDocument 
+  AppendixDocument,
+  RecipientBlock
 } from "../shared/schemas/document.schema.ts";
 import { 
   parseOrgHeaders, 
@@ -35,6 +36,7 @@ export interface ReconstructedDocumentState {
   appendices: AppendixDocument[];
   unclassified: SourceBlock[];
   validationErrors: string[];
+  recipientHeader?: RecipientBlock;
 }
 
 export function composeImportedBodyHtml(source: StructuredImport): string {
@@ -612,6 +614,15 @@ export function reconstructFromReviewedBlocks(
     });
   }
 
+  // 6b. RECONSTRUCT RECIPIENT HEADER
+  let recipientHeader = baseImport?.recipientHeader;
+  if (recipientHeader && recipientHeader.sourceBlockId) {
+    const assignedRole = blocks.find(b => b.id === recipientHeader?.sourceBlockId)?.role;
+    if (assignedRole && assignedRole !== "recipients" && assignedRole !== "unclassified") {
+      recipientHeader = undefined;
+    }
+  }
+
   // 6. RECONSTRUCT UNCLASSIFIED
   const unclassified = unclassifiedBlocks;
 
@@ -630,6 +641,7 @@ export function reconstructFromReviewedBlocks(
       recipients,
     },
     draftNote,
+    recipientHeader,
     bodyHtml,
     signatureHtml,
     appendices,

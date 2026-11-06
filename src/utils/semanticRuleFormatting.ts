@@ -39,7 +39,7 @@ export function resolveSemanticRuleFormatting(
       ? { lineSpacing: companyPartyProfile ? "19pt" as const : regime === "party" ? "18pt" as const : companyStateProfile ? "19pt" as const : "1.15" as const }
       : {}),
     ...(ruleIds.includes(regime === "state" ? STATE_INDENT : PARTY_INDENT)
-      ? { firstLineIndent: companyPartyProfile ? "0.5in" as const : regime === "party" ? "1cm" as const : companyStateProfile ? "0.5in" as const : "1.27cm" as const }
+      ? { firstLineIndent: companyPartyProfile ? "1cm" as const : regime === "party" ? "1cm" as const : companyStateProfile ? "0.5in" as const : "1.27cm" as const }
       : {}),
   };
 }

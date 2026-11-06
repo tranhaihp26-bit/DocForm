@@ -1,35 +1,35 @@
 {
-  "candidateSha": "147993144f5c880a307ebafbff56aca57d0eabec9d1916e0594a087788ed9b08",
-  "candidateDownloadSha": "147993144f5c880a307ebafbff56aca57d0eabec9d1916e0594a087788ed9b08",
-  "previewSha": "147993144f5c880a307ebafbff56aca57d0eabec9d1916e0594a087788ed9b08",
+  "candidateSha": "0f5028e3f65978da8499158b40e22b27a7e3ef5656b692dc8e1e96704f7bad6f",
+  "candidateDownloadSha": "0f5028e3f65978da8499158b40e22b27a7e3ef5656b692dc8e1e96704f7bad6f",
+  "previewSha": "0f5028e3f65978da8499158b40e22b27a7e3ef5656b692dc8e1e96704f7bad6f",
   "renderedPageCount": 2,
   "pageDimensionsCssPx": [
     {
-      "width": 769,
-      "height": 1087
+      "width": 747,
+      "height": 1057
     },
     {
-      "width": 769,
-      "height": 1087
+      "width": 747,
+      "height": 1057
     }
   ],
   "fit": "true",
   "actual100PercentPan": {
     "pressed": "true",
-    "innerWidth": 777,
-    "scrollWidth": 801,
+    "innerWidth": 737,
+    "scrollWidth": 787,
     "docWidth": 1440
   },
   "mobile100PercentPan": {
-    "innerWidth": 338,
-    "scrollWidth": 801,
+    "innerWidth": 322,
+    "scrollWidth": 787,
     "docWidth": 390
   },
-  "originalSha": "f977d28ff7adf45d997c5a1b6bd663415048b22eb257669c4bb3463eeb240b91",
-  "originalDownloadSha": "f977d28ff7adf45d997c5a1b6bd663415048b22eb257669c4bb3463eeb240b91",
+  "originalSha": "2e39973820b4af4e48fe9aaeddec6408816565efe72ec0ae64e3601020cf40b5",
+  "originalDownloadSha": "2e39973820b4af4e48fe9aaeddec6408816565efe72ec0ae64e3601020cf40b5",
   "isolatedPrint": {
-    "sha": "147993144f5c880a307ebafbff56aca57d0eabec9d1916e0594a087788ed9b08",
-    "instance": "733f666c-403b-48c7-bf2f-024f7a898edb",
+    "sha": "0f5028e3f65978da8499158b40e22b27a7e3ef5656b692dc8e1e96704f7bad6f",
+    "instance": "66811d09-bcbd-4e84-813d-05c90276be90",
     "containsCandidateBody": true,
     "containsAppTitle": false
   },

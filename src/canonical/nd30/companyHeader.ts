@@ -5,7 +5,7 @@
  */
 import {
   AlignmentType, BorderStyle, TableLayoutType, Table, TableCell, TableRow, Paragraph,
-  TextRun, WidthType, convertMillimetersToTwip,
+  TextRun, WidthType, convertMillimetersToTwip, HeightRule,
 } from "docx";
 
 export const COMPANY_HEADER_PROFILE_ID = "hoa-tieu-mien-bac-administrative-v1" as const;
@@ -75,6 +75,7 @@ export function createCompanyHeaderTable(referenceNumber?: string, locationAndDa
     rows: [
       new TableRow({
         cantSplit: true,
+        height: { value: 1129, rule: HeightRule.ATLEAST },
         children: [
           new TableCell({
             width: { size: SOURCE_TABLE_TWIPS.left, type: WidthType.DXA },
@@ -123,7 +124,7 @@ export function createCompanyHeaderTable(referenceNumber?: string, locationAndDa
             width: { size: SOURCE_TABLE_TWIPS.right, type: WidthType.DXA },
             borders: INVISIBLE,
             margins: { top: 0, bottom: 0, left: 0, right: 0 },
-            children: [rightAligned([RUN(cleanDate, 13, false, true)], 320, 0)],
+            children: [centered([RUN(cleanDate, 13, false, true)], 320, 0)],
           }),
         ],
       }),

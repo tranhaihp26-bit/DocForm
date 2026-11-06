@@ -131,6 +131,28 @@ export function isPlaceholderValue(val?: string | null): boolean {
   return placeholderPatterns.some(p => lower.includes(p));
 }
 
+export type RecipientKind = "kinh_gui" | "kinh_trinh";
+export type RecipientPresence = "confirmed" | "suggested" | "absent";
+
+export const RecipientItemSchema = z.object({
+  id: z.string(),
+  text: z.string(),
+  sourceBlockId: z.string().optional(),
+  sourceAnchor: z.string().optional(),
+});
+export type RecipientItem = z.infer<typeof RecipientItemSchema>;
+
+export const RecipientBlockSchema = z.object({
+  id: z.string(),
+  kind: z.enum(["kinh_gui", "kinh_trinh"]).default("kinh_gui"),
+  presence: z.enum(["confirmed", "suggested", "absent"]).default("confirmed"),
+  items: z.array(RecipientItemSchema).default([]),
+  sourceAnchor: z.string().optional(),
+  sourceBlockId: z.string().optional(),
+  originalText: z.string().optional(),
+});
+export type RecipientBlock = z.infer<typeof RecipientBlockSchema>;
+
 /**
  * Zod Schema cho chuẩn thể thức văn bản hành chính và văn bản Đảng
  */
@@ -263,6 +285,11 @@ export const DocumentFormatSchema = z.object({
    * Bảng biểu nguồn từ DOCX nhập khẩu, lưu giữ nguyên vẹn lưới và ô gộp OOXML
    */
   importedTables: z.record(z.string(), z.any()).optional(),
+
+  /**
+   * Khối Kính gửi / Kính trình (RecipientBlock) ở đầu văn bản (sau trích yếu hoặc trước body)
+   */
+  recipientHeader: RecipientBlockSchema.optional(),
 });
 
 export type DocumentFormatType = z.infer<typeof DocumentFormatSchema>;
@@ -515,6 +542,7 @@ export interface StructuredImport {
     copyInfo?: string;
   };
   draftNote?: string;
+  recipientHeader?: RecipientBlock;
   unclassified: SourceBlock[];
   blocks?: SourceBlock[];
   importFidelityManifest?: ImportFidelityManifest;
@@ -540,6 +568,7 @@ export interface DocumentState {
   signTitle: string;
   signName: string;
   recipients: string;
+  recipientHeader?: RecipientBlock;
   draftNote?: string;
   includeDraftNoteInExport?: boolean;
   appendices?: AppendixDocument[];

@@ -1,5 +1,74 @@
 @import "tailwindcss";
 
+/* ==========================================================================
+   BỘ FONT CHUẨN SVN-TIMES NEW ROMAN (NGHỊ ĐỊNH 30 & HƯỚNG DẪN 05)
+   ========================================================================== */
+
+@font-face {
+  font-family: "SVN-Times New Roman";
+  src: url("/fonts/SVN-Times-New-Roman.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "SVN-Times New Roman";
+  src: url("/fonts/SVN-Times-New-Roman-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "SVN-Times New Roman";
+  src: url("/fonts/SVN-Times-New-Roman-Italic.ttf") format("truetype");
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "SVN-Times New Roman";
+  src: url("/fonts/SVN-Times-New-Roman-Bold-Italic.ttf") format("truetype");
+  font-weight: 700;
+  font-style: italic;
+  font-display: swap;
+}
+
+/* Ánh xạ trực tiếp cho "Times New Roman" để trình duyệt và docx-preview dùng SVN chuẩn */
+@font-face {
+  font-family: "Times New Roman";
+  src: local("SVN-Times New Roman"), url("/fonts/SVN-Times-New-Roman.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Times New Roman";
+  src: local("SVN-Times New Roman Bold"), url("/fonts/SVN-Times-New-Roman-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Times New Roman";
+  src: local("SVN-Times New Roman Italic"), url("/fonts/SVN-Times-New-Roman-Italic.ttf") format("truetype");
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Times New Roman";
+  src: local("SVN-Times New Roman Bold Italic"), url("/fonts/SVN-Times-New-Roman-Bold-Italic.ttf") format("truetype");
+  font-weight: 700;
+  font-style: italic;
+  font-display: swap;
+}
+
 :root {
   /* 1. Bảng màu workspace sáng, giữ tờ A4 trắng độc lập */
   --df-bg: #F5F6FA;
@@ -253,7 +322,7 @@
   margin-bottom: 0 !important;
   box-sizing: border-box !important;
   border: 1px solid #cbd5e1 !important;
-  font-family: "Times New Roman", Times, serif !important;
+  font-family: "SVN-Times New Roman", "Times New Roman", Times, serif !important;
 }
 
 .docx-wrapper table {
@@ -638,7 +707,7 @@
     width: 210mm !important;
     min-height: 297mm !important;
     max-width: none !important;
-    font-family: "Times New Roman", Times, serif !important;
+    font-family: "SVN-Times New Roman", "Times New Roman", Times, serif !important;
     font-size: 13pt !important;
     line-height: 1.4 !important;
     transform: none !important;

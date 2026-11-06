@@ -192,6 +192,7 @@ export function prepareImportedFileBundle(
     signTitle: reconstructed.fields.signTitle || "",
     signName: reconstructed.fields.signName || "",
     recipients: reconstructed.fields.recipients || "",
+    recipientHeader: reconstructed.recipientHeader || parsed.structured?.recipientHeader,
     appendices: reconstructed.appendices,
     unclassified: reconstructed.unclassified,
     importMetadata: {

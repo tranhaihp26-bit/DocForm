@@ -36,12 +36,12 @@ test("resolveCompanyBodyProfile correctly resolves by regime and header profile 
   assert.equal(resolveCompanyBodyProfile(undefined, undefined), null);
 });
 
-test("semantic rule formatting resolves 19pt line spacing and 0.5in indent for HD05 company profile", () => {
+test("semantic rule formatting resolves 19pt line spacing and 1cm indent for HD05 company profile", () => {
   const partyCompany = resolveSemanticRuleFormatting("party", COMPANY_HEADER_HD05_PROFILE_ID, [
     "HD05-BODY-LINE-SPACING",
     "HD05-BODY-FIRST-LINE-INDENT",
   ]);
-  assert.deepEqual(partyCompany, { lineSpacing: "19pt", firstLineIndent: "0.5in" });
+  assert.deepEqual(partyCompany, { lineSpacing: "19pt", firstLineIndent: "1cm" });
 
   const partyGeneric = resolveSemanticRuleFormatting("party", "generic", [
     "HD05-BODY-LINE-SPACING",
@@ -233,7 +233,7 @@ test("ruleEngine evaluates exact 19pt line spacing for both ND30 and HD05 compan
       hasDirectBodyParagraphs: true,
       lineSpacingRangeDxa: { min: 380, max: 380 },
       fontSizeRangePt: { min: 14, max: 14 },
-      firstLineIndentRangeDxa: { min: 720, max: 720 },
+      firstLineIndentRangeDxa: { min: 567, max: 567 },
       directParagraphs: [
         { text: "Đoạn Đảng 1", isEligibleBody: true, lineRule: "exact", lineSpacingDxa: 380 },
         { text: "Đoạn Đảng 2", isEligibleBody: true, lineRule: "exact", lineSpacingDxa: 380 },
@@ -244,7 +244,18 @@ test("ruleEngine evaluates exact 19pt line spacing for both ND30 and HD05 compan
   const hd05LineStatus = hd05Result.results.find((r: any) => r.ruleId === "HD05-BODY-LINE-SPACING");
   const hd05IndentStatus = hd05Result.results.find((r: any) => r.ruleId === "HD05-BODY-FIRST-LINE-INDENT");
   assert.equal(hd05LineStatus?.status, "PASS", "HD05 company profile passes with exactly 19pt (380 dxa)");
-  assert.equal(hd05IndentStatus?.status, "PASS", "HD05 company profile passes with 720 dxa (0.5 inch indent)");
+  assert.equal(hd05IndentStatus?.status, "PASS", "HD05 company profile passes with 567 dxa (~10 mm indent)");
+
+  const hd05WrongIndentEvidence: any = {
+    ...hd05Evidence,
+    body_evidence: {
+      ...hd05Evidence.body_evidence,
+      firstLineIndentRangeDxa: { min: 720, max: 720 },
+    },
+  };
+  const hd05WrongIndentResult = evaluateDocumentRules(hd05Doc, "party", hd05WrongIndentEvidence);
+  const hd05WrongIndentStatus = hd05WrongIndentResult.results.find((r: any) => r.ruleId === "HD05-BODY-FIRST-LINE-INDENT");
+  assert.equal(hd05WrongIndentStatus?.status, "FAIL", "HD05 fails outside the 540-600 dxa indent range");
 
   // Negative test: HD05 company profile with 360 dxa (18pt) fails company requirement
   const hd05MismatchEvidence: any = {

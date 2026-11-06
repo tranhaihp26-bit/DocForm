@@ -34,7 +34,7 @@ export const COMPANY_HD05_BODY_PROFILE = Object.freeze({
     alignment: "both" as const,
     lineSpacingPt: 19,
     paragraphAfterPt: 6,
-    firstLineIndentIn: 0.5,
+    firstLineIndentIn: 567 / 1440, // ~10 mm (567 twips) theo chuẩn Hướng dẫn 05
   }),
   table: Object.freeze({
     fontFace: "Times New Roman",

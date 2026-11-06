@@ -1401,7 +1401,12 @@ export default function App() {
   const refineDialogRef=useAccessibleDialog(Boolean(refineProposal),()=>setRefineProposal(null));
   const complianceDialogRef=useAccessibleDialog(showComplianceModal,()=>setShowComplianceModal(false));
   const [aiRefineTab, setAiRefineTab] = useState<"original" | "refined">("refined");
-  const [aiRefineMode, setAiRefineMode] = useState<"visual_diff" | "side_by_side" | "refined">("visual_diff");
+  const [aiRefineMode, setAiRefineMode] = useState<"visual_diff" | "side_by_side" | "refined" | "edit">("visual_diff");
+  const [editedRefineText, setEditedRefineText] = useState<string | null>(null);
+  useEffect(() => {
+    setEditedRefineText(null);
+    setAiRefineMode("visual_diff");
+  }, [refineProposal]);
 
   // Chặng 3: 3-step Office Worker Wizard (Tải & nhận diện → Soạn & kiểm tra → Xuất văn bản).
   // Bước được giới hạn bởi dữ liệu đã hoàn thành thật, không dựa vào vị trí điều hướng.
@@ -3128,10 +3133,11 @@ export default function App() {
       showToast("Lưu ý: Tệp nguồn hiện chỉ được lưu tạm trong bộ nhớ phiên (có thể mất khi tải lại trang).", "info");
     }
 
-    setShowSideBySideModal(true);
+    // Don't auto-open technical modal for normal office flow
+    setShowSideBySideModal(false);
     setSourceOrigin("uploaded_file");
     setStep1Flow("upload");
-    setStep1Phase("recognition");
+    setStep1Phase("metadata");
     setDocTypeOverride(null);
     setSuccessMsg(`Đã bóc tách thành công tệp "${bundle.uploadedFileName}" (${bundle.blockCount} khối dữ liệu).`);
     return true;
@@ -3176,16 +3182,14 @@ export default function App() {
     setPendingImport(null);
     setIsUploading(false);
     if (uploadedBlocks.length > 0 || structuredImport || sourceOrigin === "uploaded_file") {
-      setStep1Phase("recognition");
+      setStep1Phase("metadata");
     }
     showToast("Đã hủy nhập tệp. Tài liệu đang mở được giữ nguyên và không lưu tệp vừa tải.", "info");
   };
 
   const handleFileUpload = async (file: File) => {
     setStep1Flow("upload");
-    if (!structuredImport && uploadedBlocks.length === 0 && sourceOrigin === "none") {
-      setStep1Phase("upload");
-    }
+    setStep1Phase("metadata");
     invalidateActiveAiSession();
     setReviewAiConsent(null);
     aiPartitionConsentRef.current = false;
@@ -3477,6 +3481,7 @@ export default function App() {
       signTitle: liveReconstructed.fields.signTitle || "",
       signName: liveReconstructed.fields.signName || "",
       recipients: liveReconstructed.fields.recipients || "",
+      recipientHeader: liveReconstructed.recipientHeader || structuredImport?.recipientHeader,
       appendices: liveReconstructed.appendices,
       unclassified: liveReconstructed.unclassified,
       importMetadata: {
@@ -3607,7 +3612,14 @@ export default function App() {
       return;
     }
     if(!refineProposal.target){setErrorMsg('Đề xuất cũ không có target hợp lệ.');setRefineProposal(null);return;}
-    const applied=applyWorkspaceAiResult(workspaceSnapshotRef.current,{target:refineProposal.target,suggestedText:refineProposal.refinedHtml});
+    const finalSuggestedHtml = (() => {
+      if (editedRefineText === null) return refineProposal.refinedHtml;
+      const m = refineProposal.refinedHtml.trim().match(/^<p\b([^>]*)>([\s\S]*)<\/p>$/i);
+      const attrs = m ? m[1] : "";
+      const escaped = editedRefineText.trim().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+      return `<p${attrs}>${escaped}</p>`;
+    })();
+    const applied=applyWorkspaceAiResult(workspaceSnapshotRef.current,{target:refineProposal.target,suggestedText:finalSuggestedHtml});
     if(!applyWorkspaceResult(applied as WorkspaceResult)){setRefineProposal(null);return;}
     const updated=applied.ok?applied.snapshot.doc:doc;
     pushVersion(`AI: ${refineProposal.label}`, updated);
@@ -3782,9 +3794,9 @@ function formatDocxDownloadFilename(rawTitle: string, regime: 'state' | 'party',
   const sidebarCurrent = currentStep === 1
     ? {
         label: "NGUỒN TÀI LIỆU",
-        title: !sourceChosen ? "Chưa chọn nguồn" : sourceOrigin === "uploaded_file" && !importReviewSatisfied ? "Chờ duyệt nguồn" : canEnterStep(2) ? "Sẵn sàng soạn" : "Đang nhận diện nguồn",
-        detail: !sourceChosen ? "Tải tệp hoặc chọn mẫu để bắt đầu." : sourceOrigin === "uploaded_file" ? importReviewSatisfied ? "Tệp đã duyệt · có thể chuyển bước." : "Tệp đã tải · cần duyệt kết quả nhận diện." : "Mẫu chuẩn đã chọn.",
-        tone: canEnterStep(2) ? "ready" : "neutral",
+        title: !sourceChosen ? "Chưa chọn nguồn" : sourceOrigin === "uploaded_file" ? "Sẵn sàng soạn" : canEnterStep(2) ? "Sẵn sàng soạn" : "Đang nhận diện nguồn",
+        detail: !sourceChosen ? "Tải tệp hoặc chọn mẫu để bắt đầu." : sourceOrigin === "uploaded_file" ? "Đã nhận diện tệp · sẵn sàng đưa vào Studio soạn thảo." : "Mẫu chuẩn đã chọn.",
+        tone: canEnterStep(2) || sourceOrigin === "uploaded_file" ? "ready" : "neutral",
       }
     : currentStep === 2
       ? {
@@ -4092,7 +4104,13 @@ function formatDocxDownloadFilename(rawTitle: string, regime: 'state' | 'party',
           partitionProgress={partitionProgress}
           partitionCoverage={partitionCoverage ?? null}
           canContinue={canEnterStep(2)}
-          onNext={() => goToStep(2)}
+          onNext={() => {
+            if (sourceOrigin === "uploaded_file" && !hasWorkspaceApproval(workspaceSnapshotRef.current)) {
+              handleConfirmSideBySideImport();
+            } else {
+              goToStep(2);
+            }
+          }}
           docTypeOverride={docTypeDecisionValid ? docTypeOverride : null}
           onConfirmDocTypeOverride={handleConfirmDocTypeOverride}
           profileDecisionValid={profileDecisionValid}
@@ -4102,7 +4120,7 @@ function formatDocxDownloadFilename(rawTitle: string, regime: 'state' | 'party',
 
       {currentStep===3&&<WorkspaceExport candidate={visibleCandidate} isStale={Boolean(candidate && !visibleCandidate)} complianceReport={currentComplianceReport} complianceRevision={complianceRevision} pending={candidatePending} error={candidateError} onPrepare={()=>void prepareCandidate()} onDownload={()=>void exportToDocx()} onDownloadReview={()=>void downloadCandidateForReview()} onDownloadOriginal={()=>void handleDownloadOriginalFile()} onPrintCandidate={()=>void handlePrintCandidate()} originalAvailable={sourceBlobAvailability==='available'} onPrev={()=>goToStep(2)} onReviewSource={()=>{setCurrentStep(1);setShowSideBySideModal(true);}} onEditTarget={(targetId)=>{if(!canEnterStep(2)){goToStep(2);return;}setCurrentStep(2);requestAnimationFrame(()=>{const node=[...document.querySelectorAll<HTMLElement>('[data-workspace-node]')].find(el=>el.dataset.workspaceNode===targetId);(node?.querySelector<HTMLElement>('[contenteditable="true"]')??document.querySelector<HTMLElement>('[data-canvas-id="body"] [contenteditable="true"]'))?.focus({preventScroll:true});});}}/>}
       <div className="df-workspace-step2-shell" hidden={currentStep!==2}>
-        {sourceChosen&&canEnterProfileDecision&&canEnterWorkspaceStep(workspaceSnapshot,2)&&<WorkspaceEditor key={workspaceSnapshot.workspace.source?.identity??originalSnapshot?.sourceId??'template'} snapshot={workspaceSnapshot} initialCanvasId={editorState.activeCanvasId} onCanvasSelected={id=>setEditorState({activeCanvasId:id})} active={currentStep===2} onAction={workspaceAction} onRequestRegimeSwitch={requestRegimeSwitch} onPartition={()=>{setCurrentStep(1);setShowSideBySideModal(true);}} onRefine={handleAiRefine} refining={isRefining} aiProvider={partitionAiProvider} chatGPTReady={chatGPTStatus.enabled&&chatGPTStatus.session.status==="connected"&&chatGPTStatus.session.sharing} onAiSettings={()=>setShowAppSettings(true)} canContinue={canEnterStep(3)} complianceReport={currentComplianceReport} complianceRevision={complianceRevision} onOpenCompliance={()=>setShowComplianceModal(true)}/>}
+        {sourceChosen&&canEnterProfileDecision&&canEnterWorkspaceStep(workspaceSnapshot,2)&&<WorkspaceEditor key={workspaceSnapshot.workspace.source?.identity??originalSnapshot?.sourceId??'template'} snapshot={workspaceSnapshot} initialCanvasId={editorState.activeCanvasId} onCanvasSelected={id=>setEditorState({activeCanvasId:id})} active={currentStep===2} onAction={workspaceAction} onRequestRegimeSwitch={requestRegimeSwitch} onPartition={()=>{setCurrentStep(1);setShowSideBySideModal(true);}} onRefine={handleAiRefine} refining={isRefining} aiProvider={partitionAiProvider} chatGPTReady={chatGPTStatus.enabled&&chatGPTStatus.session.status==="connected"&&chatGPTStatus.session.sharing} onAiSettings={()=>setShowAppSettings(true)} canContinue={canEnterStep(3)} complianceReport={currentComplianceReport} complianceRevision={complianceRevision} onOpenCompliance={()=>setShowComplianceModal(true)} onPrev={()=>goToStep(1)} onNext={()=>goToStep(3)}/>}
       </div>
       </div></div>
       {toast && (
@@ -5142,6 +5160,22 @@ function formatDocxDownloadFilename(rawTitle: string, regime: 'state' | 'party',
                   <Check className="w-3.5 h-3.5 text-emerald-600" />
                   Chỉ bản mới
                 </button>
+                <button
+                  type="button"
+                  data-testid="ai-refine-edit-tab"
+                  onClick={() => {
+                    if (editedRefineText === null) {
+                      const plain = DOMPurify.sanitize(refineProposal.refinedHtml, { ALLOWED_TAGS: [] }).replace(/\s+/g, " ").trim();
+                      setEditedRefineText(plain);
+                    }
+                    setAiRefineMode("edit");
+                  }}
+                  className={`px-3 py-1.5 rounded-md font-semibold transition flex items-center gap-1.5 ${
+                    aiRefineMode === "edit" ? "bg-white text-indigo-900 shadow-xs" : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  ✎ Tự chỉnh sửa
+                </button>
               </div>
 
               {/* Legend guide */}
@@ -5213,6 +5247,33 @@ function formatDocxDownloadFilename(rawTitle: string, regime: 'state' | 'party',
                   <div
                     className="p-3 bg-white rounded-lg max-h-[380px] overflow-y-auto text-[12px] leading-relaxed text-justify text-slate-900 font-sans"
                     dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(refineProposal.refinedHtml) }}
+                  />
+                </div>
+              )}
+
+              {aiRefineMode === "edit" && (
+                <div className="border border-indigo-200 rounded-xl p-4 bg-white shadow-2xs space-y-2">
+                  <div className="flex items-center justify-between border-b border-indigo-50 pb-2">
+                    <span className="font-bold text-indigo-900">
+                      Tự chỉnh sửa câu gợi ý của AI trước khi áp dụng:
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const plain = DOMPurify.sanitize(refineProposal.refinedHtml, { ALLOWED_TAGS: [] }).replace(/\s+/g, " ").trim();
+                        setEditedRefineText(plain);
+                      }}
+                      className="text-[11px] text-indigo-600 hover:underline font-semibold"
+                    >
+                      Khôi phục gợi ý gốc của AI
+                    </button>
+                  </div>
+                  <textarea
+                    data-testid="ai-refine-edit-textarea"
+                    rows={5}
+                    value={editedRefineText ?? DOMPurify.sanitize(refineProposal.refinedHtml, { ALLOWED_TAGS: [] }).replace(/\s+/g, " ").trim()}
+                    onChange={e => setEditedRefineText(e.target.value)}
+                    className="w-full p-3 bg-slate-50/70 border border-indigo-200 rounded-lg text-[13px] leading-relaxed text-slate-900 font-serif focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>
               )}
@@ -5647,6 +5708,9 @@ function formatDocxDownloadFilename(rawTitle: string, regime: 'state' | 'party',
         onChatGPTDisconnect={() => void handleChatGPTDisconnect()}
         aiConnectionStatus={aiConnectionStatus}
         onTestAiConnection={provider => void handleTestAiConnection(provider)}
+        aiPartitionConsent={aiPartitionConsent}
+        onAiPartitionConsentChange={handleAiPartitionConsentChange}
+        partitionCheckNotice={partitionCheckNotice}
       />
 
     </div>

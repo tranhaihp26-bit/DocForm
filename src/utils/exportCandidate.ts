@@ -110,16 +110,30 @@ export async function prepareExportCandidate(input: ExportCandidateSnapshot, gen
   const sourceBlocks = working?.workspace.source?.blocks ?? (snapshot.reviewBlocks.length ? snapshot.reviewBlocks : snapshot.structuredImport?.blocks ?? snapshot.uploadedBlocks ?? []);
   const removed = new Set(working ? confirmedRemovedTableIds(working) : []);
   const tables = { ...formatData.importedTables };
+  const firstBodyOrAppendixIdx = sourceBlocks.findIndex(b => {
+    const reviewed = snapshot.reviewBlocks.find(r => r.id === b.id);
+    const role = reviewed?.role ?? b.role;
+    return role === "body" || role === "appendix";
+  });
   const replacedHeaderShapeBlocks: typeof sourceBlocks = [];
-  for (const block of sourceBlocks) {
+  for (let blockIdx = 0; blockIdx < sourceBlocks.length; blockIdx++) {
+    const block = sourceBlocks[blockIdx];
     const reviewedBlock = snapshot.reviewBlocks.find(reviewed => reviewed.id === block.id);
     const effectiveMetadataBlock = reviewedBlock ? { ...block, role: reviewedBlock.role, tableModel: reviewedBlock.tableModel ?? block.tableModel } : block;
     if (block.kind === "table" && !block.tableModel) blockers.push(`unsupported_source_table_model:${block.id}`);
     if (/<(?:w:)?(?:drawing|pict|object|fldSimple|fldChar)\b/i.test(block.rawXml ?? "")) {
-      const selectedProfile = formatData.regime === "administrative" ? COMPANY_HEADER_PROFILE_ID : COMPANY_HEADER_HD05_PROFILE_ID;
-      if (formatData.headerProfile === selectedProfile && isTransformedMetadataTable(effectiveMetadataBlock, manifest, snapshot.structuredImport?.fields) &&
-          hasReplaceableHeaderShapeLines(block.rawXml ?? "")) replacedHeaderShapeBlocks.push(block);
-      else blockers.push(`unsupported_source_ooxml:${block.id}`);
+      const isBeforeBody = firstBodyOrAppendixIdx === -1 || blockIdx < firstBodyOrAppendixIdx;
+      const role = effectiveMetadataBlock.role;
+      const isHeaderOrMetaRole = role === "header" || role === "metadata" || role === "separator" ||
+        isTransformedMetadataTable(effectiveMetadataBlock, manifest, snapshot.structuredImport?.fields);
+      const isHeaderRegion = (isBeforeBody || isHeaderOrMetaRole) && role !== "body" && role !== "appendix";
+      const hasActualMediaOrObject = /<(?:a:blip|v:imagedata|w:object|oleObject)\b/i.test(block.rawXml ?? "");
+
+      if (isHeaderRegion && !hasActualMediaOrObject) {
+        replacedHeaderShapeBlocks.push(block);
+      } else {
+        blockers.push(`unsupported_source_ooxml:${block.id}`);
+      }
     }
     if (/<(?:img|svg|object|embed|iframe|video|audio|canvas)\b/i.test(block.html ?? "")) blockers.push(`unsupported_source_media:${block.id}`);
     if (!block.tableModel) continue;
@@ -179,13 +193,15 @@ export async function prepareExportCandidate(input: ExportCandidateSnapshot, gen
   const profileShapesPresent = hasProfileHeaderShapeLines(xml, formatData.regime) &&
     hasStampedHoaTieuHeader(xml, settingsXml, formatData);
   if (profileSelected && !profileShapesPresent) blockers.push("profile_header_not_stamped");
-  for (const block of replacedHeaderShapeBlocks) if (replacedHeaderShapeBlocks.length !== 1 || !profileShapesPresent)
-    blockers.push(`unsupported_source_ooxml:${block.id}`);
-  const profileHeaderLines = replacedHeaderShapeBlocks.length === 1 && profileShapesPresent
-    ? formatData.regime === "administrative" ? 2 : 1 : 0;
+  const profileHeaderLines = profileShapesPresent ? (formatData.regime === "administrative" ? 2 : 1) : 0;
   const contentFidelity = verifyCandidateContentFidelity(xml, formatData);
-  const replacedHeaderBlockId = replacedHeaderShapeBlocks.length === 1 && profileShapesPresent ? replacedHeaderShapeBlocks[0].id : null;
-  const safetyManifest = manifest && replacedHeaderBlockId ? { ...manifest, unsupportedFeatures: manifest.unsupportedFeatures.filter(f => !(f.code === "drawing_or_image" && (f.blockId === replacedHeaderBlockId || f.tableId === replacedHeaderBlockId))) } : manifest;
+  const replacedBlockIds = new Set(replacedHeaderShapeBlocks.map(b => b.id));
+  const safetyManifest = manifest && replacedBlockIds.size > 0
+    ? {
+        ...manifest,
+        unsupportedFeatures: manifest.unsupportedFeatures.filter(f => !(f.code === "drawing_or_image" && (replacedBlockIds.has(f.blockId ?? "") || replacedBlockIds.has(f.tableId ?? ""))))
+      }
+    : manifest;
   const exportSafety = assessExportSafety(safetyManifest, { candidateFidelityResult: tableFidelity, roundtripVerified: tableFidelity.safe });
   const evidence = extractOoxmlEvidenceFromXml(xml, formatData.regime);
   const canRenderDiagnostic = generatedBytes.length > 0 && Boolean(xml) &&

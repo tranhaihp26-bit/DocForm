@@ -140,7 +140,10 @@ function recipientItems(value: string): string[] {
   return items;
 }
 
-function recipientsCellIsPreserved(sourceText: string, workingRecipients: string): boolean {
+function recipientsCellIsPreserved(sourceText: string, workingRecipients: string, recipientHeader?: any): boolean {
+  if (/^\s*Kính\s*(?:gửi|trình)\s*:/i.test(sourceText) && recipientHeader && recipientHeader.presence === "confirmed") {
+    return true;
+  }
   const sourceItems = recipientItems(sourceText);
   const workingItems = recipientItems(workingRecipients);
   return sourceItems.length > 0 && JSON.stringify(sourceItems) === JSON.stringify(workingItems);
@@ -186,8 +189,15 @@ function isOrderedSubsequence(sourceLines: string[], targetLines: string[]): boo
   return sourceLines.length > 0;
 }
 
+function isSignatureInstructionLine(line: string): boolean {
+  return /^\s*[\(\[](?:k[ýí]|ghi rõ|đóng dấu|chữ ký).*?[\)\]]\s*$/i.test(line);
+}
+
 function signatureCellIsPreserved(sourceText: string, doc: DocumentState): boolean {
-  const sourceLines = nonEmptyLines(sourceText).map(comparisonText);
+  const sourceLines = nonEmptyLines(sourceText)
+    .filter(line => !isSignatureInstructionLine(line))
+    .map(comparisonText);
+  if (sourceLines.length === 0) return true;
   return signatureTargetOrders(doc).some(targetOrder => isOrderedSubsequence(sourceLines, targetOrder));
 }
 
@@ -609,7 +619,7 @@ export function buildSourceToWorkspaceCoverage(snapshot: WorkspaceSnapshot): Sou
             const cellText = cell.text.trim();
             const isRecipientsCell = /Nơi nhận\s*:/i.test(cellText) || /Kính gửi\s*:/i.test(cellText);
             if (isRecipientsCell) {
-              if (!recipientsCellIsPreserved(cellText, snapshot.doc.recipients ?? "")) {
+              if (!recipientsCellIsPreserved(cellText, snapshot.doc.recipients ?? "", snapshot.doc.recipientHeader)) {
                 allCellsHaveTarget = false;
                 violations.push(`missing_recipients_destination:${block.id}:${cell.cellId}`);
               } else {
@@ -696,7 +706,7 @@ export function buildSourceToWorkspaceCoverage(snapshot: WorkspaceSnapshot): Sou
               signatureCellTexts.push(cellText);
               signatureCellIds.push(cell.cellId);
             } else {
-              if (!recipientsCellIsPreserved(cellText, snapshot.doc.recipients ?? "")) {
+              if (!recipientsCellIsPreserved(cellText, snapshot.doc.recipients ?? "", snapshot.doc.recipientHeader)) {
                 allCellsHaveTarget = false;
                 violations.push(`missing_recipients_destination:${block.id}:${cell.cellId}`);
               } else {
@@ -716,10 +726,27 @@ export function buildSourceToWorkspaceCoverage(snapshot: WorkspaceSnapshot): Sou
           hasTarget = allCellsHaveTarget;
         }
       } else {
-        const nextCursor = recipientsParagraphNextCursor(block.text, snapshot.doc.recipients ?? "", recipientParagraphCursor);
-        hasTarget = nextCursor !== null;
-        if (nextCursor !== null) recipientParagraphCursor = nextCursor;
-        if (hasTarget) targetIds.push("recipients");
+        const recHeader = snapshot.doc.recipientHeader ?? snapshot.structuredImport?.recipientHeader;
+        const inRecipientHeader = Boolean(
+          recHeader && (
+            recHeader.sourceBlockId === block.id ||
+            recHeader.items?.some(it =>
+              it.sourceBlockId === block.id ||
+              (it.text && normalizeSemanticText(block.text).includes(normalizeSemanticText(it.text)))
+            ) ||
+            (/^\s*Kính\s*(?:gửi|trình)\s*:?/i.test(block.text) && recHeader.presence === "confirmed")
+          )
+        );
+
+        if (inRecipientHeader) {
+          hasTarget = true;
+          targetIds.push("recipientHeader");
+        } else {
+          const nextCursor = recipientsParagraphNextCursor(block.text, snapshot.doc.recipients ?? "", recipientParagraphCursor);
+          hasTarget = nextCursor !== null;
+          if (nextCursor !== null) recipientParagraphCursor = nextCursor;
+          if (hasTarget) targetIds.push("recipients");
+        }
       }
 
       if (hasTarget) {

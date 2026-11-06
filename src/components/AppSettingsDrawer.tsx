@@ -19,6 +19,9 @@ interface AppSettingsDrawerProps {
   onChatGPTDisconnect: () => void;
   aiConnectionStatus: Record<AiApiProviderKind, AiApiConnectionStatus>;
   onTestAiConnection: (provider: AiApiProviderKind) => void;
+  aiPartitionConsent?: boolean;
+  onAiPartitionConsentChange?: (enabled: boolean) => void;
+  partitionCheckNotice?: string;
 }
 
 export function AppSettingsDrawer({
@@ -35,6 +38,9 @@ export function AppSettingsDrawer({
   onChatGPTDisconnect,
   aiConnectionStatus,
   onTestAiConnection,
+  aiPartitionConsent = false,
+  onAiPartitionConsentChange,
+  partitionCheckNotice = "",
 }: AppSettingsDrawerProps) {
   const dialogRef = useAccessibleDialog(isOpen, onClose, { initialFocusSelector: "select" });
   if (!isOpen) return null;
@@ -150,6 +156,35 @@ export function AppSettingsDrawer({
                       : chatGPTStatus.reason || "Chưa kết nối ChatGPT plan."}
               </p>
             </div>
+          </section>
+
+          <section aria-labelledby="df-app-settings-partition-title" className="rounded-xl border border-violet-200 bg-violet-50/50 p-4 space-y-3">
+            <div>
+              <h3 id="df-app-settings-partition-title" className="font-semibold text-slate-900">Kiểm tra phân vùng bằng AI</h3>
+              <p className="mt-1 text-sm text-slate-600">Cho phép trợ lý AI tự động rà soát phân đoạn và nhận diện thể thức khi bạn tải tệp lên ở Bước 1.</p>
+            </div>
+
+            <label className="flex items-start gap-2.5 text-sm font-semibold text-slate-900 cursor-pointer pt-1">
+              <input
+                type="checkbox"
+                checked={aiPartitionConsent}
+                onChange={event => onAiPartitionConsentChange?.(event.currentTarget.checked)}
+                disabled={aiProvider === "chatgpt" && (!chatGPTStatus.enabled || chatGPTStatus.session.status !== "connected" || !chatGPTStatus.session.sharing)}
+                className="mt-1 accent-violet-600 w-4 h-4 cursor-pointer"
+              />
+              <div>
+                <span>Bật rà soát phân vùng bằng {aiProviderDisplayName(aiProvider)}</span>
+                <p className="text-xs font-normal text-slate-600 mt-0.5 leading-relaxed">
+                  Khi bật, nội dung văn bản bóc tách được gửi qua kết nối an toàn đến {aiProviderDisplayName(aiProvider)}. Hệ thống tuyệt đối không gửi file gốc hoặc ảnh trang ra ngoài. Tùy chọn này mặc định tắt sau mỗi phiên.
+                </p>
+              </div>
+            </label>
+
+            {partitionCheckNotice && (
+              <p className="text-xs text-slate-600 border-t border-violet-100 pt-2 font-medium">
+                Thông báo rà soát: {partitionCheckNotice}
+              </p>
+            )}
           </section>
 
           <section aria-labelledby="df-app-settings-privacy-title" className="rounded-xl border border-blue-200 bg-blue-50/70 p-4">

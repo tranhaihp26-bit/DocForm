@@ -210,6 +210,7 @@ export function enforceND30Standards(
     signTitle,
     signName,
     recipients,
+    recipientHeader: source.recipientHeader,
     appendices: Array.isArray(source.appendices) ? source.appendices : [],
     unclassified: Array.isArray(source.unclassified) ? source.unclassified : [],
     importMetadata: source.importMetadata,

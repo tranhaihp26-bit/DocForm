@@ -913,22 +913,28 @@
   .df-import-step[data-flow-phase="recognition"] .df-import-disclosure { margin-top: 7px; }
   .df-import-step[data-flow-phase="recognition"] .df-import-disclosure > summary { padding: 7px 10px; }
 
-  .df-import-step[data-flow-phase="metadata"] > .df-step-content { grid-template-columns: minmax(0, .88fr) minmax(0, 1.12fr); gap: 10px; }
-  .df-import-step[data-flow-phase="metadata"] > .df-step-content > .df-import-heading,
-  .df-import-step[data-flow-phase="metadata"] > .df-step-content > .df-import-actions { grid-column: 1 / -1; }
-  .df-import-step[data-flow-phase="metadata"] #df-step1-regime { grid-column: 1; grid-template-columns: minmax(0, 1fr); gap: 10px; }
-  .df-import-step[data-flow-phase="metadata"] #df-step1-document-type { grid-column: 2; padding: 14px; }
-  .df-import-step[data-flow-phase="metadata"] #df-step1-regime > section { padding: 12px 14px; }
-  .df-import-step[data-flow-phase="metadata"] .df-import-stage-kicker { margin-bottom: 4px; font-size: 9px; }
-  .df-import-step[data-flow-phase="metadata"] .df-import-stage-description { margin: 3px 0 8px; font-size: 11px; line-height: 1.3; }
-  .df-import-step[data-flow-phase="metadata"] #df-step1-regime > section > div[role="group"] { gap: 6px; }
-  .df-import-step[data-flow-phase="metadata"] #df-step1-regime button { min-height: 52px; padding: 8px; }
-  .df-import-step[data-flow-phase="metadata"] #df-step1-document-type > .df-import-type-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
-  .df-import-step[data-flow-phase="metadata"] .df-import-type-grid > button { min-height: 56px; padding: 7px 9px; }
-  .df-import-step[data-flow-phase="metadata"] .df-import-type-grid > button > span { margin-top: 2px; font-size: 10px; }
+  .df-import-step[data-flow-phase="metadata"] > .df-step-content { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .df-import-step[data-flow-phase="metadata"] > .df-step-content > * { grid-column: 1 / -1; }
+  .df-import-step[data-flow-phase="metadata"] .df-unified-main-grid { width: 100%; }
+  .df-import-step[data-flow-phase="metadata"] #df-step1-regime { grid-column: auto; }
+  .df-import-step[data-flow-phase="metadata"] #df-step1-document-type { grid-column: auto; }
 }
 
 @media (max-width: 700px) {
   .df-import-source-tools { align-items: stretch; flex-direction: column; }
   .df-import-review-link { justify-content: center; }
+}
+
+
+/* Tùy chọn nâng cao Bước 1 tối giản */
+.df-import-advanced-details { grid-column: 1 / -1; border: 1px solid #CFD8EA; background: #fff; border-radius: 14px; transition: border-color 0.2s ease; }
+.df-import-advanced-details:hover { border-color: #6255E8; }
+.df-import-advanced-details > summary { user-select: none; list-style: none; outline: none; }
+.df-import-advanced-details > summary::-webkit-details-marker { display: none; }
+
+.df-import-entry[data-dragging="true"],
+.df-import-entry-options > button[data-dragging="true"] {
+  border-color: #6255e8 !important;
+  background: #f4f3ff !important;
+  box-shadow: 0 0 0 3px rgba(98, 85, 232, 0.25) !important;
 }

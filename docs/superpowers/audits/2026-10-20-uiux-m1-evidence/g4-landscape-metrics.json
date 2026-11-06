@@ -1,21 +1,21 @@
 {
-  "sha256": "9385ca88d1496b9819d03187b47c6e20045c498b54b2c4c865ff642b630caf5a",
+  "sha256": "c8b5a801b267a7ca2f8f46acb8fdc921a9a0b4b19965e228c6a77c53ab6dc983",
   "dimensions": {
-    "sha": "9385ca88d1496b9819d03187b47c6e20045c498b54b2c4c865ff642b630caf5a",
+    "sha": "c8b5a801b267a7ca2f8f46acb8fdc921a9a0b4b19965e228c6a77c53ab6dc983",
     "pages": [
       {
-        "width": 1122.53125,
-        "height": 793.71875
+        "width": 1063.794189453125,
+        "height": 752.1869506835938
       },
       {
-        "width": 1122.53125,
-        "height": 793.71875
+        "width": 1063.794189453125,
+        "height": 752.1871337890625
       }
     ],
     "mode": "true"
   },
   "fit": {
-    "paperWidth": 290.4223327636719,
+    "paperWidth": 278.54437255859375,
     "scrollWidth": 388,
     "outerWidth": 390
   }

@@ -18,7 +18,7 @@
 
 import { 
   Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, Tab,
-  WidthType, BorderStyle, AlignmentType, convertMillimetersToTwip, PageOrientation,
+  WidthType, BorderStyle, AlignmentType, convertMillimetersToTwip, PageOrientation, TabStopType,
   Header, PageNumber, LevelFormat, PageBreak, SectionType, TableLayoutType, VerticalMergeType, HeightRule,
   XmlComponent, Attributes, LineRuleType, Bookmark
 } from "docx";
@@ -187,7 +187,9 @@ export const ND30_SHAPE_LINE_1_XML = `<mc:AlternateContent><mc:Choice Requires="
 
 export const ND30_SHAPE_LINE_2_XML = `<mc:AlternateContent><mc:Choice Requires="wps"><w:drawing><wp:anchor distT="0" distB="0" distL="114300" distR="114300" simplePos="0" relativeHeight="251658752" behindDoc="0" locked="0" layoutInCell="0" allowOverlap="1" wp14:anchorId="A0B0C0D2" wp14:editId="B0C0D0E2"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="page"><wp:posOffset>4490720</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:posOffset>1123950</wp:posOffset></wp:positionV><wp:extent cx="1979930" cy="0"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/><wp:docPr id="30002" name="ND30 Plain Line 2"/><wp:cNvGraphicFramePr/><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:wsp><wps:cNvCnPr/><wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="1979930" cy="0"/></a:xfrm><a:prstGeom prst="line"><a:avLst/></a:prstGeom><a:ln w="9525" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:srgbClr val="000000"/></a:solidFill><a:prstDash val="solid"/><a:round/><a:headEnd type="none" w="med" len="med"/><a:tailEnd type="none" w="med" len="med"/></a:ln><a:effectLst/><a:extLst><a:ext uri="{AF507438-7753-43E0-B8FC-AC1667EBCBE1}"><a14:hiddenEffects xmlns:a14="http://schemas.microsoft.com/office/drawing/2010/main"><a:effectLst><a:outerShdw blurRad="40000" dist="20000" dir="5400000" rotWithShape="0"><a:srgbClr val="000000"><a:alpha val="38000"/></a:srgbClr></a:outerShdw></a:effectLst></a14:hiddenEffects></a:ext></a:extLst></wps:spPr><wps:style><a:lnRef idx="2"><a:schemeClr val="accent1"/></a:lnRef><a:fillRef idx="0"><a:schemeClr val="accent1"/></a:fillRef><a:effectRef idx="1"><a:schemeClr val="accent1"/></a:effectRef><a:fontRef idx="minor"><a:schemeClr val="tx1"/></a:fontRef></wps:style><wps:bodyPr/></wps:wsp></a:graphicData></a:graphic></wp:anchor></w:drawing></mc:Choice><mc:Fallback><w:pict><v:line w14:anchorId="C0D0E0F2" id="ND30 Plain Line 2" o:spid="_x0000_s3002" style="position:absolute;z-index:251658752;visibility:visible;mso-wrap-style:square;mso-wrap-distance-left:9pt;mso-wrap-distance-top:0;mso-wrap-distance-right:9pt;mso-wrap-distance-bottom:0;mso-position-horizontal:absolute;mso-position-horizontal-relative:page;mso-position-vertical:absolute;mso-position-vertical-relative:page" from="353.6pt,88.5pt" to="509.5pt,88.5pt" o:allowincell="f"><v:shadow color="black" opacity="24903f" origin=",.5" offset="0,.55556mm"/><w10:wrap anchorx="page" anchory="page"/></v:line></w:pict></mc:Fallback></mc:AlternateContent>`;
 
-export const HD05_SHAPE_LINE_TITLE_XML = `<mc:AlternateContent><mc:Choice Requires="wps"><w:drawing><wp:anchor distT="0" distB="0" distL="114300" distR="114300" simplePos="0" relativeHeight="251658752" behindDoc="0" locked="0" layoutInCell="0" allowOverlap="1" wp14:anchorId="6E09589C" wp14:editId="4A2BB494"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="page"><wp:posOffset>4573476</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:posOffset>966470</wp:posOffset></wp:positionV><wp:extent cx="2628900" cy="0"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/><wp:docPr id="1922038351" name="Straight Connector 1"/><wp:cNvGraphicFramePr/><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:wsp><wps:cNvCnPr/><wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="2628900" cy="0"/></a:xfrm><a:prstGeom prst="line"><a:avLst/></a:prstGeom><a:ln w="9525" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:srgbClr val="000000"/></a:solidFill><a:prstDash val="solid"/><a:round/><a:headEnd type="none" w="med" len="med"/><a:tailEnd type="none" w="med" len="med"/></a:ln><a:effectLst/><a:extLst><a:ext uri="{AF507438-7753-43E0-B8FC-AC1667EBCBE1}"><a14:hiddenEffects xmlns:a14="http://schemas.microsoft.com/office/drawing/2010/main"><a:effectLst><a:outerShdw blurRad="40000" dist="20000" dir="5400000" rotWithShape="0"><a:srgbClr val="000000"><a:alpha val="38000"/></a:srgbClr></a:outerShdw></a:effectLst></a14:hiddenEffects></a:ext></a:extLst></wps:spPr><wps:style><a:lnRef idx="2"><a:schemeClr val="accent1"/></a:lnRef><a:fillRef idx="0"><a:schemeClr val="accent1"/></a:fillRef><a:effectRef idx="1"><a:schemeClr val="accent1"/></a:effectRef><a:fontRef idx="minor"><a:schemeClr val="tx1"/></a:fontRef></wps:style><wps:bodyPr/></wps:wsp></a:graphicData></a:graphic></wp:anchor></w:drawing></mc:Choice><mc:Fallback><w:pict><v:line w14:anchorId="0321C8D0" id="Straight Connector 1" o:spid="_x0000_s1026" style="position:absolute;z-index:251658752;visibility:visible;mso-wrap-style:square;mso-wrap-distance-left:9pt;mso-wrap-distance-top:0;mso-wrap-distance-right:9pt;mso-wrap-distance-bottom:0;mso-position-horizontal:absolute;mso-position-horizontal-relative:page;mso-position-vertical:absolute;mso-position-vertical-relative:page" from="360.1pt,76.1pt" to="567.1pt,76.1pt" o:allowincell="f"><v:shadow color="black" opacity="24903f" origin=",.5" offset="0,.55556mm"/><w10:wrap anchorx="page" anchory="page"/></v:line></w:pict></mc:Fallback></mc:AlternateContent>`;
+export const ND30_SHAPE_LINE_SUBJECT_XML = `<mc:AlternateContent><mc:Choice Requires="wps"><w:drawing><wp:anchor distT="0" distB="0" distL="114300" distR="114300" simplePos="0" relativeHeight="251660288" behindDoc="0" locked="0" layoutInCell="0" allowOverlap="1" wp14:anchorId="A0B0C0D3" wp14:editId="B0C0D0E3"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="page"><wp:posOffset>3278505</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:posOffset>2486025</wp:posOffset></wp:positionV><wp:extent cx="1475740" cy="0"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/><wp:docPr id="30003" name="ND30 Plain Line 3"/><wp:cNvGraphicFramePr/><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:wsp><wps:cNvCnPr/><wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="1475740" cy="0"/></a:xfrm><a:prstGeom prst="line"><a:avLst/></a:prstGeom><a:ln w="9525" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:srgbClr val="000000"/></a:solidFill><a:prstDash val="solid"/><a:round/><a:headEnd type="none" w="med" len="med"/><a:tailEnd type="none" w="med" len="med"/></a:ln><a:effectLst/><a:extLst><a:ext uri="{AF507438-7753-43E0-B8FC-AC1667EBCBE1}"><a14:hiddenEffects xmlns:a14="http://schemas.microsoft.com/office/drawing/2010/main"><a:effectLst><a:outerShdw blurRad="40000" dist="20000" dir="5400000" rotWithShape="0"><a:srgbClr val="000000"><a:alpha val="38000"/></a:srgbClr></a:outerShdw></a:effectLst></a14:hiddenEffects></a:ext></a:extLst></wps:spPr><wps:style><a:lnRef idx="2"><a:schemeClr val="accent1"/></a:lnRef><a:fillRef idx="0"><a:schemeClr val="accent1"/></a:fillRef><a:effectRef idx="1"><a:schemeClr val="accent1"/></a:effectRef><a:fontRef idx="minor"><a:schemeClr val="tx1"/></a:fontRef></wps:style><wps:bodyPr/></wps:wsp></a:graphicData></a:graphic></wp:anchor></w:drawing></mc:Choice><mc:Fallback><w:pict><v:line w14:anchorId="C0D0E0F3" id="ND30 Plain Line 3" o:spid="_x0000_s3003" style="position:absolute;z-index:251660288;visibility:visible;mso-wrap-style:square;mso-wrap-distance-left:9pt;mso-wrap-distance-top:0;mso-wrap-distance-right:9pt;mso-wrap-distance-bottom:0;mso-position-horizontal:absolute;mso-position-horizontal-relative:page;mso-position-vertical:absolute;mso-position-vertical-relative:page" from="258.15pt,195.75pt" to="374.35pt,195.75pt" o:allowincell="f"><v:shadow color="black" opacity="24903f" origin=",.5" offset="0,.55556mm"/><w10:wrap anchorx="page" anchory="page"/></v:line></w:pict></mc:Fallback></mc:AlternateContent>`;
+
+export const HD05_SHAPE_LINE_TITLE_XML = `<mc:AlternateContent><mc:Choice Requires="wps"><w:drawing><wp:anchor distT="0" distB="0" distL="114300" distR="114300" simplePos="0" relativeHeight="251659264" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>113030</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>240665</wp:posOffset></wp:positionV><wp:extent cx="2595245" cy="0"/><wp:effectExtent l="0" t="4445" r="5080" b="5080"/><wp:wrapNone/><wp:docPr id="1" name="Straight Connector 1"/><wp:cNvGraphicFramePr/><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:wsp><wps:cNvCnPr/><wps:spPr><a:xfrm><a:off x="4341495" y="960755"/><a:ext cx="2595245" cy="0"/></a:xfrm><a:prstGeom prst="line"><a:avLst/></a:prstGeom><a:ln w="9525" cmpd="sng"><a:solidFill><a:schemeClr val="tx1"/></a:solidFill><a:prstDash val="solid"/></a:ln></wps:spPr><wps:style><a:lnRef idx="2"><a:prstClr val="black"/></a:lnRef><a:fillRef idx="0"><a:srgbClr val="FFFFFF"/></a:fillRef><a:effectRef idx="0"><a:srgbClr val="FFFFFF"/></a:effectRef><a:fontRef idx="minor"><a:schemeClr val="tx1"/></a:fontRef></wps:style><wps:bodyPr/></wps:wsp></a:graphicData></a:graphic></wp:anchor></w:drawing></mc:Choice><mc:Fallback><w:pict><v:line id="_x0000_s1026" o:spid="_x0000_s1026" o:spt="20" style="position:absolute;left:0pt;margin-left:8.9pt;margin-top:18.95pt;height:0pt;width:204.35pt;z-index:251659264;mso-width-relative:page;mso-height-relative:page;" filled="f" stroked="t" coordsize="21600,21600" o:gfxdata="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&#10;"><v:fill on="f" focussize="0,0"/><v:stroke color="#000000 [3213]" joinstyle="round"/><v:imagedata o:title=""/><o:lock v:ext="edit" aspectratio="f"/></v:line></w:pict></mc:Fallback></mc:AlternateContent>`;
 
 /**
  * Hậu xử lý OOXML buffer/Uint8Array để thay thế các placeholder Shape Line thành DrawingML & VML nguyên bản.
@@ -212,6 +214,10 @@ export async function postProcessDocxShapes(buffer: Uint8Array | ArrayBuffer | B
   }
   if (xml.includes("[[ND30_SHAPE_LINE_2]]")) {
     xml = xml.replace(/<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?\[\[ND30_SHAPE_LINE_2\]\](?:(?!<\/w:r>)[\s\S])*?<\/w:r>/g, () => `<w:r>${ND30_SHAPE_LINE_2_XML}</w:r>`);
+    modified = true;
+  }
+  if (xml.includes("[[ND30_SHAPE_LINE_SUBJECT]]")) {
+    xml = xml.replace(/<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?\[\[ND30_SHAPE_LINE_SUBJECT\]\](?:(?!<\/w:r>)[\s\S])*?<\/w:r>/g, () => `<w:r>${ND30_SHAPE_LINE_SUBJECT_XML}</w:r>`);
     modified = true;
   }
   if (xml.includes("[[HD05_SHAPE_LINE_TITLE]]")) {
@@ -798,14 +804,12 @@ export function convertHtmlToDocxElements(
         return;
       }
 
-      // Xử lý các thẻ tiêu đề (H1, H2, H3) theo profile
+      // Xử lý các thẻ tiêu đề (H1, H2, H3) theo vai trò phân cấp (Role-based Heading)
       if (tagName === "h1") {
         elements.push(
           new Paragraph({
-            alignment: useCompanyBodyFormat ? AlignmentType.JUSTIFIED : AlignmentType.CENTER,
-            indent: useCompanyBodyFormat
-              ? { ...(bodyInsetMm ? { left: bodyInsetTwips, right: bodyInsetTwips } : {}), firstLine: companyBodyFirstLineTwips }
-              : undefined,
+            alignment: AlignmentType.CENTER,
+            indent: bodyInsetMm ? { left: bodyInsetTwips, right: bodyInsetTwips } : undefined,
             keepNext: true,
             spacing: useCompanyBodyFormat
               ? { before: 180, after: companyBodyAfterTwips, line: companyBodyLineTwips, lineRule: LineRuleType.EXACT }
@@ -826,10 +830,8 @@ export function convertHtmlToDocxElements(
       if (tagName === "h2") {
         elements.push(
           new Paragraph({
-            alignment: useCompanyBodyFormat ? AlignmentType.JUSTIFIED : AlignmentType.CENTER,
-            indent: useCompanyBodyFormat
-              ? { ...(bodyInsetMm ? { left: bodyInsetTwips, right: bodyInsetTwips } : {}), firstLine: companyBodyFirstLineTwips }
-              : undefined,
+            alignment: AlignmentType.CENTER,
+            indent: bodyInsetMm ? { left: bodyInsetTwips, right: bodyInsetTwips } : undefined,
             keepNext: true,
             spacing: useCompanyBodyFormat
               ? { before: 140, after: companyBodyAfterTwips, line: companyBodyLineTwips, lineRule: LineRuleType.EXACT }
@@ -850,10 +852,8 @@ export function convertHtmlToDocxElements(
       if (tagName === "h3") {
         elements.push(
           new Paragraph({
-            alignment: useCompanyBodyFormat ? AlignmentType.JUSTIFIED : AlignmentType.LEFT,
-            indent: bodyInsetMm
-              ? { left: bodyInsetTwips, right: bodyInsetTwips, firstLine: useCompanyBodyFormat ? companyBodyFirstLineTwips : 720 }
-              : { firstLine: useCompanyBodyFormat ? companyBodyFirstLineTwips : 720 },
+            alignment: isCentered ? AlignmentType.CENTER : AlignmentType.LEFT,
+            indent: bodyInsetMm ? { left: bodyInsetTwips, right: bodyInsetTwips } : undefined,
             keepNext: true,
             spacing: useCompanyBodyFormat
               ? { before: 100, after: companyBodyAfterTwips, line: companyBodyLineTwips, lineRule: LineRuleType.EXACT }
@@ -873,14 +873,16 @@ export function convertHtmlToDocxElements(
 
       // Xử lý danh sách (ul/ol)
       if (tagName === "ul" || tagName === "ol") {
+        const listRef = regime === "party" ? "hd05-numbered-list" : "nd30-numbered-list";
+        const listIndent = regime === "party" ? 567 : 720;
         Array.from(child.children).forEach((li) => {
           const inlineRuns = parseInlineNodes(li, defaultHalfPoints);
 
           elements.push(
             new Paragraph({
               bullet: tagName === "ul" ? { level: 0 } : undefined,
-              numbering: tagName === "ol" ? { reference: "nd30-numbered-list", level: 0 } : undefined,
-              indent: { left: 720 },
+              numbering: tagName === "ol" ? { reference: listRef, level: 0 } : undefined,
+              indent: { left: listIndent },
               alignment: useCompanyBodyFormat ? AlignmentType.JUSTIFIED : undefined,
               spacing: useCompanyBodyFormat
                 ? { before: 0, after: companyBodyAfterTwips, line: companyBodyLineTwips, lineRule: LineRuleType.EXACT }
@@ -921,54 +923,86 @@ export function convertHtmlToDocxElements(
       }
 
       const runs = parseInlineNodes(child, defaultHalfPoints);
-      const isArticleHeader = /^(Điều\s+\d+|Khoản\s+\d+|Điểm\s+[a-zđ]|Phần\s+[I|V|X]+|Mục\s+[I|V|X\d]+|Chương\s+[I|V|X\d]+)/i.test(textContent);
+      const isStructuralHeader = /^(Phần\s+[I|V|X\d]+|Chương\s+[I|V|X\d]+|Mục\s+[I|V|X\d]+|Tiểu\s+mục\s+[I|V|X\d]+)/i.test(textContent);
+      const isArticleHeader = /^(Điều\s+\d+|Khoản\s+\d+|Điểm\s+[a-zđ])/i.test(textContent);
       const isTableTitle = /^(Bảng\s+\d+|Bảng\s+phân\s+công|Bảng\s+tổng\s+hợp|Bảng\s+tiến\s+độ|Danh\s+mục)/i.test(textContent);
       const isLegalBasis = /^Căn\s+cứ\s+/i.test(textContent) || /^Theo\s+đề\s+nghị\s+của\s+/i.test(textContent);
 
-      // Thụt đầu dòng chuẩn NĐ 30: 1.0cm - 1.27cm (567 - 720 dxa)
-      const firstLineIndentTwips = 720;
-      
-      let pAlignment: (typeof AlignmentType)[keyof typeof AlignmentType] = isDividerOnly ? AlignmentType.CENTER : alignment;
-      let pBefore = 0;
-      let pAfter = 120; // Tối thiểu 6pt theo ND30.PL1.I.II.6E.PARAGRAPH_GAP_MIN và HD05.BODY.11
-      let pKeepNext = isDividerOnly;
-      let pIndent: any = (isCentered || isRight || isDividerOnly) ? undefined : { firstLine: firstLineIndentTwips };
+      const defaultFirstLineTwips = regime === "party" ? 567 : 720;
+      const effectiveFirstLineTwips = useCompanyBodyFormat ? companyBodyFirstLineTwips : defaultFirstLineTwips;
 
-      if (isArticleHeader) {
-        pAlignment = AlignmentType.JUSTIFIED;
-        pBefore = 120;
+      let pAlignment: (typeof AlignmentType)[keyof typeof AlignmentType] = AlignmentType.JUSTIFIED;
+      let pBefore = 0;
+      let pAfter = 120;
+      let pKeepNext = isDividerOnly;
+      let pIndent: any = undefined;
+
+      if (isDividerOnly) {
+        pAlignment = AlignmentType.CENTER;
+        pIndent = undefined;
+      } else if (isStructuralHeader) {
+        pAlignment = AlignmentType.CENTER;
+        pBefore = 140;
         pAfter = 60;
         pKeepNext = true;
-        pIndent = { firstLine: firstLineIndentTwips };
+        pIndent = undefined;
       } else if (isTableTitle) {
         pAlignment = isCentered ? AlignmentType.CENTER : AlignmentType.LEFT;
         pBefore = 120;
         pAfter = 60;
         pKeepNext = true;
         pIndent = undefined;
+      } else if (isArticleHeader) {
+        pAlignment = AlignmentType.JUSTIFIED;
+        pBefore = 120;
+        pAfter = 60;
+        pKeepNext = true;
+        pIndent = { firstLine: effectiveFirstLineTwips };
       } else if (isLegalBasis) {
         pAlignment = AlignmentType.JUSTIFIED;
         pBefore = 0;
         pAfter = 80;
-        pIndent = { firstLine: firstLineIndentTwips };
+        pIndent = { firstLine: effectiveFirstLineTwips };
+      } else if (isCentered) {
+        pAlignment = AlignmentType.CENTER;
+        pIndent = undefined;
+      } else if (isRight) {
+        pAlignment = AlignmentType.RIGHT;
+        pIndent = undefined;
+      } else {
+        pAlignment = AlignmentType.JUSTIFIED;
+        pIndent = { firstLine: effectiveFirstLineTwips };
       }
 
       if (useCompanyBodyFormat && !isDividerOnly) {
-        pAlignment = AlignmentType.JUSTIFIED;
         pAfter = companyBodyAfterTwips;
-        pIndent = { firstLine: companyBodyFirstLineTwips };
       }
 
-      if (bodyInsetMm) {
+      if (bodyInsetMm && pIndent) {
         pIndent = {
           left: bodyInsetTwips,
           right: bodyInsetTwips,
           ...(pIndent?.firstLine ? { firstLine: pIndent.firstLine } : {})
         };
+      } else if (bodyInsetMm && !pIndent && !isDividerOnly && !isStructuralHeader && !isTableTitle) {
+        pIndent = {
+          left: bodyInsetTwips,
+          right: bodyInsetTwips,
+        };
       }
+
       const ruleIndent = semanticIndent(semanticFormatting.firstLineIndent);
-      if (ruleIndent !== undefined && !useCompanyBodyFormat) pIndent = { ...(pIndent ?? {}), firstLine: ruleIndent };
+      if (ruleIndent !== undefined && !useCompanyBodyFormat && pIndent) {
+        pIndent = { ...pIndent, firstLine: ruleIndent };
+      }
+
       const ruleSpacing = semanticSpacing(semanticFormatting.lineSpacing);
+      const resolvedFallbackSpacing = regime === "party"
+        ? { before: pBefore, after: pAfter, line: 360, lineRule: LineRuleType.EXACT }
+        : { before: pBefore, after: pAfter, line: 276 };
+      const resolvedGenericSpacing = ruleSpacing
+        ? { before: pBefore, after: pAfter, line: ruleSpacing.line, ...(ruleSpacing.lineRule ? { lineRule: ruleSpacing.lineRule } : {}) }
+        : resolvedFallbackSpacing;
 
       elements.push(
         new Paragraph({
@@ -976,15 +1010,13 @@ export function convertHtmlToDocxElements(
           indent: pIndent,
           keepNext: pKeepNext,
           spacing: useCompanyBodyFormat && !isDividerOnly
-            ? { before: pBefore, after: companyBodyAfterTwips, line: companyBodyLineTwips, lineRule: LineRuleType.EXACT }
-            : (ruleSpacing ?? (regime === "party"
-              ? { before: pBefore, after: pAfter, line: 360, lineRule: LineRuleType.EXACT }
-              : { before: pBefore, after: pAfter, line: 276 })),
+            ? { before: pBefore, after: pAfter, line: companyBodyLineTwips, lineRule: LineRuleType.EXACT }
+            : resolvedGenericSpacing,
           children: runs.length > 0 ? runs : createRunsAndTabsFromText(
             textContent,
             defaultHalfPoints,
             {
-              bold: isArticleHeader || isTableTitle,
+              bold: isStructuralHeader || isArticleHeader || isTableTitle,
               italics: isLegalBasis,
             }
           ),
@@ -1160,20 +1192,21 @@ export function convertHtmlToDocxElements(
       const liMatches = trimmed.match(/<li[\s\S]*?<\/li>/gi) || [];
       liMatches.forEach((liHtml) => {
         const text = extractHtmlTextWithBreaks(liHtml);
-        elements.push(
-          new Paragraph({
-            bullet: !isOl ? { level: 0 } : undefined,
-            numbering: isOl ? { reference: "nd30-numbered-list", level: 0 } : undefined,
-            indent: { left: 720 },
-            spacing: useCompanyBodyFormat
-              ? { before: 0, after: companyBodyAfterTwips, line: companyBodyLineTwips, lineRule: LineRuleType.EXACT }
-              : regime === "party"
-                ? { before: 20, after: 20, line: 360, lineRule: LineRuleType.EXACT }
-                : { before: 40, after: 40, line: 276 },
-            alignment: useCompanyBodyFormat ? AlignmentType.JUSTIFIED : undefined,
-            children: createRunsAndTabsFromText(text, defaultHalfPoints),
-          })
-        );
+        const listRef = regime === "party" ? "hd05-numbered-list" : "nd30-numbered-list";
+          const listIndent = regime === "party" ? 567 : 720;
+          elements.push(
+            new Paragraph({
+              bullet: !isOl ? { level: 0 } : undefined,
+              numbering: isOl ? { reference: listRef, level: 0 } : undefined,
+              indent: { left: listIndent },
+              spacing: useCompanyBodyFormat
+                ? { before: 0, after: companyBodyAfterTwips, line: companyBodyLineTwips, lineRule: LineRuleType.EXACT }
+                : regime === "party"
+                  ? { before: 20, after: 20, line: 360, lineRule: LineRuleType.EXACT }
+                  : { before: 20, after: 20, line: 276 },
+              children: createRunsAndTabsFromText(text, defaultHalfPoints),
+            })
+          );
       });
       continue;
     }
@@ -1186,47 +1219,86 @@ export function convertHtmlToDocxElements(
       const isDividerOnly = text.length >= 3 && /^[-—–_.\s]+$/.test(text);
       const isCenteredBlock = /text-align\s*:\s*center/i.test(trimmed) || isDividerOnly;
       const isRightBlock = /text-align\s*:\s*right/i.test(trimmed);
-      const isArticleHeader = /^(Điều\s+\d+|Khoản\s+\d+|Điểm\s+[a-zđ]|Phần\s+[I|V|X]+|Mục\s+[I|V|X\d]+|Chương\s+[I|V|X\d]+)/i.test(text);
+      const isStructuralHeader = /^(Phần\s+[I|V|X\d]+|Chương\s+[I|V|X\d]+|Mục\s+[I|V|X\d]+|Tiểu\s+mục\s+[I|V|X\d]+)/i.test(text);
+      const isArticleHeader = /^(Điều\s+\d+|Khoản\s+\d+|Điểm\s+[a-zđ])/i.test(text);
       const isTableTitle = /^(Bảng\s+\d+|Bảng\s+phân\s+công|Bảng\s+tổng\s+hợp|Bảng\s+tiến\s+độ|Danh\s+mục)/i.test(text);
       const isLegalBasis = /^Căn\s+cứ\s+/i.test(text) || /^Theo\s+đề\s+nghị\s+của\s+/i.test(text);
       
-      const firstLineIndentTwips = 720;
-      let pBefore = 0;
-      let pAfter = 120; // 6pt tối thiểu theo ND30.PL1.I.II.6E.PARAGRAPH_GAP_MIN và HD05.BODY.11
-      let pKeepNext = isDividerOnly;
-      let pAlignment = isCenteredBlock ? AlignmentType.CENTER : (isRightBlock ? AlignmentType.RIGHT : AlignmentType.JUSTIFIED);
-      let pIndent: any = (isCenteredBlock || isRightBlock) ? undefined : { firstLine: firstLineIndentTwips };
+      const defaultFirstLineTwips = regime === "party" ? 567 : 720;
+      const effectiveFirstLineTwips = useCompanyBodyFormat ? companyBodyFirstLineTwips : defaultFirstLineTwips;
 
-      if (isArticleHeader) {
-        pBefore = 120;
+      let pAlignment: (typeof AlignmentType)[keyof typeof AlignmentType] = AlignmentType.JUSTIFIED;
+      let pBefore = 0;
+      let pAfter = 120;
+      let pKeepNext = isDividerOnly;
+      let pIndent: any = undefined;
+
+      if (isDividerOnly) {
+        pAlignment = AlignmentType.CENTER;
+        pIndent = undefined;
+      } else if (isStructuralHeader) {
+        pAlignment = AlignmentType.CENTER;
+        pBefore = 140;
         pAfter = 60;
         pKeepNext = true;
+        pIndent = undefined;
       } else if (isTableTitle) {
+        pAlignment = isCenteredBlock ? AlignmentType.CENTER : AlignmentType.LEFT;
         pBefore = 120;
         pAfter = 60;
         pKeepNext = true;
         pIndent = undefined;
+      } else if (isArticleHeader) {
+        pAlignment = AlignmentType.JUSTIFIED;
+        pBefore = 120;
+        pAfter = 60;
+        pKeepNext = true;
+        pIndent = { firstLine: effectiveFirstLineTwips };
       } else if (isLegalBasis) {
+        pAlignment = AlignmentType.JUSTIFIED;
         pBefore = 0;
         pAfter = 80;
+        pIndent = { firstLine: effectiveFirstLineTwips };
+      } else if (isCenteredBlock) {
+        pAlignment = AlignmentType.CENTER;
+        pIndent = undefined;
+      } else if (isRightBlock) {
+        pAlignment = AlignmentType.RIGHT;
+        pIndent = undefined;
+      } else {
+        pAlignment = AlignmentType.JUSTIFIED;
+        pIndent = { firstLine: effectiveFirstLineTwips };
       }
 
       if (useCompanyBodyFormat && !isDividerOnly) {
-        pAlignment = AlignmentType.JUSTIFIED;
         pAfter = companyBodyAfterTwips;
-        pIndent = { firstLine: companyBodyFirstLineTwips };
       }
 
-      if (bodyInsetMm) {
+      if (bodyInsetMm && pIndent) {
         pIndent = {
           left: bodyInsetTwips,
           right: bodyInsetTwips,
           ...(pIndent?.firstLine ? { firstLine: pIndent.firstLine } : {})
         };
+      } else if (bodyInsetMm && !pIndent && !isDividerOnly && !isStructuralHeader && !isTableTitle) {
+        pIndent = {
+          left: bodyInsetTwips,
+          right: bodyInsetTwips,
+        };
       }
+
       const ruleIndent = semanticIndent(semanticFormatting.firstLineIndent);
-      if (ruleIndent !== undefined && !useCompanyBodyFormat) pIndent = { ...(pIndent ?? {}), firstLine: ruleIndent };
+      if (ruleIndent !== undefined && !useCompanyBodyFormat && pIndent) {
+        pIndent = { ...(pIndent ?? {}), firstLine: ruleIndent };
+      }
+
       const ruleSpacing = semanticSpacing(semanticFormatting.lineSpacing);
+      const resolvedFallbackSpacing = regime === "party"
+        ? { before: pBefore, after: pAfter, line: 360, lineRule: LineRuleType.EXACT }
+        : { before: pBefore, after: pAfter, line: 276 };
+      const resolvedGenericSpacing = ruleSpacing
+        ? { before: pBefore, after: pAfter, line: ruleSpacing.line, ...(ruleSpacing.lineRule ? { lineRule: ruleSpacing.lineRule } : {}) }
+        : resolvedFallbackSpacing;
 
       elements.push(
         new Paragraph({
@@ -1234,12 +1306,10 @@ export function convertHtmlToDocxElements(
           indent: pIndent,
           keepNext: pKeepNext,
           spacing: useCompanyBodyFormat && !isDividerOnly
-            ? { before: pBefore, after: companyBodyAfterTwips, line: companyBodyLineTwips, lineRule: LineRuleType.EXACT }
-            : (ruleSpacing ?? (regime === "party"
-              ? { before: pBefore, after: pAfter, line: 360, lineRule: LineRuleType.EXACT }
-              : { before: pBefore, after: pAfter, line: 276 })),
+            ? { before: pBefore, after: pAfter, line: companyBodyLineTwips, lineRule: LineRuleType.EXACT }
+            : resolvedGenericSpacing,
           children: hasPageBreak ? parseFallbackInlineNodes(trimmed, defaultHalfPoints) : createRunsAndTabsFromText(text, defaultHalfPoints, {
-            bold: isArticleHeader || isTableTitle,
+            bold: isStructuralHeader || isArticleHeader || isTableTitle,
             italics: isLegalBasis,
           }),
         })
@@ -1462,7 +1532,134 @@ export function detectEmbeddedSignature(bodyHtml: string): boolean {
  * Loại bỏ dòng tiêu đề "Nơi nhận:" lặp lại, chuẩn hóa các gạch đầu dòng "- ",
  * bảo đảm bản xuất Word chỉ có đúng 1 tiêu đề "Nơi nhận:" và không có dòng đạn thừa mang tiêu đề.
  */
-export function parseRecipientLines(rawRecipients?: string): string[] {
+
+/**
+ * Tạo các đoạn văn bản cho khối Kính gửi / Kính trình theo chuẩn OOXML của Nghị định 30 hoặc Hướng dẫn 05.
+ * Không đưa vào word/header*.xml; không gán first-line indent 1.27cm của Body; căn chuẩn tabStops & spacing.
+ */
+export function createRecipientHeaderParagraphs(data: DocumentFormatType, isParty: boolean): Paragraph[] {
+  const block = data.recipientHeader;
+  if (!block || !block.items || block.items.length === 0) {
+    return [];
+  }
+
+  const items = block.items.filter(it => it.text && it.text.trim());
+  if (items.length === 0) return [];
+
+  // Tờ trình NĐ 30 luôn dùng "Kính gửi:", không dùng "Kính trình:"
+  const isToTrinh = /tờ\s*trình/i.test(data.documentType || "") || /tờ\s*trình/i.test(data.subject || "");
+  const kind = (!isParty && isToTrinh) ? "kinh_gui" : block.kind;
+  const labelText = kind === "kinh_trinh" ? "Kính trình:" : "Kính gửi:";
+
+  const paragraphs: Paragraph[] = [];
+
+  if (isParty) {
+    // ==========================================
+    // HƯỚNG DẪN 05 (ĐẢNG):
+    // Nhãn căn giữa, chữ nghiêng 14pt; các nơi nhận thụt lề 1644 dxa, hanging 340 dxa, kết thúc bằng ;
+    // ==========================================
+    paragraphs.push(
+      new Paragraph({
+        alignment: AlignmentType.CENTER,
+        keepNext: true,
+        spacing: { before: 140, after: 60, line: 380, lineRule: LineRuleType.EXACT },
+        children: [
+          new TextRun({
+            text: labelText,
+            font: "Times New Roman",
+            size: 28, // 14pt
+            italics: true,
+          }),
+        ],
+      })
+    );
+
+    items.forEach((item, idx) => {
+      const isLast = idx === items.length - 1;
+      let cleanText = item.text.trim().replace(/^[-*•–—]\s*/, "").replace(/;+$/, "").trim();
+      paragraphs.push(
+        new Paragraph({
+          indent: { left: 1644, hanging: 340 },
+          tabStops: [{ type: TabStopType.LEFT, position: 1644 }],
+          spacing: { line: 380, lineRule: LineRuleType.EXACT, after: isLast ? 200 : 0 },
+          children: [
+            new TextRun({
+              text: `-\t${cleanText};`,
+              font: "Times New Roman",
+              size: 28, // 14pt
+            }),
+          ],
+        })
+      );
+    });
+  } else {
+    // ==========================================
+    // NGHỊ ĐỊNH 30 (HÀNH CHÍNH):
+    // 1 nơi nhận: 1 đoạn duy nhất "Kính gửi: Tên đơn vị", left 720 (1.27cm), before 140, after 200, line 380 exact
+    // Nhiều nơi nhận: Đoạn nhãn "Kính gửi:" left 720, before 140, after 0; các đoạn con tab 2041, hanging 340, kết ";" và dòng cuối "."
+    // ==========================================
+    if (items.length === 1) {
+      const cleanText = items[0].text.trim().replace(/^[-*•–—]\s*/, "").replace(/[\.;]+$/, "").trim();
+      paragraphs.push(
+        new Paragraph({
+          indent: { left: 720 },
+          spacing: { before: 140, after: 200, line: 380, lineRule: LineRuleType.EXACT },
+          children: [
+            new TextRun({
+              text: `${labelText} `,
+              font: "Times New Roman",
+              size: 28, // 14pt
+            }),
+            new TextRun({
+              text: cleanText,
+              font: "Times New Roman",
+              size: 28, // 14pt
+            }),
+          ],
+        })
+      );
+    } else {
+      paragraphs.push(
+        new Paragraph({
+          indent: { left: 720 },
+          keepNext: true,
+          spacing: { before: 140, after: 0, line: 380, lineRule: LineRuleType.EXACT },
+          children: [
+            new TextRun({
+              text: labelText,
+              font: "Times New Roman",
+              size: 28, // 14pt
+            }),
+          ],
+        })
+      );
+
+      items.forEach((item, idx) => {
+        const isLast = idx === items.length - 1;
+        const cleanText = item.text.trim().replace(/^[-*•–—]\s*/, "").replace(/[\.;]+$/, "").trim();
+        const punctuation = isLast ? "." : ";";
+        paragraphs.push(
+          new Paragraph({
+            indent: { left: 2041, hanging: 340 },
+            tabStops: [{ type: TabStopType.LEFT, position: 2041 }],
+            spacing: { line: 380, lineRule: LineRuleType.EXACT, after: isLast ? 200 : 0 },
+            children: [
+              new TextRun({
+                text: `-\t${cleanText}${punctuation}`,
+                font: "Times New Roman",
+                size: 28, // 14pt
+              }),
+            ],
+          })
+        );
+      });
+    }
+  }
+
+  return paragraphs;
+}
+
+export function parseRecipientLines(rawRecipients?: string, hasRecipientHeader = false): string[] {
   if (!rawRecipients || !rawRecipients.trim()) {
     return ["Như trên;", "Lưu: VT."];
   }
@@ -1498,6 +1695,12 @@ export function parseRecipientLines(rawRecipients?: string): string[] {
     }
   }
 
+  if (hasRecipientHeader && cleanedItems.length > 0) {
+    const hasNhuTren = cleanedItems.some(it => /^như trên/i.test(it.trim()));
+    if (!hasNhuTren) {
+      cleanedItems.unshift("Như trên;");
+    }
+  }
   return cleanedItems.length > 0 ? cleanedItems : ["Như trên;", "Lưu: VT."];
 }
 
@@ -1659,6 +1862,25 @@ export function generateND30DocxDocument(data: DocumentFormatType): Document {
               style: {
                 paragraph: {
                   indent: { left: 720, hanging: 360 },
+                },
+                run: {
+                  font: "Times New Roman",
+                },
+              },
+            },
+          ],
+        },
+        {
+          reference: "hd05-numbered-list",
+          levels: [
+            {
+              level: 0,
+              format: LevelFormat.DECIMAL,
+              text: "%1.",
+              alignment: AlignmentType.LEFT,
+              style: {
+                paragraph: {
+                  indent: { left: 567, hanging: 284 },
                 },
                 run: {
                   font: "Times New Roman",
@@ -2027,6 +2249,7 @@ export function generateND30DocxDocument(data: DocumentFormatType): Document {
                 keepNext: true,
                 spacing: { before: 60, after: 180, line: 276 },
                 children: [
+                  ...(!isParty && !renderPlan.isCongVanState ? [new TextRun({ text: "[[ND30_SHAPE_LINE_SUBJECT]]" })] : []),
                   new TextRun({
                     text: data.subject,
                     font: "Times New Roman",
@@ -2096,19 +2319,26 @@ export function generateND30DocxDocument(data: DocumentFormatType): Document {
           // ==========================================
           // 4. TOÀN BỘ NỘI DUNG VĂN BẢN (TỪ TIPTAP HTML)
           // ==========================================
+          // ==========================================
+          // 3b. KHỐI KÍNH GỬI / KÍNH TRÌNH (RECIPIENT HEADER)
+          // ==========================================
+          ...createRecipientHeaderParagraphs(data, isParty),
+
           candidateSectionMarker("body:start"),
           ...bodyParagraphs,
           candidateSectionMarker("body:end"),
 
           // Khoảng cách trống trước khối chữ ký
-          new Paragraph({ text: "", spacing: { after: 180 } }),
+          new Paragraph({ text: "", spacing: { line: 240, before: 0, after: 0 } }),
 
           // ==========================================
           // 5. KHỐI CHỮ KÝ & NƠI NHẬN (BẢNG ẨN 2 CỘT)
           // ==========================================
           ...(shouldRenderSignature ? (() => {
+            const isMultiSigner = Boolean(data.signTitle && data.signTitle.includes("|"));
             const sigTable = new Table({
               width: { size: 100, type: WidthType.PERCENTAGE },
+              ...(isMultiSigner ? {} : { columnWidths: [4878, 4476] }),
               borders: {
                 top: { style: BorderStyle.NONE, size: 0, color: "auto" },
                 bottom: { style: BorderStyle.NONE, size: 0, color: "auto" },
@@ -2179,7 +2409,7 @@ export function generateND30DocxDocument(data: DocumentFormatType): Document {
                             borders: INVISIBLE_CELL_BORDER,
                             children: [
                               new Paragraph({ children: [new TextRun({ text: "Nơi nhận:", font: "Times New Roman", size: 24, bold: true, italics: true })] }),
-                              ...parseRecipientLines(data.recipients).map(item => new Paragraph({ children: [new TextRun({ text: "- " + item, font: "Times New Roman", size: 22 })] })),
+                              ...parseRecipientLines(data.recipients, Boolean(data.recipientHeader?.items?.length)).map(item => new Paragraph({ children: [new TextRun({ text: "- " + item, font: "Times New Roman", size: 22 })] })),
                             ],
                           }),
                         ],
@@ -2192,8 +2422,9 @@ export function generateND30DocxDocument(data: DocumentFormatType): Document {
                       children: [
                         // Cột trái: Nơi nhận (cỡ 12pt, nghiêng, đậm; các dòng con cỡ 11pt, thường)
                         new TableCell({
-                          width: { size: 38, type: WidthType.PERCENTAGE },
+                          width: { size: 52.14, type: WidthType.PERCENTAGE },
                           borders: INVISIBLE_CELL_BORDER,
+                          margins: { top: 0, bottom: 0, left: 108, right: 108 },
                           children: (data.recipients && data.recipients.trim()) ? [
                             new Paragraph({
                               spacing: { line: 240, after: 40 },
@@ -2207,7 +2438,7 @@ export function generateND30DocxDocument(data: DocumentFormatType): Document {
                                 }),
                               ],
                             }),
-                            ...parseRecipientLines(data.recipients).map(item => 
+                            ...parseRecipientLines(data.recipients, Boolean(data.recipientHeader?.items?.length)).map(item =>
                               new Paragraph({
                                 spacing: { line: 220, before: 20, after: 20 },
                                 children: [
@@ -2227,8 +2458,9 @@ export function generateND30DocxDocument(data: DocumentFormatType): Document {
 
                         // Cột phải: Chức vụ, chữ ký, họ và tên
                         new TableCell({
-                          width: { size: 62, type: WidthType.PERCENTAGE },
+                          width: { size: 47.86, type: WidthType.PERCENTAGE },
                           borders: INVISIBLE_CELL_BORDER,
+                          margins: { top: 0, bottom: 0, left: 108, right: 108 },
                           children: [
                             // Chức vụ (in hoa, đứng, đậm, cỡ 13-14pt)
                             ...(data.signTitle ? data.signTitle
