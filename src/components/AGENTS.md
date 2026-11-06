@@ -11,6 +11,12 @@
 - Bước 3 dùng cùng byte ứng viên hiện hành cho preview, download và print. Hiển thị blocker/cảnh báo; không bỏ qua fidelity gate, không dùng ứng viên từ revision cũ.
 - Preview/in trong trình duyệt là tham khảo; không trình bày như kết quả dàn trang đã xác nhận trong Microsoft Word.
 
+## Mục tiêu sản phẩm và trạng thái Bước 3 (V2.2)
+
+- Khi chuẩn hóa, văn bản đầu ra phải đúng **profile Công ty theo từng thuộc tính đã thiết lập**, ND30/HD05 chỉ là fallback cho trường profile còn thiếu. Không yêu cầu người dùng giải quyết “xung đột” chỉ vì giá trị profile khác default ND30/HD05.
+- Bước 3 **không đồng nhất PASS tự động/downloadable với đủ điều kiện ban hành hoặc phê duyệt**. Phải trình bày rõ `review-only`/`blocked`/`stale`/`NOT_EVALUATED` và giới hạn của DOCX browser preview, PDF WPS thật, test mock.
+- Đọc [đặc tả V2.2](../../docs/DOCFORM_PRODUCT_FIRST_PROFILE_POLICY_V2_2.md); chỉ tuyên bố đã triển khai khi có bằng chứng kiểm tra UI hiện hành lẫn DOCX thực.
+
 ## Đọc và kiểm chứng
 
 - Bắt đầu ở `App.tsx`, `ImportStepView.tsx`, `WorkspaceEditor.tsx`, `WorkspaceExport.tsx`, `A4DocumentPreview.tsx`, `CandidatePrintView.tsx` theo vùng sửa; chỉ mở view legacy khi caller còn dùng.

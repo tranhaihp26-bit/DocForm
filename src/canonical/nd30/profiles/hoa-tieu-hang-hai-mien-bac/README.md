@@ -12,3 +12,7 @@
 Nguồn quy định: Phụ lục I Nghị định 30/2020/NĐ-CP. Kích thước bảng là lựa chọn trình bày của profile công ty, không phải quy định bắt buộc. Kiểm tra bản xuất Word khi sửa tên cơ quan hoặc cỡ chữ.
 
 Profile này chỉ dành cho văn bản hành chính NĐ30, không dùng cho văn bản Đảng HD05. `src/canonical/nd30/companyHeader.ts` là mã tạo đầu trang của ứng dụng và cần được đồng bộ theo bản Word này trước khi tuyên bố bản xuất tự động giống hệt mẫu.
+
+## Cách áp dụng profile theo V2.2
+
+Đối với văn bản **đã xác nhận chọn profile Công ty**, mọi thuộc tính đã thiết lập trong profile này **chỉ được áp/kiểm theo giá trị profile**, không so/hậu kiểm, cảnh báo xung đột hoặc ghi đè bằng ND30. Chỉ trường profile chưa thiết lập mới fallback ND30. `0`, `false`, `""` có chủ ý vẫn là đã thiết lập. JSON tại đây có `scope=first_page_header`; thông số body/table Công ty nằm ở `../../../companyBodyProfile.ts` và cần được kiểm kê chung khi phân giải hiệu lực. [Đặc tả V2.2](../../../../../docs/DOCFORM_PRODUCT_FIRST_PROFILE_POLICY_V2_2.md).
