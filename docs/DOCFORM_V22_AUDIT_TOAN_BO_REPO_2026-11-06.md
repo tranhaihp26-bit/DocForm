@@ -60,3 +60,28 @@ Ca kiểm bắt buộc: profile định nghĩa giá trị khác ND30/HD05 **vẫ
 4. **P2:** Chỉ thử OOXML patch/kiến trúc khác sau khi có ca lỗi cụ thể không giải quyết hợp lý bằng pipeline hiện tại.
 
 **Trạng thái:** cập nhật hướng dẫn **ĐÃ COMMIT**; runtime/test V2.2 **CHƯA TRIỂN KHAI/CHƯA NGHIỆM THU**. Không chạy build/lint/test trong phiên audit này.
+
+
+## Cập nhật thực thi 07/11/2026 — P0 đã merge có kiểm chứng
+
+**GitHub:** [PR #1](https://github.com/tranhaihp26-bit/DocForm/pull/1) đã squash-merge vào `main` tại [commit `296c54e7`](https://github.com/tranhaihp26-bit/DocForm/commit/296c54e7170965ab5dd5566fc915672720a3977d).  
+**Bằng chứng CI:** [Workflow run 42308016555](https://github.com/tranhaihp26-bit/DocForm/actions/runs/42308016555): TypeScript `npm run lint` **PASS**, **31/31 focused tests PASS**, 0 lỗi và 0 skip. Chạy trên GitHub Actions Ubuntu/Node 22, không phải WPS/Word desktop.
+
+### Điều chỉnh trạng thái các phát hiện
+
+| ID | Trạng thái mới | Bằng chứng cụ thể |
+|---|---|---|
+| RT-01 | **PARTIAL** | `ruleEngine.ts`: kiểm profile đã chọn cho font/body first-line/spacing; margin trang ND30 và không so 2 đường kẻ profile theo tỷ lệ ND30. Hai rule cỡ chữ thiếu đã đăng ký. **Chưa bao phủ đầy đủ mọi thuộc tính profile** và đường QA khác. |
+| RT-02 | **FIXED + FOCUSED TEST** | `documentComposer.ts` không còn auto nâng `generic` thành company do trùng tên; profile được chọn dùng đúng body font 14pt. |
+| RT-03 | **FIXED + FOCUSED TEST** | `importSessionLifecycle.ts` khởi tạo `generic`, không tự nhận company; nguồn và quyết định profile được theo dõi qua luồng duyệt hiện có. |
+| RT-04 | **PARTIAL** | `compliance.middleware.ts` không tin `headerProfile` do AI tự khai báo, có tham số `confirmedProfile` tùy chọn. **API server hiện chưa cấp tham số này**, cần kiểm cách giữ quyết định profile khi AI trả dữ liệu. |
+| RT-05 | **FIXED + FOCUSED TEST** | `WorkspaceExport.tsx`: không tuyên bố đủ điều kiện ban hành từ PASS tự động; giải thích rõ giới hạn phê duyệt nghiệp vụ. |
+| RT-06–11 | **OPEN / REQUIRES SELECTIVE VERIFICATION** | Các hạng mục kiểm thử UI toàn luồng, bảng, layout PDF, resolver nhiều trường còn chờ triển khai theo ưu tiên. |
+
+### Giới hạn của kiểm chứng
+
+- Cài dependencies trong workflow có dùng `npm ci --legacy-peer-deps` do **xung đột nền đã phát hiện** giữa `esbuild@0.25.12` trong lockfile và yêu cầu `esbuild@^0.27 || ^0.28` của Vite 8.3.5. Không được dùng kết quả CI này để tuyên bố `npm ci` chuẩn đã sửa xong; cần cập nhật dependency và lockfile ở một thay đổi riêng.
+- Chưa chạy full regression, browser UI, Microsoft Word hoặc WPS real rendering; không kết luận bản DOCX/PDF đã nghiệm thu mọi loại văn bản.
+- Tài liệu audit gốc ở trên là **snapshot trước PR #1**; khi lập kế hoạch mới phải dùng bảng trạng thái trong mục bổ sung này để tránh lặp việc hoặc dùng kết luận cũ.
+
+**Ưu tiên tiếp theo:** RT-04 (luồng quyết định profile được giữ sau AI), RT-01 (các thuộc tính chưa có mapping, tránh fallback sai), kiểm định DOCX đầu ra và WPS-PDF thực tế, sau đó xử lý mismatch dependencies nếu chuẩn bị release.
