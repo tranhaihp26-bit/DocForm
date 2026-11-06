@@ -1,0 +1,779 @@
+{
+  "states": {
+    "state1_no_source": {
+      "1366x768": {
+        "viewport": {
+          "w": 1366,
+          "h": 768
+        },
+        "horizontalOverflow": false,
+        "scrollWidth": 1366,
+        "sidebarRect": {
+          "x": 18,
+          "y": 71,
+          "w": 236,
+          "h": 679
+        },
+        "mainRect": {
+          "x": 270,
+          "y": 71,
+          "w": 1063,
+          "h": 377
+        },
+        "contextRect": null,
+        "primaryBtnRect": {
+          "x": 377,
+          "y": 227,
+          "w": 418,
+          "h": 190
+        },
+        "primaryBtnText": "Tải tài liệu có sẵnĐọc DOCX/TXT, nhận diện nội dung và duyệt nguồn trước khi soạn.Tải tài liệu",
+        "screenshot": "docs/superpowers/audits/2026-11-04-desktop-ux-evidence/01-no-source-1366x768.png"
+      },
+      "1920x1080": {
+        "viewport": {
+          "w": 1920,
+          "h": 1080
+        },
+        "horizontalOverflow": false,
+        "scrollWidth": 1920,
+        "sidebarRect": {
+          "x": 18,
+          "y": 71,
+          "w": 236,
+          "h": 991
+        },
+        "mainRect": {
+          "x": 519,
+          "y": 71,
+          "w": 1120,
+          "h": 379
+        },
+        "contextRect": null,
+        "primaryBtnRect": {
+          "x": 654,
+          "y": 229,
+          "w": 418,
+          "h": 190
+        },
+        "primaryBtnText": "Tải tài liệu có sẵnĐọc DOCX/TXT, nhận diện nội dung và duyệt nguồn trước khi soạn.Tải tài liệu",
+        "screenshot": "docs/superpowers/audits/2026-11-04-desktop-ux-evidence/01-no-source-1920x1080.png"
+      }
+    },
+    "state2_recognizing": {
+      "1366x768": {
+        "viewport": {
+          "w": 1366,
+          "h": 768
+        },
+        "horizontalOverflow": false,
+        "scrollWidth": 1366,
+        "sidebarRect": {
+          "x": 18,
+          "y": 71,
+          "w": 236,
+          "h": 679
+        },
+        "mainRect": {
+          "x": 270,
+          "y": 71,
+          "w": 1063,
+          "h": 445
+        },
+        "contextRect": null,
+        "primaryBtnRect": null,
+        "primaryBtnText": null,
+        "screenshot": "docs/superpowers/audits/2026-11-04-desktop-ux-evidence/02-recognizing-1366x768.png"
+      },
+      "1920x1080": {
+        "viewport": {
+          "w": 1920,
+          "h": 1080
+        },
+        "horizontalOverflow": false,
+        "scrollWidth": 1920,
+        "sidebarRect": {
+          "x": 18,
+          "y": 71,
+          "w": 236,
+          "h": 991
+        },
+        "mainRect": {
+          "x": 519,
+          "y": 71,
+          "w": 1120,
+          "h": 535
+        },
+        "contextRect": null,
+        "primaryBtnRect": null,
+        "primaryBtnText": null,
+        "screenshot": "docs/superpowers/audits/2026-11-04-desktop-ux-evidence/02-recognizing-1920x1080.png"
+      }
+    },
+    "state3_source_needs_review_modal": {
+      "1366x768": {
+        "viewport": {
+          "w": 1366,
+          "h": 768
+        },
+        "horizontalOverflow": false,
+        "scrollWidth": 1366,
+        "sidebarRect": {
+          "x": 18,
+          "y": 104,
+          "w": 236,
+          "h": 646
+        },
+        "mainRect": {
+          "x": 270,
+          "y": 104,
+          "w": 1005,
+          "h": 577
+        },
+        "contextRect": {
+          "x": 1287,
+          "y": 120,
+          "w": 46,
+          "h": 77
+        },
+        "primaryBtnRect": null,
+        "primaryBtnText": null,
+        "screenshot": "docs/superpowers/audits/2026-11-04-desktop-ux-evidence/03a-source-needs-review-modal-1366x768.png"
+      },
+      "1920x1080": {
+        "viewport": {
+          "w": 1920,
+          "h": 1080
+        },
+        "horizontalOverflow": false,
+        "scrollWidth": 1920,
+        "sidebarRect": {
+          "x": 18,
+          "y": 104,
+          "w": 236,
+          "h": 958
+        },
+        "mainRect": {
+          "x": 350,
+          "y": 104,
+          "w": 1120,
+          "h": 597
+        },
+        "contextRect": {
+          "x": 1567,
+          "y": 120,
+          "w": 280,
+          "h": 578
+        },
+        "primaryBtnRect": null,
+        "primaryBtnText": null,
+        "screenshot": "docs/superpowers/audits/2026-11-04-desktop-ux-evidence/03a-source-needs-review-modal-1920x1080.png"
+      }
+    },
+    "state3_source_needs_review_step1": {
+      "1366x768": {
+        "viewport": {
+          "w": 1366,
+          "h": 768
+        },
+        "horizontalOverflow": false,
+        "scrollWidth": 1366,
+        "sidebarRect": {
+          "x": 18,
+          "y": 71,
+          "w": 236,
+          "h": 679
+        },
+        "mainRect": {
+          "x": 270,
+          "y": 71,
+          "w": 1005,
+          "h": 577
+        },
+        "contextRect": {
+          "x": 1287,
+          "y": 87,
+          "w": 46,
+          "h": 77
+        },
+        "primaryBtnRect": null,
+        "primaryBtnText": null,
+        "screenshot": "docs/superpowers/audits/2026-11-04-desktop-ux-evidence/03b-source-needs-review-step1-1366x768.png"
+      },
+      "1920x1080": {
+        "viewport": {
+          "w": 1920,
+          "h": 1080
+        },
+        "horizontalOverflow": false,
+        "scrollWidth": 1920,
+        "sidebarRect": {
+          "x": 18,
+          "y": 71,
+          "w": 236,
+          "h": 991
+        },
+        "mainRect": {
+          "x": 350,
+          "y": 71,
+          "w": 1120,
+          "h": 597
+        },
+        "contextRect": {
+          "x": 1567,
+          "y": 87,
+          "w": 280,
+          "h": 578
+        },
+        "primaryBtnRect": null,
+        "primaryBtnText": null,
+        "screenshot": "docs/superpowers/audits/2026-11-04-desktop-ux-evidence/03b-source-needs-review-step1-1920x1080.png"
+      }
+    },
+    "state5_step3_downloadable": {
+      "1366x768": {
+        "viewport": {
+          "w": 1366,
+          "h": 768
+        },
+        "horizontalOverflow": false,
+        "scrollWidth": 1366,
+        "sidebarRect": {
+          "x": 18,
+          "y": 104,
+          "w": 236,
+          "h": 646
+        },
+        "mainRect": {
+          "x": 270,
+          "y": 104,
+          "w": 746,
+          "h": 646
+        },
+        "contextRect": {
+          "x": 1028,
+          "y": 104,
+          "w": 320,
+          "h": 646
+        },
+        "primaryBtnRect": {
+          "x": 1041,
+          "y": 519,
+          "w": 294,
+          "h": 40
+        },
+        "primaryBtnText": "Tải xuống DOCX",
+        "screenshot": "docs/superpowers/audits/2026-11-04-desktop-ux-evidence/05-step3-downloadable-1366x768.png"
+      },
+      "1920x1080": {
+        "viewport": {
+          "w": 1920,
+          "h": 1080
+        },
+        "horizontalOverflow": false,
+        "scrollWidth": 1920,
+        "sidebarRect": {
+          "x": 18,
+          "y": 104,
+          "w": 236,
+          "h": 958
+        },
+        "mainRect": {
+          "x": 270,
+          "y": 104,
+          "w": 1300,
+          "h": 958
+        },
+        "contextRect": {
+          "x": 1582,
+          "y": 104,
+          "w": 320,
+          "h": 958
+        },
+        "primaryBtnRect": {
+          "x": 1595,
+          "y": 831,
+          "w": 294,
+          "h": 40
+        },
+        "primaryBtnText": "Tải xuống DOCX",
+        "screenshot": "docs/superpowers/audits/2026-11-04-desktop-ux-evidence/05-step3-downloadable-1920x1080.png"
+      }
+    },
+    "state8_step3_stale": {
+      "1366x768": {
+        "viewport": {
+          "w": 1366,
+          "h": 768
+        },
+        "horizontalOverflow": false,
+        "scrollWidth": 1366,
+        "sidebarRect": {
+          "x": 18,
+          "y": 71,
+          "w": 236,
+          "h": 679
+        },
+        "mainRect": {
+          "x": 270,
+          "y": 71,
+          "w": 746,
+          "h": 679
+        },
+        "contextRect": {
+          "x": 1028,
+          "y": 71,
+          "w": 320,
+          "h": 679
+        },
+        "primaryBtnRect": {
+          "x": 1041,
+          "y": 602,
+          "w": 294,
+          "h": 40
+        },
+        "primaryBtnText": "Tải Word (Cần tạo lại bản mới)",
+        "screenshot": "docs/superpowers/audits/2026-11-04-desktop-ux-evidence/08-step3-stale-after-edit-1366x768.png"
+      },
+      "1920x1080": {
+        "viewport": {
+          "w": 1920,
+          "h": 1080
+        },
+        "horizontalOverflow": false,
+        "scrollWidth": 1920,
+        "sidebarRect": {
+          "x": 18,
+          "y": 71,
+          "w": 236,
+          "h": 991
+        },
+        "mainRect": {
+          "x": 270,
+          "y": 71,
+          "w": 1300,
+          "h": 991
+        },
+        "contextRect": {
+          "x": 1582,
+          "y": 71,
+          "w": 320,
+          "h": 991
+        },
+        "primaryBtnRect": {
+          "x": 1595,
+          "y": 914,
+          "w": 294,
+          "h": 40
+        },
+        "primaryBtnText": "Tải Word (Cần tạo lại bản mới)",
+        "screenshot": "docs/superpowers/audits/2026-11-04-desktop-ux-evidence/08-step3-stale-after-edit-1920x1080.png"
+      }
+    },
+    "state7_step3_error": {
+      "1366x768": {
+        "viewport": {
+          "w": 1366,
+          "h": 768
+        },
+        "horizontalOverflow": false,
+        "scrollWidth": 1366,
+        "sidebarRect": {
+          "x": 18,
+          "y": 71,
+          "w": 236,
+          "h": 679
+        },
+        "mainRect": {
+          "x": 270,
+          "y": 71,
+          "w": 746,
+          "h": 679
+        },
+        "contextRect": {
+          "x": 1028,
+          "y": 71,
+          "w": 320,
+          "h": 679
+        },
+        "primaryBtnRect": null,
+        "primaryBtnText": null,
+        "screenshot": "docs/superpowers/audits/2026-11-04-desktop-ux-evidence/07-step3-word-error-1366x768.png"
+      },
+      "1920x1080": {
+        "viewport": {
+          "w": 1920,
+          "h": 1080
+        },
+        "horizontalOverflow": false,
+        "scrollWidth": 1920,
+        "sidebarRect": {
+          "x": 18,
+          "y": 71,
+          "w": 236,
+          "h": 991
+        },
+        "mainRect": {
+          "x": 270,
+          "y": 71,
+          "w": 1300,
+          "h": 991
+        },
+        "contextRect": {
+          "x": 1582,
+          "y": 71,
+          "w": 320,
+          "h": 991
+        },
+        "primaryBtnRect": null,
+        "primaryBtnText": null,
+        "screenshot": "docs/superpowers/audits/2026-11-04-desktop-ux-evidence/07-step3-word-error-1920x1080.png"
+      }
+    },
+    "state4_step2_with_warnings": {
+      "1366x768": {
+        "viewport": {
+          "w": 1366,
+          "h": 768
+        },
+        "horizontalOverflow": false,
+        "scrollWidth": 1366,
+        "sidebarRect": {
+          "x": 18,
+          "y": 71,
+          "w": 236,
+          "h": 679
+        },
+        "mainRect": {
+          "x": 270,
+          "y": 71,
+          "w": 746,
+          "h": 679
+        },
+        "contextRect": {
+          "x": 1028,
+          "y": 71,
+          "w": 320,
+          "h": 679
+        },
+        "primaryBtnRect": {
+          "x": 778,
+          "y": 10,
+          "w": 159,
+          "h": 36
+        },
+        "primaryBtnText": "Tiếp tục xem & xuất →",
+        "screenshot": "docs/superpowers/audits/2026-11-04-desktop-ux-evidence/04-step2-editor-warnings-1366x768.png"
+      },
+      "1920x1080": {
+        "viewport": {
+          "w": 1920,
+          "h": 1080
+        },
+        "horizontalOverflow": false,
+        "scrollWidth": 1920,
+        "sidebarRect": {
+          "x": 18,
+          "y": 71,
+          "w": 236,
+          "h": 991
+        },
+        "mainRect": {
+          "x": 270,
+          "y": 71,
+          "w": 1300,
+          "h": 991
+        },
+        "contextRect": {
+          "x": 1582,
+          "y": 71,
+          "w": 320,
+          "h": 991
+        },
+        "primaryBtnRect": {
+          "x": 1355,
+          "y": 10,
+          "w": 159,
+          "h": 36
+        },
+        "primaryBtnText": "Tiếp tục xem & xuất →",
+        "screenshot": "docs/superpowers/audits/2026-11-04-desktop-ux-evidence/04-step2-editor-warnings-1920x1080.png"
+      }
+    },
+    "state6_step3_review_only": {
+      "1366x768": {
+        "viewport": {
+          "w": 1366,
+          "h": 768
+        },
+        "horizontalOverflow": false,
+        "scrollWidth": 1366,
+        "sidebarRect": {
+          "x": 18,
+          "y": 71,
+          "w": 236,
+          "h": 679
+        },
+        "mainRect": {
+          "x": 270,
+          "y": 71,
+          "w": 746,
+          "h": 679
+        },
+        "contextRect": {
+          "x": 1028,
+          "y": 71,
+          "w": 320,
+          "h": 679
+        },
+        "primaryBtnRect": {
+          "x": 1041,
+          "y": 519,
+          "w": 294,
+          "h": 40
+        },
+        "primaryBtnText": "Tải bản đối chiếu DOCX",
+        "screenshot": "docs/superpowers/audits/2026-11-04-desktop-ux-evidence/06-step3-review-only-1366x768.png"
+      },
+      "1920x1080": {
+        "viewport": {
+          "w": 1920,
+          "h": 1080
+        },
+        "horizontalOverflow": false,
+        "scrollWidth": 1920,
+        "sidebarRect": {
+          "x": 18,
+          "y": 71,
+          "w": 236,
+          "h": 991
+        },
+        "mainRect": {
+          "x": 270,
+          "y": 71,
+          "w": 1300,
+          "h": 991
+        },
+        "contextRect": {
+          "x": 1582,
+          "y": 71,
+          "w": 320,
+          "h": 991
+        },
+        "primaryBtnRect": {
+          "x": 1595,
+          "y": 831,
+          "w": 294,
+          "h": 40
+        },
+        "primaryBtnText": "Tải bản đối chiếu DOCX",
+        "screenshot": "docs/superpowers/audits/2026-11-04-desktop-ux-evidence/06-step3-review-only-1920x1080.png"
+      }
+    }
+  },
+  "keyboardFocus": {
+    "step1": {
+      "tag": "DIV",
+      "text": "Văn bản mới · chưa chọn nguồn",
+      "outline": "rgb(98, 85, 232) solid 3px",
+      "boxShadow": "none"
+    }
+  },
+  "libreOffice": {
+    "executable": "C:\\Program Files\\LibreOffice\\program\\soffice.exe",
+    "syntheticCandidate": {
+      "exitCode": 0,
+      "pdfBytes": 135145,
+      "pageCount": 1
+    },
+    "pilotComparison": {
+      "status": "EVALUATED_LIBREOFFICE",
+      "sofficeExitCodes": {
+        "source": 0,
+        "candidate": 0
+      },
+      "sourcePdfBytes": 157699,
+      "candidatePdfBytes": 199931,
+      "sourcePageCount": 1,
+      "candidatePageCount": 1,
+      "candidateSafe": false,
+      "candidateReviewDownloadable": true,
+      "candidateBlockers": [
+        "unsupported_source_ooxml:block-2"
+      ],
+      "tableFidelitySafe": true,
+      "contentFidelitySafe": true,
+      "evidence": {
+        "page_width_mm": 209.9909722222222,
+        "page_height_mm": 296.9859722222222,
+        "margin_top_mm": 19.98486111111111,
+        "margin_bottom_mm": 19.98486111111111,
+        "margin_left_mm": 29.98611111111111,
+        "margin_right_mm": 14.993055555555555,
+        "has_party_title": false,
+        "has_issuer_star": false,
+        "has_five_hyphens": false,
+        "orientation": "portrait",
+        "issuer_underline_fraction": 0.5051075853075419,
+        "motto_underline_length_relation": "equal_to_text_length",
+        "header_table_width_twips": 10432,
+        "header_left_col_twips": 5187,
+        "header_right_col_twips": 5245,
+        "has_nd30_shape_lines": true,
+        "has_hd05_shape_line": false,
+        "body_evidence": {
+          "directParagraphsCount": 17,
+          "directParagraphs": [
+            {
+              "index": 0,
+              "role": "empty_spacer",
+              "isEligibleBody": false
+            },
+            {
+              "index": 1,
+              "role": "document_type",
+              "isEligibleBody": false,
+              "fontSizePt": 14,
+              "lineSpacingDxa": 276,
+              "alignment": "center"
+            },
+            {
+              "index": 2,
+              "role": "body_paragraph",
+              "isEligibleBody": true,
+              "fontSizePt": 14,
+              "lineSpacingDxa": 276,
+              "alignment": "center"
+            },
+            {
+              "index": 3,
+              "role": "empty_spacer",
+              "isEligibleBody": false,
+              "lineSpacingDxa": 1
+            },
+            {
+              "index": 4,
+              "role": "recipients",
+              "isEligibleBody": false,
+              "fontSizePt": 14,
+              "firstLineIndentDxa": 720,
+              "lineSpacingDxa": 380,
+              "alignment": "both"
+            },
+            {
+              "index": 5,
+              "role": "body_paragraph",
+              "isEligibleBody": true,
+              "fontSizePt": 14,
+              "firstLineIndentDxa": 720,
+              "lineSpacingDxa": 380,
+              "alignment": "both"
+            },
+            {
+              "index": 6,
+              "role": "body_paragraph",
+              "isEligibleBody": true,
+              "fontSizePt": 14,
+              "firstLineIndentDxa": 720,
+              "lineSpacingDxa": 380,
+              "alignment": "both"
+            },
+            {
+              "index": 7,
+              "role": "body_paragraph",
+              "isEligibleBody": true,
+              "fontSizePt": 14,
+              "firstLineIndentDxa": 720,
+              "lineSpacingDxa": 380,
+              "alignment": "both"
+            },
+            {
+              "index": 8,
+              "role": "body_paragraph",
+              "isEligibleBody": true,
+              "fontSizePt": 14,
+              "firstLineIndentDxa": 720,
+              "lineSpacingDxa": 380,
+              "alignment": "both"
+            },
+            {
+              "index": 9,
+              "role": "heading",
+              "isEligibleBody": false,
+              "fontSizePt": 14,
+              "firstLineIndentDxa": 720,
+              "lineSpacingDxa": 380,
+              "alignment": "both"
+            },
+            {
+              "index": 10,
+              "role": "heading",
+              "isEligibleBody": false,
+              "fontSizePt": 14,
+              "firstLineIndentDxa": 720,
+              "lineSpacingDxa": 380,
+              "alignment": "both"
+            },
+            {
+              "index": 11,
+              "role": "body_paragraph",
+              "isEligibleBody": true,
+              "fontSizePt": 14,
+              "firstLineIndentDxa": 720,
+              "lineSpacingDxa": 380,
+              "alignment": "both"
+            },
+            {
+              "index": 12,
+              "role": "empty_spacer",
+              "isEligibleBody": false,
+              "lineSpacingDxa": 1
+            },
+            {
+              "index": 13,
+              "role": "empty_spacer",
+              "isEligibleBody": false
+            },
+            {
+              "index": 14,
+              "role": "empty_spacer",
+              "isEligibleBody": false,
+              "lineSpacingDxa": 1
+            },
+            {
+              "index": 15,
+              "role": "empty_spacer",
+              "isEligibleBody": false,
+              "lineSpacingDxa": 1
+            },
+            {
+              "index": 16,
+              "role": "empty_spacer",
+              "isEligibleBody": false,
+              "lineSpacingDxa": 1
+            }
+          ],
+          "hasDirectBodyParagraphs": true,
+          "evaluatedParagraphsCount": 6,
+          "excludedParagraphsCount": 11,
+          "firstLineIndentRangeDxa": {
+            "min": 720,
+            "max": 720
+          },
+          "fontSizeRangePt": {
+            "min": 14,
+            "max": 14
+          },
+          "lineSpacingRangeDxa": {
+            "min": 276,
+            "max": 380
+          }
+        }
+      }
+    },
+    "msWordComparison": {
+      "status": "NOT_EVALUATED",
+      "reason": "Máy hiện tại không cài Microsoft Word (WINWORD.EXE / Word.Application COM không khả dụng)."
+    }
+  }
+}

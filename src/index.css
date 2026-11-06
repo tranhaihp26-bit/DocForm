@@ -950,7 +950,8 @@
 /* Three-step navigation lives in the sidebar; the header keeps document controls. */
 .df-header-save-status {
   box-sizing: border-box;
-  width: 108px;
+  min-width: 108px;
+  width: auto;
   justify-content: center;
   white-space: nowrap;
 }

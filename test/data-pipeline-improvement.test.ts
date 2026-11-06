@@ -6,7 +6,7 @@ import { segmentSourceBlocks } from "../src/server/structuralSegmenter.ts";
 import { isSeparatorParagraph, containsSeparatorParagraph, startsWithSeparatorParagraph } from "../src/shared/separator.ts";
 import { isDecorativeLineShape, hasReplaceableHeaderShapeLines } from "../src/utils/sourceHeaderShapes.ts";
 import { createWorkspaceSnapshot, makePartition, workspaceInvariantErrors } from "../src/utils/workspaceState.ts";
-import { approveWorkspacePartition } from "../src/utils/workspaceTransactions.ts";
+import { approveWorkspacePartition, transactWorkspace } from "../src/utils/workspaceTransactions.ts";
 import { reconstructFromReviewedBlocks } from "../src/utils/importReview.ts";
 import { prepareExportCandidate, isCandidateEligibleForExport, isPackageSafeForDiagnosticRender } from "../src/utils/exportCandidate.ts";
 import { generateND30DocxBuffer } from "../src/utils/docxExport.ts";
@@ -363,6 +363,65 @@ test("Đợt A & B: Nguồn có chữ ký / nơi nhận nhưng đích rỗng ph�
     coverage.violations.some(v => v.includes("missing_recipients_destination")),
     `Phải phát hiện nơi nhận chưa có đích: ${JSON.stringify(coverage.violations)}`
   );
+});
+
+test("Nơi nhận tách thành các đoạn nguồn vẫn được bảo toàn, nhưng dòng trùng không được dùng chung một đích", () => {
+  const blocks: SourceBlock[] = [
+    { id: "rec-heading", index: 0, kind: "paragraph", role: "recipients", text: "Nơi nhận:" },
+    { id: "rec-first", index: 1, kind: "paragraph", role: "recipients", text: "- Lưu: VT." },
+    { id: "rec-second", index: 2, kind: "paragraph", role: "recipients", text: "- Lưu: VT." },
+  ];
+  const snapshot = (recipients: string) => createWorkspaceSnapshot({
+    doc: makeDoc({ recipients, bodyHtml: "" }),
+    standardType: "state",
+    reviewBlocks: blocks,
+    structuredImport: null,
+  }, { blobHash: "hash-split-recipients", generation: 1 });
+
+  assert.equal(buildSourceToWorkspaceCoverage(snapshot("Nơi nhận:\n- Lưu: VT.\n- Lưu: VT.")).isFullyCovered, true);
+  const incomplete = buildSourceToWorkspaceCoverage(snapshot("Nơi nhận:\n- Lưu: VT."));
+  assert.equal(incomplete.isFullyCovered, false);
+  assert.ok(incomplete.violations.includes("missing_recipients_destination:rec-second"));
+});
+
+test("Trích yếu bắt đầu bằng tên loại vẫn ánh xạ vào đúng trường trích yếu", () => {
+  const block: SourceBlock = { id: "subject-plan", index: 0, kind: "paragraph", role: "metadata", text: "Kế hoạch thử nghiệm cổng văn bản" };
+  const snapshot = (subject: string) => createWorkspaceSnapshot({
+    doc: makeDoc({ documentType: "KẾ HOẠCH", subject, bodyHtml: "" }),
+    standardType: "state",
+    reviewBlocks: [block],
+    structuredImport: null,
+  }, { blobHash: "hash-subject-plan", generation: 1 });
+
+  assert.equal(buildSourceToWorkspaceCoverage(snapshot(block.text)).isFullyCovered, true);
+  assert.equal(buildSourceToWorkspaceCoverage(snapshot("Kế hoạch đã đổi nội dung")).isFullyCovered, false);
+});
+
+test("Đổi loại văn bản được ghi là chỉnh sửa có nguồn, còn mất loại nguồn không có giao dịch vẫn bị chặn", () => {
+  const block: SourceBlock = { id: "source-type", index: 0, kind: "paragraph", role: "metadata", text: "KẾ HOẠCH" };
+  const body: SourceBlock = { id: "source-body", index: 1, kind: "paragraph", role: "body", text: "Nội dung.", html: "<p>Nội dung.</p>" };
+  const snapshot = createWorkspaceSnapshot({
+    doc: makeDoc({ documentType: "KẾ HOẠCH" }),
+    standardType: "state",
+    reviewBlocks: [block, body],
+    structuredImport: { fields: { documentType: { value: "KẾ HOẠCH", sourceBlockIds: [block.id] } } } as any,
+  }, { blobHash: "hash-type-edit", generation: 1 });
+  const approved = approveWorkspacePartition(snapshot);
+  assert.equal(approved.ok, true, approved.ok ? '' : approved.details.join(', '));
+  if (!approved.ok) return;
+
+  const edited = transactWorkspace(approved.snapshot, approved.snapshot.workspace.workingRevision,
+    { type: "editField", field: "documentType", value: "THÔNG BÁO" });
+  assert.equal(edited.ok, true);
+  if (!edited.ok) return;
+  assert.equal(edited.snapshot.workspace.ledger.at(-1)?.sourceRefs.includes(block.id), true);
+  assert.equal(buildSourceToWorkspaceCoverage(edited.snapshot).isFullyCovered, true);
+
+  const untracked = createWorkspaceSnapshot({
+    doc: makeDoc({ documentType: "THÔNG BÁO" }), standardType: "state",
+    reviewBlocks: [block, body], structuredImport: snapshot.structuredImport,
+  }, { blobHash: "hash-type-untracked", generation: 1 });
+  assert.equal(buildSourceToWorkspaceCoverage(untracked).isFullyCovered, false);
 });
 
 test("Đợt C: Nhận diện đường kẻ Shape độc lập thứ tự thuộc tính XML và kiểm tra Fallback (P2 Fix)", () => {
@@ -929,4 +988,125 @@ test("B1-R5: Ánh xạ nhiều người ký giữ cặp chức danh và họ tê
 
   assert.equal(buildSourceToWorkspaceCoverage(snapshot).isFullyCovered, true, "Cặp nhiều người ký được giữ đúng thứ tự phải được bao phủ");
   assert.equal(approveWorkspacePartition(snapshot).ok, true, "Cổng B1 phải chấp nhận nhiều người ký được giữ đúng cặp");
+});
+
+test("Cổng ứng viên: Hoa Tiêu thay thế Shape phần đầu an toàn; profile chung hoặc Shape ở trích yếu vẫn giữ chỉ đối chiếu", async () => {
+  const { COMPANY_HEADER_PROFILE_ID, COMPANY_HEADER_PARENT, COMPANY_HEADER_ISSUER, COMPANY_NATIONAL_HEADER, COMPANY_MOTTO } = await import("../src/canonical/nd30/companyHeader.ts");
+  const { describeExportBlocker } = await import("../src/utils/workspaceExportMessages.ts");
+
+  const shapeFragment = `<mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">
+    <mc:Choice Requires="wps">
+      <w:drawing><wp:anchor><wp:extent cx="1667241" cy="0"/><a:graphic><a:graphicData><a:prstGeom prst="line"/></a:graphicData></a:graphic></wp:anchor></w:drawing>
+    </mc:Choice>
+    <mc:Fallback>
+      <w:pict><v:line from="0,0" to="131.3pt,0"/></w:pict>
+    </mc:Fallback>
+  </mc:AlternateContent>`;
+
+  const headerBlock: SourceBlock = {
+    ...makeSourceTableBlock("block-0", 0, "header", [
+      { cellId: "c_org", text: `${COMPANY_HEADER_PARENT}\n${COMPANY_HEADER_ISSUER}` },
+      { cellId: "c_nat", text: `${COMPANY_NATIONAL_HEADER}\n${COMPANY_MOTTO}` },
+      { cellId: "c_ref", text: "Số: 01/TB-HTMB" },
+      { cellId: "c_loc", text: "Hải Phòng, ngày 20 tháng 10 năm 2026" },
+    ]),
+    rawXml: `<w:tbl>${shapeFragment}${shapeFragment}</w:tbl>`,
+    unsupportedFeatures: [{
+      code: "drawing_or_image",
+      tableId: "block-0",
+      blockId: "block-0",
+      description: "Bảng chứa đối tượng hình ảnh/vẽ (w:drawing/w:pict) chưa hỗ trợ bảo toàn cấu trúc",
+    }],
+  };
+  const typeBlock: SourceBlock = { id: "block-1", index: 1, kind: "paragraph", role: "metadata", text: "THÔNG BÁO" };
+  const subjectPlainBlock: SourceBlock = { id: "block-2", index: 2, kind: "paragraph", role: "metadata", text: "Về việc kiểm thử phần đầu Hoa Tiêu" };
+  const bodyBlock: SourceBlock = { id: "block-3", index: 3, kind: "paragraph", role: "body", text: "Nội dung thân bài kiểm thử.", html: "<p>Nội dung thân bài kiểm thử.</p>" };
+
+  const makeApprovedSnapshot = (headerProfile: "generic" | typeof COMPANY_HEADER_PROFILE_ID, subjectBlock: SourceBlock, orgHeader2 = COMPANY_HEADER_ISSUER) => {
+    const effectiveHeaderBlock: SourceBlock = {
+      ...headerBlock,
+      text: `${COMPANY_HEADER_PARENT}\n${orgHeader2}\t${COMPANY_NATIONAL_HEADER}\n${COMPANY_MOTTO}\tSố: 01/TB-HTMB\tHải Phòng, ngày 20 tháng 10 năm 2026`,
+      tableModel: {
+        ...headerBlock.tableModel!,
+        rows: [{
+          ...headerBlock.tableModel!.rows[0],
+          cells: [
+            { ...headerBlock.tableModel!.rows[0].cells[0], text: `${COMPANY_HEADER_PARENT}\n${orgHeader2}` },
+            headerBlock.tableModel!.rows[0].cells[1],
+            headerBlock.tableModel!.rows[0].cells[2],
+            headerBlock.tableModel!.rows[0].cells[3],
+          ],
+        }],
+      },
+    };
+    const blocks = [effectiveHeaderBlock, typeBlock, subjectBlock, bodyBlock];
+    const structuredImport = {
+      fields: {
+        orgHeader1: { value: COMPANY_HEADER_PARENT, sourceBlockIds: ["block-0"] },
+        orgHeader2: { value: orgHeader2, sourceBlockIds: ["block-0"] },
+        nationalHeader1: { value: COMPANY_NATIONAL_HEADER, sourceBlockIds: ["block-0"] },
+        nationalHeader2: { value: COMPANY_MOTTO, sourceBlockIds: ["block-0"] },
+        referenceNumber: { value: "Số: 01/TB-HTMB", sourceBlockIds: ["block-0"] },
+        locationAndDate: { value: "Hải Phòng, ngày 20 tháng 10 năm 2026", sourceBlockIds: ["block-0"] },
+        documentType: { value: "THÔNG BÁO", sourceBlockIds: ["block-1"] },
+        subject: { value: "Về việc kiểm thử phần đầu Hoa Tiêu", sourceBlockIds: ["block-2"] },
+      },
+      importFidelityManifest: {
+        sourceKind: "uploaded_docx" as const,
+        sourceBlockIds: blocks.map(b => b.id),
+        tableIds: [],
+        unsupportedFeatures: effectiveHeaderBlock.unsupportedFeatures ?? [],
+      },
+    } as any;
+    const snap = createWorkspaceSnapshot({
+      doc: makeDoc({
+        headerProfile,
+        orgHeader1: COMPANY_HEADER_PARENT,
+        orgHeader2,
+        nationalHeader1: COMPANY_NATIONAL_HEADER,
+        nationalHeader2: COMPANY_MOTTO,
+        referenceNumber: "Số: 01/TB-HTMB",
+        locationAndDate: "Hải Phòng, ngày 20 tháng 10 năm 2026",
+        documentType: "THÔNG BÁO",
+        subject: "Về việc kiểm thử phần đầu Hoa Tiêu",
+        bodyHtml: "<p>Nội dung thân bài kiểm thử.</p>",
+      }),
+      standardType: "state",
+      reviewBlocks: blocks,
+      structuredImport,
+    }, { blobHash: `hash-shape-gate-${headerProfile}-${orgHeader2}-${ Boolean(subjectBlock.rawXml) }`, generation: 1, blocks });
+    const approved = approveWorkspacePartition(snap);
+    if (!approved.ok) throw new Error(approved.details.join(", "));
+    return approved.snapshot;
+  };
+
+  // 1) Hoa Tiêu profile với bảng đầu chỉ chứa đường kẻ Shape có thể thay thế -> safe & downloadable
+  const hoaTieuSnap = makeApprovedSnapshot(COMPANY_HEADER_PROFILE_ID, subjectPlainBlock, COMPANY_HEADER_ISSUER);
+  const hoaTieuCandidate = await prepareExportCandidate(hoaTieuSnap);
+  assert.equal(hoaTieuCandidate.profileHeaderLines, 2, "Ứng viên Hoa Tiêu NĐ30 phải đóng dấu 2 đường kẻ Shape");
+  assert.equal(hoaTieuCandidate.exportSafety.decision, "allow", "Sau khi xác minh thay thế Shape phần đầu Hoa Tiêu, exportSafety phải cho phép");
+  assert.equal(hoaTieuCandidate.safe, true, "Ứng viên Hoa Tiêu thay thế hợp lệ phải đạt safe: true");
+  assert.equal(hoaTieuCandidate.downloadable, true, "Ứng viên Hoa Tiêu thay thế hợp lệ phải đạt downloadable: true");
+
+  // 2) Cơ quan khác Hoa Tiêu (generic profile) có Shape phần đầu -> giữ trạng thái chỉ đối chiếu
+  const genericSnap = makeApprovedSnapshot("generic", subjectPlainBlock, "ĐOÀN THANH NIÊN ĐƠN VỊ");
+  const genericCandidate = await prepareExportCandidate(genericSnap);
+  assert.equal(genericCandidate.safe, false, "Profile generic không đóng dấu Shape gốc nên không được coi là safe");
+  assert.equal(genericCandidate.downloadable, false, "Profile generic có Shape nguồn phải khóa tải bản chính thức");
+  assert.equal(genericCandidate.reviewDownloadable, true, "Vẫn cho phép tải bản đối chiếu chưa xác nhận");
+  assert.ok(genericCandidate.blockers.includes("unsupported_source_ooxml:block-0"));
+
+  // 3) Khối trích yếu (block-2) có gắn kèm đối tượng Shape Line (như tệp pilot thực) -> giữ trạng thái chỉ đối chiếu
+  const subjectWithShape: SourceBlock = {
+    ...subjectPlainBlock,
+    rawXml: `<w:p>${shapeFragment}</w:p>`,
+  };
+  const pilotLikeSnap = makeApprovedSnapshot("generic", subjectWithShape, "ĐOÀN THANH NIÊN ĐƠN VỊ");
+  const pilotLikeCandidate = await prepareExportCandidate(pilotLikeSnap);
+  assert.equal(pilotLikeCandidate.safe, false, "Shape trong khối trích yếu chưa được chứng minh bảo toàn phải giữ safe: false");
+  assert.equal(pilotLikeCandidate.downloadable, false, "Phải khóa tải chính thức khi còn blocker OOXML ở block-0 và block-2");
+  assert.equal(pilotLikeCandidate.reviewDownloadable, true, "Phải giữ chế độ tải bản đối chiếu");
+  assert.deepEqual(pilotLikeCandidate.blockers, ["unsupported_source_ooxml:block-0", "unsupported_source_ooxml:block-2"]);
+  assert.match(describeExportBlocker("unsupported_source_ooxml:block-0").messageVi, /#1 \(block-0\)/);
+  assert.match(describeExportBlocker("unsupported_source_ooxml:block-2").messageVi, /#3 \(block-2\)/);
 });

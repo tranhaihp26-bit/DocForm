@@ -356,7 +356,7 @@ function ComponentCard({
 
 export function WorkspaceEditor({
   snapshot, active, initialCanvasId, onCanvasSelected, onAction, onRequestRegimeSwitch, onPartition, onRefine,
-  refining, aiProvider = 'gemini', chatGPTReady = true, onAiSettings = () => {}, canContinue, complianceReport, onOpenCompliance,
+  refining, aiProvider = 'gemini', chatGPTReady = true, onAiSettings = () => {}, canContinue, complianceReport, complianceRevision, onOpenCompliance,
 }: {
   snapshot: WorkspaceSnapshot;
   active: boolean;
@@ -372,6 +372,7 @@ export function WorkspaceEditor({
   onAiSettings?: () => void;
   canContinue: boolean;
   complianceReport: ND30ComplianceReport | null;
+  complianceRevision: number | null;
   onOpenCompliance: () => void;
 }) {
   const projection = projectWorkspace(snapshot);
@@ -379,7 +380,7 @@ export function WorkspaceEditor({
   const [activeCanvas, setActiveCanvas] = useState(initialCanvasId);
   const [activeEditorId, setActiveEditorId] = useState('');
   const [contextOpen, setContextOpen] = useState(false);
-  const [contextTab, setContextTab] = useState<'ai' | 'checks'>('ai');
+  const [contextTab, setContextTab] = useState<'ai' | 'checks'>('checks');
   const [canvasExpanded, setCanvasExpanded] = useState(false);
   useEffect(() => {
     if (!active) setCanvasExpanded(false);
@@ -417,6 +418,67 @@ export function WorkspaceEditor({
     .sort((a, b) => printOrder.indexOf(a.id) - printOrder.indexOf(b.id));
   const afterGroups = projection.groups.filter(group => group.id >= 7 && group.id <= 9);
   const isOfficialLetter = snapshot.doc.documentType.trim().toLocaleUpperCase('vi-VN').startsWith('CÔNG VĂN');
+
+  const mapIssueToTarget = (field: string): { selector: string; label: string } | null => {
+    if (field === 'referenceNumber') return { selector: '#df-step2-group-3', label: 'Mở số, ký hiệu' };
+    if (field === 'locationAndDate') return { selector: '#df-step2-group-4', label: 'Mở ngày tháng' };
+    if (field === 'documentType' || field === 'subject') return { selector: '#df-step2-group-5', label: 'Mở loại, trích yếu' };
+    if (field === 'signTitle' || field === 'signName') return { selector: '#df-step2-group-7', label: 'Mở người ký' };
+    if (field === 'recipients') return { selector: '#df-step2-group-9', label: 'Mở nơi nhận' };
+    if (field === 'nationalHeader1' || field === 'nationalHeader2') return { selector: '#df-step2-group-1', label: 'Mở tiêu đề' };
+    if (field === 'orgHeader1' || field === 'orgHeader2') return { selector: '#df-step2-group-2', label: 'Mở cơ quan' };
+    return null;
+  };
+
+  const handleFocusTarget = (selector: string) => {
+    const el = document.querySelector<HTMLElement>(selector);
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const btn = el.querySelector<HTMLButtonElement>('button.df-ws-component-preview');
+    if (btn) {
+      btn.click();
+      return;
+    }
+    const editable = el.querySelector<HTMLElement>('[contenteditable="true"], input, textarea, button');
+    if (editable) {
+      editable.focus({ preventScroll: true });
+    }
+  };
+
+  const actionItems: Array<{
+    id: string;
+    title: string;
+    impact: string;
+    severity: 'blocked' | 'warning' | 'optional';
+    actionLabel: string;
+    onAction: () => void;
+  }> = [];
+  const currentComplianceReport = complianceRevision === snapshot.workspace.workingRevision ? complianceReport : null;
+
+  if (projection.unclassified.blocks.length > 0) {
+    actionItems.push({
+      id: 'unclassified_blocks',
+      title: `${projection.unclassified.blocks.length} khối nội dung chưa phân loại`,
+      impact: 'Cần phân vùng trước khi xuất',
+      severity: 'blocked',
+      actionLabel: 'Phân vùng',
+      onAction: onPartition,
+    });
+  }
+
+  if (currentComplianceReport?.issues.length) {
+    for (const issue of currentComplianceReport.issues) {
+      const target = mapIssueToTarget(issue.field);
+      actionItems.push({
+        id: issue.id,
+        title: issue.title,
+        impact: 'Cần xem lại thể thức',
+        severity: 'warning',
+        actionLabel: target?.label ?? 'Xem báo cáo',
+        onAction: target ? () => handleFocusTarget(target.selector) : onOpenCompliance,
+      });
+    }
+  }
 
   const command = (name: 'undo' | 'redo' | 'toggleBold' | 'toggleItalic' | 'toggleUnderline' | 'toggleBulletList' | 'toggleOrderedList' | 'alignLeft' | 'alignCenter' | 'alignRight' | 'alignJustify') => {
     const editor = editors.current.get(activeEditorId);
@@ -606,7 +668,39 @@ export function WorkspaceEditor({
     </main>
 
     <aside id="df-step2-context" className="df-step-context df-ws-refine" aria-label="Kiểm tra và trợ lý AI">
-      <header className="df-ws-ai-heading"><span aria-hidden="true"><Sparkles size={17} /></span><h2>Kiểm tra &amp; AI</h2></header>
+      {/* 1. KHỐI CẦN XỬ LÝ (Theo đặc tả Mục 5.2) */}
+      <section className="df-ws-actions-card" aria-labelledby="df-ws-actions-heading">
+        <div className="df-ws-actions-card-header">
+          <h2 id="df-ws-actions-heading">Cần xử lý {actionItems.length > 0 ? `(${actionItems.length})` : ''}</h2>
+          <span className={`df-ws-actions-pill ${actionItems.length === 0 ? 'is-clean' : 'is-attention'}`}>
+            {actionItems.length === 0 ? currentComplianceReport ? 'Không có mục cảnh báo' : 'Đang kiểm tra' : `${actionItems.length} mục`}
+          </span>
+        </div>
+        {actionItems.length > 0 ? (
+          <ul className="df-ws-actions-list">
+            {actionItems.slice(0, 4).map(item => (
+              <li key={item.id} className={`df-ws-action-item is-${item.severity}`}>
+                <div className="df-ws-action-item-info">
+                  <strong>{item.title}</strong>
+                  <span className="df-ws-action-impact">{item.impact}</span>
+                </div>
+                <button
+                  type="button"
+                  className="df-ws-action-btn"
+                  onClick={item.onAction}
+                >
+                  {item.actionLabel}
+                </button>
+              </li>
+            ))}
+            {actionItems.length > 4 && <li><button type="button" className="df-ws-action-btn" onClick={onOpenCompliance}>Xem tất cả {actionItems.length} mục</button></li>}
+          </ul>
+        ) : (
+          <p className="df-ws-actions-empty">{currentComplianceReport ? 'Không có mục cần xem lại trong các kiểm tra đã thực hiện.' : 'Đang cập nhật kết quả kiểm tra cho bản soạn hiện tại.'}</p>
+        )}
+      </section>
+
+      <header className="df-ws-ai-heading"><span aria-hidden="true"><Sparkles size={17} /></span><h2>Kiểm tra và công cụ hỗ trợ</h2></header>
       <div role="tablist" aria-label="Chế độ rà soát" className="df-ws-context-tabs" onKeyDown={event => {
         if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
         event.preventDefault();

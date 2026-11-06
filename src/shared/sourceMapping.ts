@@ -46,6 +46,9 @@ function metadataFieldsForLine(doc: DocumentState, line: string): string[] {
 
 function metadataLineComponents(line: string, doc: DocumentState): string[] {
   const documentType = normalizeSemanticText(doc.documentType ?? "");
+  // A subject may begin with the document type word (for example "Kế hoạch ...").
+  // Preserve an exact subject before considering a combined type-and-subject line.
+  if (comparisonText(line) === comparisonText(doc.subject ?? "")) return [line];
   if (!documentType || comparisonText(line) === comparisonText(documentType)) return [line];
   if (comparisonText(line).startsWith(`${comparisonText(documentType)} `) || comparisonText(line).startsWith(`${comparisonText(documentType)}:`)) {
     const remainder = line.slice(documentType.length).replace(/^[:\s–—-]+/u, "").trim();
@@ -141,6 +144,18 @@ function recipientsCellIsPreserved(sourceText: string, workingRecipients: string
   const sourceItems = recipientItems(sourceText);
   const workingItems = recipientItems(workingRecipients);
   return sourceItems.length > 0 && JSON.stringify(sourceItems) === JSON.stringify(workingItems);
+}
+
+function recipientsParagraphNextCursor(sourceText: string, workingRecipients: string, cursor: number): number | null {
+  const sourceItems = recipientItems(sourceText);
+  if (sourceItems.length === 0) {
+    return /^\s*Nơi nhận\s*:/im.test(sourceText) && /^\s*Nơi nhận\s*:/im.test(workingRecipients) ? cursor : null;
+  }
+  const workingItems = recipientItems(workingRecipients);
+  for (let start = cursor; start < workingItems.length; start++) {
+    if (sourceItems.every((item, offset) => workingItems[start + offset] === item)) return start + sourceItems.length;
+  }
+  return null;
 }
 
 function signatureFieldGroups(value: string): string[][] {
@@ -271,6 +286,7 @@ export function buildSourceToWorkspaceCoverage(snapshot: WorkspaceSnapshot): Sou
 
   const seenBlockIds = new Set<string>();
   let subjectSeparatorClaimed = false;
+  let recipientParagraphCursor = 0;
 
   for (const block of sourceBlocks) {
     if (seenBlockIds.has(block.id)) {
@@ -311,6 +327,7 @@ export function buildSourceToWorkspaceCoverage(snapshot: WorkspaceSnapshot): Sou
 
     if (role === "header" || role === "metadata") {
       let hasTarget = false;
+      let intentionallyEdited = false;
       const matchingFields: string[] = [];
 
       if (block.kind === "table") {
@@ -344,6 +361,18 @@ export function buildSourceToWorkspaceCoverage(snapshot: WorkspaceSnapshot): Sou
       } else {
         hasTarget = metadataTextIsPreserved(block.text, snapshot.doc);
         if (hasTarget) matchingFields.push(...metadataMatchingFieldNames(block.text, snapshot.doc));
+        else {
+          const sourceFields = Object.entries(snapshot.structuredImport?.fields ?? {})
+            .filter(([, field]) => field?.sourceBlockIds?.includes(block.id))
+            .map(([field]) => field);
+          intentionallyEdited = sourceFields.length > 0 && sourceFields.every(field =>
+            snapshot.workspace.ledger.some(event => event.action === "edit" && event.kind === "field"
+              && event.sourceRefs.includes(block.id) && event.targetId.split(",").includes(field)));
+          if (intentionallyEdited) {
+            hasTarget = true;
+            matchingFields.push(...sourceFields);
+          }
+        }
       }
 
       if (hasTarget) {
@@ -369,7 +398,7 @@ export function buildSourceToWorkspaceCoverage(snapshot: WorkspaceSnapshot): Sou
             targetId: matchingFields.length > 0 ? matchingFields[0] : (block.kind === "table" ? (block.tableModel?.tableId ?? block.id) : undefined),
             subTarget: block.kind === "table" ? (block.tableModel?.tableId ?? block.id) : undefined,
           },
-          transformKind: "transform_metadata",
+          transformKind: intentionallyEdited ? "user_edit" : "transform_metadata",
           version: snapshot.workspace.workingRevision,
         });
       } else {
@@ -687,7 +716,9 @@ export function buildSourceToWorkspaceCoverage(snapshot: WorkspaceSnapshot): Sou
           hasTarget = allCellsHaveTarget;
         }
       } else {
-        hasTarget = recipientsCellIsPreserved(block.text, snapshot.doc.recipients ?? "");
+        const nextCursor = recipientsParagraphNextCursor(block.text, snapshot.doc.recipients ?? "", recipientParagraphCursor);
+        hasTarget = nextCursor !== null;
+        if (nextCursor !== null) recipientParagraphCursor = nextCursor;
         if (hasTarget) targetIds.push("recipients");
       }
 

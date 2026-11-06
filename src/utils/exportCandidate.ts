@@ -184,7 +184,9 @@ export async function prepareExportCandidate(input: ExportCandidateSnapshot, gen
   const profileHeaderLines = replacedHeaderShapeBlocks.length === 1 && profileShapesPresent
     ? formatData.regime === "administrative" ? 2 : 1 : 0;
   const contentFidelity = verifyCandidateContentFidelity(xml, formatData);
-  const exportSafety = assessExportSafety(manifest, { candidateFidelityResult: tableFidelity, roundtripVerified: tableFidelity.safe });
+  const replacedHeaderBlockId = replacedHeaderShapeBlocks.length === 1 && profileShapesPresent ? replacedHeaderShapeBlocks[0].id : null;
+  const safetyManifest = manifest && replacedHeaderBlockId ? { ...manifest, unsupportedFeatures: manifest.unsupportedFeatures.filter(f => !(f.code === "drawing_or_image" && (f.blockId === replacedHeaderBlockId || f.tableId === replacedHeaderBlockId))) } : manifest;
+  const exportSafety = assessExportSafety(safetyManifest, { candidateFidelityResult: tableFidelity, roundtripVerified: tableFidelity.safe });
   const evidence = extractOoxmlEvidenceFromXml(xml, formatData.regime);
   const canRenderDiagnostic = generatedBytes.length > 0 && Boolean(xml) &&
     !blockers.includes("candidate_unpack_failed") &&

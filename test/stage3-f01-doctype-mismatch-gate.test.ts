@@ -67,8 +67,10 @@ test("S3-F01: imported document-type mismatch blocks export until a source-bound
 
     assert.ok(await client.clickStep(1), "Return to Step 1 to review the detected type");
     assert.ok(await client.waitForFunction(`document.querySelector('[data-wizard-step="1"]') !== null`, 5000));
-    assert.ok(await client.clickByText("button", "Tiếp tục tài liệu hiện tại"), "Resume the imported document flow");
-    assert.ok(await client.clickByText("button", "Quay lại"), "Open metadata confirmation from the ready phase");
+    if (await client.evaluate<boolean>(`document.querySelector('[data-flow-phase]')?.getAttribute('data-flow-phase') === 'choice'`)) {
+      assert.ok(await client.clickByText("button", "Tiếp tục tài liệu hiện tại"), "Resume the imported document flow");
+    }
+    assert.ok(await client.evaluate<boolean>(`(() => { const button = document.querySelector('.df-import-back'); button?.click(); return Boolean(button); })()`), "Open metadata confirmation from the ready phase");
     assert.ok(await client.waitForFunction(`document.querySelector('#df-step1-document-type') !== null`, 5000));
 
     assert.equal(await client.evaluate<string>(`document.querySelector('#df-step1-document-type')?.textContent?.includes('Nguồn nhận diện: KẾ HOẠCH') ? 'true' : 'false'`), "true",

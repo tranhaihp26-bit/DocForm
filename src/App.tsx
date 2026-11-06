@@ -1375,6 +1375,7 @@ export default function App() {
   const [showComplianceModal, setShowComplianceModal] = useState(false);
   const [complianceReport, setComplianceReport] = useState<ND30ComplianceReport | null>(null);
   const [complianceRevision, setComplianceRevision] = useState<number | null>(null);
+  const [complianceContextKey, setComplianceContextKey] = useState('');
 
   // AI Proposal Review Modal state
   const [aiProposal, setAiProposal] = useState<DocumentState | null>(null);
@@ -1448,6 +1449,8 @@ export default function App() {
   const [doc, setDoc] = useState<DocumentState>(applyCompanyProfile(TEMPLATES[0].defaultData));
 
   const workspaceSnapshot=useMemo<WorkspaceSnapshot>(()=>workspace?{doc,standardType,reviewBlocks,structuredImport,workspace}:createWorkspaceSnapshot({doc,standardType,reviewBlocks,structuredImport},sourceOrigin==='uploaded_file'?{blobHash:originalSnapshot?.sourceHash||'legacy-unverified',generation:sourceGeneration,blocks:uploadedBlocks.length?uploadedBlocks:reviewBlocks}:undefined),[doc,standardType,reviewBlocks,structuredImport,workspace,sourceOrigin,originalSnapshot,sourceGeneration,uploadedBlocks]);
+  const activeComplianceKey = useMemo(() => canonicalWorkspaceValue({ doc, standardType }), [doc, standardType]);
+  const currentComplianceReport = complianceContextKey === activeComplianceKey ? complianceReport : null;
   const semanticContext = useMemo(() => ({
     sourceSha256: originalSnapshot?.sourceHash ?? workspaceSnapshot.workspace.source?.blobHash ?? "",
     sourceGeneration,
@@ -1869,12 +1872,12 @@ export default function App() {
   const candidateInput=buildCandidateInput(workspaceSnapshot);
   const candidateKey=exportCandidateKey(candidateInput);
   const visibleCandidate=candidate&&candidateManager.current.isCurrent(candidate,candidateInput)?candidate:null;
-  const invalidateCandidate=()=>{candidateManager.current!.invalidate();setCandidate(null);setCandidateError('');setOoxmlEvidence(undefined);setOoxmlStatus('not_evaluated');};
+  const invalidateCandidate=(keepStale=false)=>{candidateManager.current!.invalidate();if(!keepStale)setCandidate(null);setCandidateError('');setOoxmlEvidence(undefined);setOoxmlStatus('not_evaluated');};
   const installWorkspace=(next:WorkspaceSnapshot)=>{
-    workspaceSnapshotRef.current=next;setWorkspace(next.workspace);setDoc(next.doc);setStandardType(next.standardType);standardTypeRef.current=next.standardType;setReviewBlocks(next.reviewBlocks);setStructuredImport(next.structuredImport);invalidateCandidate();
+    workspaceSnapshotRef.current=next;setWorkspace(next.workspace);setDoc(next.doc);setStandardType(next.standardType);standardTypeRef.current=next.standardType;setReviewBlocks(next.reviewBlocks);setStructuredImport(next.structuredImport);invalidateCandidate(true);
   };
   const applyWorkspaceResult=(result:WorkspaceResult):boolean=>{
-    if(!result.ok){setErrorMsg(result.error==='rebase_conflict'?'Xung đột phân vùng: '+result.details.join(' · '):'Không thể thay đổi: '+result.error+' · '+result.details.join(' · '));return false;}
+    if(!result.ok){const hasUnmapped=result.details.some(d=>d.startsWith('unmapped_'));setErrorMsg(result.error==='rebase_conflict'?'Xung đột phân vùng: '+result.details.join(' · '):hasUnmapped?'Không thể xóa trống trường gắn với khối nguồn; hãy giữ nội dung hoặc sửa trực tiếp tại khối tương ứng ('+result.error+' · '+result.details.join(' · ')+')':'Không thể thay đổi: '+result.error+' · '+result.details.join(' · '));return false;}
     installWorkspace(result.snapshot);markUserInteraction();return true;
   };
   const workspaceAction=(action:WorkspaceAction)=>applyWorkspaceResult(transactWorkspace(workspaceSnapshotRef.current,workspaceSnapshotRef.current.workspace.workingRevision,action));
@@ -1923,10 +1926,10 @@ export default function App() {
       setCandidate(next);
       if(next.safe){setOoxmlEvidence({...next.evidence,header_profile:next.formatData.headerProfile,draft_key:next.key,candidate_fidelity_result:next.tableFidelity,candidate_sha:next.sha256,candidate_instance:next.instanceId});setOoxmlStatus('evaluated_current_draft');}
       else {setOoxmlEvidence(undefined);setOoxmlStatus('not_evaluated');}
-    }catch(e){if(exportCandidateKey(input)===exportCandidateKey(buildCandidateInput(workspaceSnapshotRef.current))){setOoxmlEvidence(undefined);setOoxmlStatus('error');setCandidateError(String(e));}}
+    }catch(e){if(exportCandidateKey(input)===exportCandidateKey(buildCandidateInput(workspaceSnapshotRef.current))){setCandidate(null);setOoxmlEvidence(undefined);setOoxmlStatus('error');setCandidateError(String(e));}}
     finally{if(exportCandidateKey(input)===exportCandidateKey(buildCandidateInput(workspaceSnapshotRef.current)))setCandidatePending(false);}
   };
-  useEffect(()=>{if(currentStep===3)void prepareCandidate();else {setOoxmlEvidence(undefined);setOoxmlStatus('not_evaluated');}},[currentStep,candidateKey]);
+  useEffect(()=>{if(currentStep===3){if(!candidate)void prepareCandidate();}else {setOoxmlEvidence(undefined);setOoxmlStatus('not_evaluated');}},[currentStep,candidateKey]);
 
   // Version History state
   const [versions, setVersions] = useState<Version[]>([
@@ -2247,9 +2250,17 @@ export default function App() {
             docTypeDecisionCovers(restoredDecision, restoredMismatch, savedDraft.standardType));
         const restoredMaxStep: 1 | 2 | 3 = restoredMismatch.profileMismatch ? 1 : restoredCanExport ? 3 : restoredOrigin !== "none" ? 2 : 1;
         const requestedStep = (savedDraft.currentStep ?? 1) as 1 | 2 | 3;
-        setCurrentStep(restoredWorkspace.workspace.staged||!canEnterWorkspaceStep(restoredWorkspace,2)?1:(requestedStep > restoredMaxStep ? restoredMaxStep : requestedStep) as 1 | 2 | 3);
+        const restoredStep = (restoredWorkspace.workspace.staged||!canEnterWorkspaceStep(restoredWorkspace,2)?1:(requestedStep > restoredMaxStep ? restoredMaxStep : requestedStep)) as 1 | 2 | 3;
+        setCurrentStep(restoredStep);
         if(restoredWorkspace.workspace.staged)setShowSideBySideModal(true);
         setSourceOrigin(restoredOrigin);
+        if (restoredStep > 1 && restoredOrigin === "uploaded_file") {
+          setStep1Flow("upload");
+          setStep1Phase("ready");
+        } else if (restoredStep > 1 && restoredOrigin === "system_template") {
+          setStep1Flow("create");
+          setStep1Phase("ready");
+        }
         setDocTypeOverride(restoredDecision);
         setHasPersistedDraft(true);
         setAutoSaveStatus("Đã khôi phục bản nháp lưu lúc " + new Date(savedDraft.updatedAt).toLocaleTimeString("vi-VN"));
@@ -2372,7 +2383,8 @@ export default function App() {
     );
     setComplianceReport(report);
     setComplianceRevision(workspaceSnapshot.workspace.workingRevision);
-  }, [doc, standardType, workspaceSnapshot.workspace.workingRevision]);
+    setComplianceContextKey(activeComplianceKey);
+  }, [doc, standardType, workspaceSnapshot.workspace.workingRevision, activeComplianceKey]);
 
   // 4. Responsive Screen Detection & Adaptive Auto-fit
   const calculateFitZoom = useCallback(() => {
@@ -2610,9 +2622,7 @@ export default function App() {
   const step1SubstepIndex = step1Substeps.findIndex(item => item.phase === step1Phase);
   type SidebarItem = { id: string; label: string; selector?: string; phase?: ImportStepPhase };
   const sidebarItemsByStep: Record<1 | 2 | 3, SidebarItem[]> = {
-    1: step1Flow
-      ? step1Substeps.map(({ phase, label }) => ({ id: `df-step1-stage-${phase}`, label, phase }))
-      : [{ id: "df-step1-flow", label: "Chọn nguồn và thiết lập" }],
+    1: [{ id: "df-step1-flow", label: "Nguồn và lựa chọn" }],
     2: [
       { id: "df-step2-groups-before", label: "Phần đầu · Nhóm 01–05" },
       { id: "df-step2-body", label: "Nội dung văn bản · Body" },
@@ -2856,6 +2866,8 @@ export default function App() {
     // lại nguồn + thể thức đã xác nhận thay vì tự nhảy sang bước soạn.
     setSourceOrigin("system_template");
     // Nguồn mới ⇒ quyết định override của nguồn cũ không còn hiệu lực.
+    setStep1Flow("create");
+    setStep1Phase("ready");
     setDocTypeOverride(null);
     return true;
   };
@@ -2957,6 +2969,8 @@ export default function App() {
     });
     setShowPilotModal(false);
     setSourceOrigin("system_template");
+    setStep1Flow("create");
+    setStep1Phase("ready");
     setDocTypeOverride(null);
     setCurrentStep(2);
     setSuccessMsg(`Đã nạp thành công tài liệu "${item.title}" (${item.badge}) vào Studio soạn thảo!`);
@@ -3116,6 +3130,8 @@ export default function App() {
 
     setShowSideBySideModal(true);
     setSourceOrigin("uploaded_file");
+    setStep1Flow("upload");
+    setStep1Phase("recognition");
     setDocTypeOverride(null);
     setSuccessMsg(`Đã bóc tách thành công tệp "${bundle.uploadedFileName}" (${bundle.blockCount} khối dữ liệu).`);
     return true;
@@ -3159,10 +3175,17 @@ export default function App() {
     }
     setPendingImport(null);
     setIsUploading(false);
+    if (uploadedBlocks.length > 0 || structuredImport || sourceOrigin === "uploaded_file") {
+      setStep1Phase("recognition");
+    }
     showToast("Đã hủy nhập tệp. Tài liệu đang mở được giữ nguyên và không lưu tệp vừa tải.", "info");
   };
 
   const handleFileUpload = async (file: File) => {
+    setStep1Flow("upload");
+    if (!structuredImport && uploadedBlocks.length === 0 && sourceOrigin === "none") {
+      setStep1Phase("upload");
+    }
     invalidateActiveAiSession();
     setReviewAiConsent(null);
     aiPartitionConsentRef.current = false;
@@ -3423,6 +3446,7 @@ export default function App() {
     const current=workspaceSnapshotRef.current;
     const finishPartitionReview = () => {
       setShowSideBySideModal(false);
+      setStep1Phase("ready");
       setImportReviewApprovedSourceHash(originalSnapshot?.sourceHash ?? "");
       if (canEnterProfileDecision) setCurrentStep(2);
       else {
@@ -3488,6 +3512,8 @@ export default function App() {
     setSuccessMsg(`Đã đưa toàn bộ cấu trúc tệp "${uploadedFileName}" vào Studio soạn thảo thành công!`);
     setShowSideBySideModal(false);
     setSourceOrigin("uploaded_file");
+    setStep1Flow("upload");
+    setStep1Phase("ready");
     setDocTypeOverride(null);
     // S3-F01: người dùng đã duyệt bản nhập này → ghi nhận theo hash nguồn để
     // mở được Bước 3 và các nút xuất/in.
@@ -3594,18 +3620,35 @@ export default function App() {
     setSuccessMsg("Đã hủy bỏ đề xuất chỉnh sửa văn bản.");
   };
 
+function formatDocxDownloadFilename(rawTitle: string, regime: 'state' | 'party', isReviewOnly: boolean): string {
+  const regimeCode = regime === 'party' ? 'HD05' : 'ND30';
+  const cleanBase = (rawTitle || '')
+    .replace(/\.docx$/i, '')
+    .replace(/[\/\\:*?"<>|]/g, '_')
+    .replace(/\s+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 40);
+  const base = cleanBase || 'Van_ban_moi';
+  if (isReviewOnly) {
+    return `${base}-DOI_CHIEU_CHUA_XAC_NHAN-${regimeCode}.docx`;
+  }
+  return `${base}-DocForm-${regimeCode}.docx`;
+}
+
   const exportToDocx = async () => {
     const current=candidateManager.current!.current;
     if(!current?.downloadable||!current?.safe||!candidateManager.current!.isCurrent(current,buildCandidateInput(workspaceSnapshotRef.current))||!canEnterStep(3)){setErrorMsg('DOCX ứng viên không tạo được tệp hoặc không vượt qua kiểm tra toàn vẹn (integrity reject). Chức năng tải bị khóa.');return;}
-    downloadDocxUint8Array(current.bytes,'Van_Ban_'+(standardType==='party'?'HD05':'ND30')+'.docx');
+    const docTitle = uploadedFileName || doc.documentType || 'Van_ban';
+    downloadDocxUint8Array(current.bytes, formatDocxDownloadFilename(docTitle, standardType, false));
   };
   const downloadCandidateForReview = async () => {
     const current=candidateManager.current!.current;
     if(!current||!isCandidateEligibleForReviewDownload(current)||current.safe||!candidateManager.current!.isCurrent(current,buildCandidateInput(workspaceSnapshotRef.current))||!canEnterStep(3)){
       setErrorMsg('Ứng viên hiện hành chưa đủ điều kiện cấu trúc để tải bản đối chiếu. Nội dung nguồn vẫn được giữ nguyên.');return;
     }
-    const regime=standardType==='party'?'HD05':'ND30';
-    downloadDocxUint8Array(current.bytes,`Ban_doi_chieu_chua_xac_nhan_${regime}.docx`);
+    const docTitle = uploadedFileName || doc.documentType || 'Van_ban';
+    downloadDocxUint8Array(current.bytes, formatDocxDownloadFilename(docTitle, standardType, true));
     setErrorMsg('');
     setSuccessMsg('Đã tải bản DOCX đối chiếu chưa xác nhận. Chỉ dùng để rà soát, không dùng phát hành.');
   };
@@ -3734,8 +3777,8 @@ export default function App() {
 
   const fullDocumentTitle = sourceOrigin === "none" ? "Văn bản mới · chưa chọn nguồn" : uploadedFileName || `${doc.documentType || "Văn bản"} ${doc.subject ? `- ${doc.subject}` : ""}`.trim();
   const displayDocumentTitle = sourceOrigin === "none" ? "Văn bản mới · chưa chọn nguồn" : uploadedFileName || (doc.documentType ? `${doc.documentType} ${doc.referenceNumber || ""}`.trim() : "Văn bản mới");
-  const saveStatusLabel = isAutoSaving ? "Đang lưu..." : saveError ? "Lỗi lưu" : hasPersistedDraft ? "Đã lưu" : "Chưa lưu";
-  const saveTooltip = isAutoSaving ? "Hệ thống đang tự động lưu dữ liệu vào IndexedDB" : saveError ? `Lỗi lưu trữ: ${saveError}` : hasPersistedDraft ? "Dữ liệu được lưu an toàn trong trình duyệt (IndexedDB)" : "Chưa có thay đổi nào được ghi vào IndexedDB";
+  const saveStatusLabel = isAutoSaving ? "Đang lưu trên trình duyệt này…" : saveError ? "Không lưu được thay đổi" : hasPersistedDraft ? "Đã lưu trên trình duyệt này" : "Chưa lưu";
+  const saveTooltip = isAutoSaving ? "Hệ thống đang tự động lưu dữ liệu vào IndexedDB" : saveError ? `Không lưu được thay đổi trên trình duyệt này: ${saveError}. Hãy giữ trang mở và thử lại.` : hasPersistedDraft ? "Dữ liệu được lưu an toàn trong trình duyệt này (IndexedDB)" : "Chưa có thay đổi nào được ghi vào IndexedDB";
   const sidebarCurrent = currentStep === 1
     ? {
         label: "NGUỒN TÀI LIỆU",
@@ -3804,7 +3847,7 @@ export default function App() {
                 role="status"
               >
                 <span className={`w-2 h-2 rounded-full shrink-0 ${isAutoSaving ? "bg-[#D9822B] animate-ping" : saveError ? "bg-[#DC2626]" : hasPersistedDraft ? "bg-[#15803D]" : "bg-slate-400"}`} />
-                <span className="font-medium" data-save-status={saveStatusLabel}>{saveStatusLabel}</span>
+                <span className="font-medium" data-save-status={isAutoSaving ? "Đang lưu" : saveError ? "Lỗi lưu" : hasPersistedDraft ? "Đã lưu" : "Chưa lưu"}>{saveStatusLabel}</span>
               </div>
 
               <button
@@ -3846,7 +3889,7 @@ export default function App() {
               role="status"
             >
               <span className={`w-2 h-2 rounded-full shrink-0 ${isAutoSaving ? "bg-[#D9822B] animate-ping" : saveError ? "bg-[#DC2626]" : hasPersistedDraft ? "bg-[#15803D]" : "bg-slate-400"}`} />
-              <span className="font-medium" data-save-status={saveStatusLabel}>{saveStatusLabel}</span>
+              <span className="font-medium" data-save-status={isAutoSaving ? "Đang lưu" : saveError ? "Lỗi lưu" : hasPersistedDraft ? "Đã lưu" : "Chưa lưu"}>{saveStatusLabel}</span>
             </div>
 
             <button
@@ -3898,10 +3941,10 @@ export default function App() {
           <p className="df-sidebar-eyebrow">QUY TRÌNH XỬ LÝ</p>
           <div className="df-sidebar-steps">
             {([
-              { step: 1, label: "Tải & nhận diện" },
-              { step: 2, label: "Soạn & kiểm tra" },
-              { step: 3, label: "Xem & xuất" },
-            ] as const).map(({ step, label }) => {
+              { step: 1, label: "Bắt đầu", actionLabel: "Tải & nhận diện" },
+              { step: 2, label: "Hoàn thiện", actionLabel: "Soạn & kiểm tra" },
+              { step: 3, label: "Xem và tải Word", actionLabel: "Xem & xuất" },
+            ] as const).map(({ step, label, actionLabel }) => {
               const active = currentStep === step;
               const complete = stepIsComplete(step);
               return (
@@ -3909,7 +3952,7 @@ export default function App() {
                   <button
                     type="button"
                     className="df-sidebar-step-button"
-                    aria-label={`Bước ${step}: ${label}`}
+                    aria-label={`Bước ${step}: ${actionLabel}`}
                     aria-current={active ? "step" : undefined}
                     aria-expanded={active}
                     aria-controls={`df-sidebar-step-panel-${step}`}
@@ -3922,7 +3965,7 @@ export default function App() {
                     <span className="df-sidebar-step-index" aria-hidden="true">{complete && !active ? "✓" : step}</span>
                     <span className="df-sidebar-step-copy">
                       <strong>{label}</strong>
-                      <small>{active ? `Bước ${step} / 3` : complete ? "Đã hoàn thành" : `Bước ${step} / 3`}</small>
+                      <small>{active ? `Bước ${step} / 3 · ${actionLabel}` : complete ? "Đã hoàn thành" : actionLabel}</small>
                     </span>
                     <ChevronRight className="df-sidebar-step-chevron" aria-hidden="true" size={16} />
                   </button>
@@ -4057,9 +4100,9 @@ export default function App() {
         />
       )}
 
-      {currentStep===3&&<WorkspaceExport candidate={visibleCandidate} complianceReport={complianceReport} complianceRevision={complianceRevision} pending={candidatePending} error={candidateError} onPrepare={()=>void prepareCandidate()} onDownload={()=>void exportToDocx()} onDownloadReview={()=>void downloadCandidateForReview()} onDownloadOriginal={()=>void handleDownloadOriginalFile()} onPrintCandidate={()=>void handlePrintCandidate()} originalAvailable={sourceBlobAvailability==='available'} onPrev={()=>goToStep(2)} onReviewSource={()=>{setCurrentStep(1);setShowSideBySideModal(true);}} onEditTarget={(targetId)=>{if(!canEnterStep(2)){goToStep(2);return;}setCurrentStep(2);requestAnimationFrame(()=>{const node=[...document.querySelectorAll<HTMLElement>('[data-workspace-node]')].find(el=>el.dataset.workspaceNode===targetId);(node?.querySelector<HTMLElement>('[contenteditable="true"]')??document.querySelector<HTMLElement>('[data-canvas-id="body"] [contenteditable="true"]'))?.focus({preventScroll:true});});}}/>}
+      {currentStep===3&&<WorkspaceExport candidate={visibleCandidate} isStale={Boolean(candidate && !visibleCandidate)} complianceReport={currentComplianceReport} complianceRevision={complianceRevision} pending={candidatePending} error={candidateError} onPrepare={()=>void prepareCandidate()} onDownload={()=>void exportToDocx()} onDownloadReview={()=>void downloadCandidateForReview()} onDownloadOriginal={()=>void handleDownloadOriginalFile()} onPrintCandidate={()=>void handlePrintCandidate()} originalAvailable={sourceBlobAvailability==='available'} onPrev={()=>goToStep(2)} onReviewSource={()=>{setCurrentStep(1);setShowSideBySideModal(true);}} onEditTarget={(targetId)=>{if(!canEnterStep(2)){goToStep(2);return;}setCurrentStep(2);requestAnimationFrame(()=>{const node=[...document.querySelectorAll<HTMLElement>('[data-workspace-node]')].find(el=>el.dataset.workspaceNode===targetId);(node?.querySelector<HTMLElement>('[contenteditable="true"]')??document.querySelector<HTMLElement>('[data-canvas-id="body"] [contenteditable="true"]'))?.focus({preventScroll:true});});}}/>}
       <div className="df-workspace-step2-shell" hidden={currentStep!==2}>
-        {sourceChosen&&canEnterProfileDecision&&canEnterWorkspaceStep(workspaceSnapshot,2)&&<WorkspaceEditor key={workspaceSnapshot.workspace.source?.identity??originalSnapshot?.sourceId??'template'} snapshot={workspaceSnapshot} initialCanvasId={editorState.activeCanvasId} onCanvasSelected={id=>setEditorState({activeCanvasId:id})} active={currentStep===2} onAction={workspaceAction} onRequestRegimeSwitch={requestRegimeSwitch} onPartition={()=>{setCurrentStep(1);setShowSideBySideModal(true);}} onRefine={handleAiRefine} refining={isRefining} aiProvider={partitionAiProvider} chatGPTReady={chatGPTStatus.enabled&&chatGPTStatus.session.status==="connected"&&chatGPTStatus.session.sharing} onAiSettings={()=>setShowAppSettings(true)} canContinue={canEnterStep(3)} complianceReport={complianceReport} onOpenCompliance={()=>setShowComplianceModal(true)}/>}
+        {sourceChosen&&canEnterProfileDecision&&canEnterWorkspaceStep(workspaceSnapshot,2)&&<WorkspaceEditor key={workspaceSnapshot.workspace.source?.identity??originalSnapshot?.sourceId??'template'} snapshot={workspaceSnapshot} initialCanvasId={editorState.activeCanvasId} onCanvasSelected={id=>setEditorState({activeCanvasId:id})} active={currentStep===2} onAction={workspaceAction} onRequestRegimeSwitch={requestRegimeSwitch} onPartition={()=>{setCurrentStep(1);setShowSideBySideModal(true);}} onRefine={handleAiRefine} refining={isRefining} aiProvider={partitionAiProvider} chatGPTReady={chatGPTStatus.enabled&&chatGPTStatus.session.status==="connected"&&chatGPTStatus.session.sharing} onAiSettings={()=>setShowAppSettings(true)} canContinue={canEnterStep(3)} complianceReport={currentComplianceReport} complianceRevision={complianceRevision} onOpenCompliance={()=>setShowComplianceModal(true)}/>}
       </div>
       </div></div>
       {toast && (
