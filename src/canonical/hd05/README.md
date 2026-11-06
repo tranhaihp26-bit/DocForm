@@ -15,6 +15,10 @@ Nguồn chuẩn: [PDF do Văn phòng Trung ương Đảng công bố](https://da
 - [Danh mục văn bản Đảng bộ các cơ quan Đảng tỉnh Hà Tĩnh](https://dukcq.hatinh.gov.vn/laws/) có tệp Word sau ngày Hướng dẫn 05 có hiệu lực. Các tệp xác nhận trường hợp bố cục thực tế cho kế hoạch/báo cáo/công văn. Ngày trên danh mục của ba mục đã xem đều sớm hơn ngày ghi trong tệp một ngày; hệ thống nhập liệu phải giữ riêng ngày đăng và ngày trong văn bản, đồng thời báo cần rà soát nếu lệch.
 - [PDF kế hoạch trên cổng xã Ia Chim](https://iachim.quangngai.gov.vn/upload/2007057/20260607/KH_thuc_hien_Chi_thi_14_Signed_17136.pdf) còn trống số và ngày; không đưa vào bộ mẫu đạt chuẩn. Đây là ca thử hữu ích cho trạng thái `NEEDS_REVIEW`.
 
+## Chính sách thông số DocForm V2.2
+
+Danh mục HD05 là **nguồn fallback chỉ cho các thuộc tính chưa có cấu hình trong profile Công ty đã xác nhận**. Thuộc tính đã có trong profile **chỉ được áp và kiểm theo profile**, không kiểm lại, cảnh báo xung đột hoặc ghi đè bằng giá trị HD05. Quy tắc này chỉ áp cho việc xác định thông số trong DocForm; không biến thành kết luận pháp lý độc lập. Xem [đặc tả V2.2](../../../docs/DOCFORM_PRODUCT_FIRST_PROFILE_POLICY_V2_2.md).
+
 ## Cách dùng an toàn
 
 - Đây là **dữ liệu nguồn đã trích xuất**, chưa được nối vào bộ kiểm định của ứng dụng và chưa được chuyên gia nghiệp vụ xác nhận từng rule. `status` thể hiện điều đó. Không hiển thị toàn bộ danh mục là đã đạt.

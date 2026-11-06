@@ -1,5 +1,7 @@
 # Chuẩn hoá Văn bản — Hợp Đồng Kiến Trúc Nguồn (Tài Liệu Tham Khảo)
 
+> **Ranh giới chính sách V2.2:** Đây là **tư liệu upstream về mô hình nguồn, quan hệ pháp lý và provenance**, không phải hợp đồng phân giải thông số khi xuất văn bản trong DocForm. Với văn bản đã chọn profile Công ty, thuộc tính profile có cấu hình **không được đối chiếu/hậu kiểm hoặc bị ghi đè bằng ND30/HD05**; chỉ thuộc tính thiếu profile mới fallback theo regime. Nếu mệnh đề phía dưới như “profile không được override legal constraint” được đọc trong ngữ cảnh **xuất/QA thông số DocForm**, [đặc tả sản phẩm V2.2](../../../../docs/DOCFORM_PRODUCT_FIRST_PROFILE_POLICY_V2_2.md) **mới là nguồn điều khiển**. Không chỉnh sửa hay diễn giải lại thứ bậc hiệu lực pháp luật từ chính sách sản phẩm.
+
 > [!NOTE]
 > **Phạm vi tham khảo:** Thư mục này chứa bản sao tài liệu đặc tả kiến trúc nguồn (Upstream Architecture Contract) được lưu lại làm tài liệu tham khảo khái niệm (conceptual reference).
 > - **Các file hiện có trong thư mục này:** [`SOURCE-MODEL.md`](SOURCE-MODEL.md), [`RULE-MODEL.md`](RULE-MODEL.md), [`APPLICABILITY.md`](APPLICABILITY.md), [`FIX-SAFETY.md`](FIX-SAFETY.md).

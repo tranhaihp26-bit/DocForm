@@ -1,5 +1,7 @@
 # Applicability, Routing và Temporality
 
+> **Lưu ý DocForm V2.2:** Các quy trình resolver và conflict ở dưới là mô hình **upstream về hiệu lực/quan hệ nguồn pháp lý**, **không phải** thứ tự ưu tiên thông số khi chuẩn hóa DOCX. Trong DocForm, khi profile Công ty đã xác nhận có giá trị cho một thuộc tính, chỉ áp/QA đúng profile và **không kiểm với ND30/HD05**. Chỉ thuộc tính chưa được profile cấu hình mới fallback theo regime. Xem [chính sách sản phẩm V2.2](../../../../docs/DOCFORM_PRODUCT_FIRST_PROFILE_POLICY_V2_2.md). Giữ nguyên phần gốc bên dưới làm tham khảo lịch sử.
+
 ## Router
 
 Không chọn rule chỉ từ tên file hoặc tên loại văn bản. Context tối thiểu:

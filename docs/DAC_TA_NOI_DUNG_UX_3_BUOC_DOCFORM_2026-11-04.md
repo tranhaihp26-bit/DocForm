@@ -1,4 +1,6 @@
-# Đặc tả nội dung giao diện DocForm — luồng 3 bước để nhận bản Word
+# > **Điều khoản bổ sung có hiệu lực cho DocForm V2.2 (06/11/2026):** Chính sách [Product First — Profile override theo từng thuộc tính](DOCFORM_PRODUCT_FIRST_PROFILE_POLICY_V2_2.md) được ưu tiên khi áp/QA định dạng. Profile Công ty đã thiết lập thông số thì chỉ dùng/kiểm giá trị profile; ND30/HD05 chỉ fallback cho trường chưa được thiết lập. Văn bản UX ngày 04/11 giữ nguyên lịch sử mô tả tương tác; không dùng ngôn ngữ cũ về "đủ chuẩn/ban hành" để thay thế chính sách V2.2.
+
+Đặc tả nội dung giao diện DocForm — luồng 3 bước để nhận bản Word
 
 **Ngày soạn:** 04/11/2026\
 **Checkout tham chiếu:** `bd2aac5`\

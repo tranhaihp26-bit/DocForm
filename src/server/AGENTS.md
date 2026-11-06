@@ -10,6 +10,12 @@
 - Bảng OOXML có tính năng không hỗ trợ phải được phát hiện và chuyển thành trạng thái cần rà soát/chặn theo cổng hiện có; không loại thuộc tính nguồn rồi báo thành công.
 - Nguồn gốc tệp và bản nháp có vòng đời khác nhau. Đọc `src/utils/localFileImport.ts` và `draftStore.ts` trước khi đổi giao dịch import/lưu nguồn.
 
+## Profile Công ty khi xử lý trên server (V2.2)
+
+- Giữ quyết định profile từ người dùng và nguồn nhập; **không tự chọn profile Công ty chỉ vì tên cơ quan trùng khớp** nếu chưa có sự xác nhận hợp lệ. Phân biệt đề xuất nhận diện và profile hiệu lực.
+- Các middleware AI/chuẩn hóa không được ghi đè thuộc tính đã cấu hình trong profile Công ty bằng mặc định 13/14pt hoặc ND30/HD05; chỉ trường thiếu profile mới fallback đúng regime. Giữ `0`, `false`, `""` có chủ ý. Nếu chưa đủ ngữ cảnh để quyết định, trả trạng thái chưa xác định thay vì tự suy.
+- Đặc tả V2.2: [`docs/DOCFORM_PRODUCT_FIRST_PROFILE_POLICY_V2_2.md`](../../docs/DOCFORM_PRODUCT_FIRST_PROFILE_POLICY_V2_2.md). Đây là **yêu cầu cần triển khai ở code**, không được suy chỉ dẫn này đã sửa hành vi của `compliance.middleware.ts`.
+
 ## API AI và dựng nguồn cục bộ
 
 - Rà soát toàn văn dùng manifest text, consent theo nguồn/thao tác, fingerprint/generation và coverage; không gửi byte DOCX/PDF/ảnh qua luồng text này.

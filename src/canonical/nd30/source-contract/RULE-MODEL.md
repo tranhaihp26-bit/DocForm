@@ -1,5 +1,7 @@
 # Rule Model
 
+> **Ranh giới áp dụng V2.2:** Tài liệu upstream này mô tả mô hình rule và normativity, **không quy định precedence của trường định dạng khi xuất DOCX ở DocForm**. Với profile Công ty đã xác nhận, chỉ kiểm thông số đã được profile thiết lập theo chính profile, không kiểm/cảnh báo/override bằng ND30/HD05; fallback chỉ cho trường thiếu. Xem [đặc tả DocForm V2.2](../../../../docs/DOCFORM_PRODUCT_FIRST_PROFILE_POLICY_V2_2.md). Những phát biểu bên dưới về hiệu lực nguồn pháp lý phải đọc trong phạm vi mô hình nguồn, không chuyển thành cổng xung đột profile khi xuất.
+
 ## Nguyên tắc
 
 Rule là đơn vị chuẩn hoá **nguyên tử**: một yêu cầu độc lập, có source locator, phạm vi áp dụng, thời gian hiệu lực, constraint và chính sách validation/autofix.

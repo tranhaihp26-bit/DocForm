@@ -1,4 +1,4 @@
-# DocForm-30 — Chuẩn Thể Thức Nghị Định 30 & Hướng Dẫn 05
+# DocForm-30 — Soạn thảo và chuẩn hóa theo profile Công ty, ND30/HD05 fallback
 
 > Bản mã nguồn công khai không gồm khóa truy cập, văn bản nghiệp vụ, tệp xuất và các phép thử dùng tài liệu nội bộ. Những kiểm thử có dữ liệu mẫu tổng hợp được giữ trong `test/`.
 
@@ -73,7 +73,7 @@ Khi theo dõi các thông số kiểm định, cần phân biệt rõ hai loại
    # Hoặc nếu đã cấu hình PORT=5050 trong file .env:
    npm run dev
    ```
-   *(Lưu ý: Nếu chạy `npm run dev` mà không truyền `--port` và không đặt `PORT` trong `.env`, `server.ts` sẽ dùng cổng dự phòng `3000`. Cổng vận hành chuẩn của dự án là **5050**).*  
+   *(Lưu ý: Nếu chạy `npm run dev` mà không truyền `--port` và không đặt `PORT` trong `.env`, `server.ts` sẽ dùng cổng mặc định `5050`. Cổng vận hành chuẩn của dự án là **5050**).*  
    Ứng dụng khả dụng tại: `http://localhost:5050/`.
 
 ---
