@@ -479,10 +479,12 @@ export function buildCanonicalRuleRegistry(): CanonicalRuleDef[] {
     { id: "BODY.HEADING.ARTICLE_FORMAT", title: "Định dạng Điều khoản", regime: "administrative", prop: "article_headings", desc: "Từ 'Điều ...' viết hoa chữ cái đầu, đậm; nội dung điều bắt đầu cùng dòng" },
     { id: "BODY.TABLE.PRESERVATION", title: "Bảo toàn Bảng biểu nội dung", regime: "administrative", prop: "table_geometry", desc: "Bảo toàn số hàng, số cột, ô gộp ngang/dọc và nội dung ô của bảng" },
     { id: "BODY.TABLE.HEADER_ROW", title: "Hàng tiêu đề Bảng biểu", regime: "administrative", prop: "table_header_row", desc: "Hàng đầu bảng in đậm, căn giữa, lặp lại trên trang mới nếu bảng ngắt trang" },
+    { id: "ND30-BODY-FONT-SIZE", title: "Cỡ chữ thân bài", regime: "administrative", prop: "font_size", desc: "Font body theo profile Công ty 14pt nếu đã chọn, nếu không dùng ND30 fallback 13-14pt" },
     { id: "BODY.PARAGRAPH.LINE_SPACING", title: "Khoảng cách dòng", regime: "administrative", prop: "line_spacing", desc: "Giãn dòng thân bài theo khoảng từ đơn đến 1.5 dòng; profile Hoa Tiêu MB áp dụng exactly 19pt" },
     { id: "BODY.PARAGRAPH.FIRST_LINE_INDENT", title: "Thụt lề đầu dòng", regime: "administrative", prop: "first_line_indent", desc: "Đầu dòng đoạn văn thụt lề từ 1cm đến 1.27cm (567 - 720 twips)" },
     { id: "BODY.PARTY.FIVE_HYPHENS", title: "5 dấu gạch nối trước nội dung", regime: "party", prop: "five_hyphens", desc: "Văn bản Đảng có tên loại phải có đúng 5 dấu gạch nối '-----' trước nội dung" },
     { id: "BODY.PARTY.SUBJECT_UPRIGHT_BOLD", title: "Trích yếu đứng đậm", regime: "party", prop: "subject_format", desc: "Trích yếu văn bản Đảng có tên loại in thường, đứng, đậm (không in nghiêng)" },
+    { id: "HD05-BODY-FONT-SIZE", title: "Cỡ chữ thân bài Đảng", regime: "party", prop: "font_size", desc: "Font body theo profile Công ty 14pt nếu đã chọn, nếu không dùng HD05 fallback 14-15pt" },
     { id: "HD05-BODY-LINE-SPACING", title: "Khoảng cách dòng văn bản Đảng", regime: "party", prop: "line_spacing", desc: "Dãn dòng cố định (exactly) từ 18pt đến 22pt" },
     { id: "HD05-BODY-FIRST-LINE-INDENT", title: "Thụt lề đầu dòng văn bản Đảng", regime: "party", prop: "first_line_indent", desc: "Đầu dòng đoạn văn bản Đảng thụt lề ~10mm theo Hướng dẫn 05; profile Hoa Tiêu MB áp dụng ~10mm (567 twips)" },
   ];
