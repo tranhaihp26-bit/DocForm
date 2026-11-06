@@ -4,13 +4,14 @@
  * và Hướng dẫn số 05-HD/VPTW.
  * 
  * NGUYÊN TẮC:
- * 1. "AI gợi ý ngữ nghĩa, Rule Engine chốt hạ thể thức": AI chỉ phụ trách phân tích và sinh nội dung thô.
- *    Toàn bộ cấu trúc quy chuẩn cứng (Quốc hiệu, Tiêu ngữ, Font, Size, Lề) do Rule Engine quyết định.
+ * 1. AI chỉ gợi ý nội dung; profile do người dùng xác nhận là nguồn giá trị hiệu lực.
+ *    Chỉ thuộc tính profile chưa định nghĩa mới dùng fallback ND30/HD05 cùng regime.
  * 2. "Zero Trust AI Output": Mọi output từ AI đều bị coi là không đáng tin cậy cho tới khi được ghi đè
  *    (Override) và xác thực thành công qua Zod Schema.
  */
 
 import { DocumentFormatSchema, type DocumentFormatType, LOCATION_AND_DATE_REGEX, isPlaceholderValue } from "../../shared/schemas/document.schema.ts";
+import { resolveCompanyBodyProfile } from "../../canonical/nd30/companyBodyProfile.ts";
 
 /**
  * Tạo chuỗi địa danh và ngày, tháng, năm theo đúng quy định Phụ lục I Mục II.2 Nghị định 30/2020/NĐ-CP:
@@ -122,19 +123,22 @@ export function sanitizeBodyHtml(rawHtml?: string): string {
 }
 
 /**
- * Compliance Middleware: Cưỡng chế thực thi 100% tiêu chuẩn Nghị định 30/2020/NĐ-CP & Hướng dẫn 05-HD/VPTW.
+ * Compliance Middleware: chuẩn hóa đầu ra AI theo regime và profile đã được xác nhận.
  * 
  * Lớp này sẽ:
- * 1. Ghi đè (Override) toàn bộ các trường thể thức bắt buộc (Quốc hiệu, Tiêu ngữ, Font, Size).
+ * 1. Dùng cấu hình profile đã được xác nhận; chỉ fallback các thuộc tính còn thiếu.
  * 2. Giữ nguyên tính trung thực, không tự bịa đặt thông tin nghiệp vụ giả (người ký, số ký hiệu, cơ quan).
  * 3. Chạy qua Zod Schema Validation để bảo đảm tính đúng đắn và an toàn kiểu dữ liệu.
  */
 export function enforceND30Standards(
   rawAiJson: any,
-  regime: "administrative" | "party" = "administrative"
+  regime: "administrative" | "party" = "administrative",
+  confirmedProfile?: string
 ): DocumentFormatType {
   const isParty = regime === "party";
   const source = typeof rawAiJson === "object" && rawAiJson !== null ? rawAiJson : {};
+  // AI JSON is untrusted: never use source.headerProfile as a profile decision.
+  const trustedProfile = resolveCompanyBodyProfile(regime, confirmedProfile);
 
   // 1. RULE OVERRIDE: Quốc hiệu (Dòng 1)
   const nationalHeader1 = isParty
@@ -144,9 +148,9 @@ export function enforceND30Standards(
   // 2. RULE OVERRIDE: Tiêu ngữ (Dòng 2)
   const nationalHeader2 = isParty ? "" : ("Độc lập - Tự do - Hạnh phúc" as const);
 
-  // 3. RULE OVERRIDE: Phông chữ & Cỡ chữ bắt buộc (NĐ 30: 13pt; HD 05: 14pt)
-  const fontFamily = "Times New Roman" as const;
-  const fontSize = (isParty ? 14 : 13) as 13 | 14;
+  // 3. Profile-first font and size; generic documents use regime fallbacks.
+  const fontFamily = (trustedProfile?.body.fontFace ?? "Times New Roman") as "Times New Roman";
+  const fontSize = (trustedProfile?.body.fontSizePt ?? (isParty ? 14 : 13)) as 13 | 14;
 
   // 4. RULE OVERRIDE: Loại văn bản chuẩn hóa
   const documentType = (source.documentType || (isParty ? "NGHỊ QUYẾT" : "CÔNG VĂN")).toString().trim().toUpperCase();
@@ -194,7 +198,7 @@ export function enforceND30Standards(
   // Tạo đối tượng đã chuẩn hóa toàn diện
   const normalizedCandidate = {
     regime,
-    headerProfile: source.headerProfile,
+    headerProfile: trustedProfile?.id ?? "generic",
     omitNationalHeader: source.omitNationalHeader === true,
     nationalHeader1,
     nationalHeader2,
