@@ -15,6 +15,8 @@ Mọi đường dẫn trong tài liệu này đều là đường dẫn tương 
 
 [**Product First — Profile override, ND30/HD05 fallback theo từng thuộc tính**](DOCFORM_PRODUCT_FIRST_PROFILE_POLICY_V2_2.md) là nguồn yêu cầu trung tâm: profile đã thiết lập thuộc tính → dùng/QA giá trị profile và **không đối chiếu/hậu kiểm** với ND30/HD05 cho thuộc tính đó; chỉ thiếu ở mọi cấp profile mới fallback đúng regime; thiếu cả hai → `UNSPECIFIED`. `0`, `false`, `""` có chủ ý là có cấu hình.
 
+**Audit bao phủ V2.2 (06/11/2026):** [Kiểm kê toàn bộ repository và các module còn phải triển khai](DOCFORM_V22_AUDIT_TOAN_BO_REPO_2026-11-06.md). Đây là **báo cáo tĩnh theo snapshot**, không phải xác nhận đã sửa runtime hoặc nghiệm thu Word/WPS.
+
 **Đọc mã theo tuyến:** profile header: `../src/canonical/nd30/profiles/hoa-tieu-hang-hai-mien-bac/profile.json`, `../src/canonical/hd05/profiles/hoa-tieu-hang-hai-mien-bac/profile.json`; body/table: `../src/canonical/nd30/companyBodyProfile.ts`; rules: `../src/canonical/ruleEngine.ts`; composer/export: `../src/utils/documentComposer.ts`, `../src/utils/docxExport.ts`, `../src/utils/hoaTieuHeaderStamp.ts`, `../src/utils/exportCandidate.ts`; Bước 3: `../src/components/WorkspaceExport.tsx`. Đây là route vào code, **không phải bằng chứng resolver đã nối toàn pipeline**; khi lập trình phải kiểm producer → effective value → consumer → DOCX/QA.
 
 ## Tra Cứu Nhanh Theo Tác Vụ
