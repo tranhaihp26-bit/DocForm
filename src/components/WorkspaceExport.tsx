@@ -203,10 +203,10 @@ export function WorkspaceExport({
     if (!hasComplianceIssues) {
       statusBadgeText = 'Sẵn sàng tải xuống';
       statusTone = 'safe';
-      statusTitle = 'Bản Word hoàn chỉnh sẵn sàng';
+      statusTitle = 'Bản Word đã qua kiểm tra kỹ thuật';
       statusDesc = activeComplianceReport
-        ? `Tất cả tiêu chuẩn thể thức và nội dung đã đạt (${activeComplianceReport.passedChecks}/${activeComplianceReport.totalChecks} mục). Văn bản đủ điều kiện ban hành.`
-        : 'Bản Word đã đạt kiểm tra và đủ điều kiện tải xuống.';
+        ? `Ghi nhận ${activeComplianceReport.passedChecks}/${activeComplianceReport.totalChecks} mục đạt kiểm tra tự động. Cần rà soát nội dung, thông số profile và phê duyệt nghiệp vụ riêng trước khi ban hành.`
+        : 'Tệp Word đủ điều kiện tải theo các cổng kiểm tra kỹ thuật đã thực hiện; chưa đồng nghĩa văn bản được phê duyệt để ban hành.';
     } else {
       statusBadgeText = 'Có thể tải · Có lưu ý';
       statusTone = 'warning';

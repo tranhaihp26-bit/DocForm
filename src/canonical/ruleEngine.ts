@@ -8,7 +8,7 @@
  * Rules are strictly categorized into:
  * - mandatory_legal: Quy định pháp lý bắt buộc
  * - official_guidance: Hướng dẫn kỹ thuật chính thức
- * - company_profile: Profile riêng của Công ty Hoa tiêu hàng hải miền Bắc (không nới lỏng rule pháp lý)
+ * - company_profile: Thuộc tính đã thiết lập trong profile Công ty có quyền ưu tiên thông số tuyệt đối; fallback ND30/HD05 chỉ cho trường còn thiếu
  * - style_spelling: Khuyến nghị chính tả, ngữ pháp, văn phong
  *
  * Strict 5-state execution status:
@@ -21,8 +21,9 @@
 
 import rawNd30Catalog from "./nd30/rules.generated.json";
 import rawHd05Catalog from "./hd05/rules.2026.json";
-import { COMPANY_HEADER_PROFILE_ID, COMPANY_HEADER_TABLE_TWIPS } from "./nd30/companyHeader.ts";
-import { COMPANY_HEADER_HD05_PROFILE_ID, COMPANY_HEADER_HD05_TABLE_TWIPS } from "./hd05/companyHeaderHD05.ts";
+import { COMPANY_HEADER_PROFILE_ID, COMPANY_HEADER_TABLE_TWIPS, COMPANY_HEADER_GEOMETRY_MM } from "./nd30/companyHeader.ts";
+import { resolveCompanyBodyProfile } from "./nd30/companyBodyProfile.ts";
+import { COMPANY_HEADER_HD05_PROFILE_ID, COMPANY_HEADER_HD05_TABLE_TWIPS, COMPANY_HEADER_HD05_GEOMETRY_MM } from "./hd05/companyHeaderHD05.ts";
 import { evidenceFromDocumentXml } from "./nd30/canonicalAudit.ts";
 import { extractHD05EvidenceFromXml } from "./hd05/canonicalAuditHD05.ts";
 import { extractBodyOoxmlEvidence } from "./bodyOoxmlEvidence.ts";
@@ -478,10 +479,12 @@ export function buildCanonicalRuleRegistry(): CanonicalRuleDef[] {
     { id: "BODY.HEADING.ARTICLE_FORMAT", title: "Định dạng Điều khoản", regime: "administrative", prop: "article_headings", desc: "Từ 'Điều ...' viết hoa chữ cái đầu, đậm; nội dung điều bắt đầu cùng dòng" },
     { id: "BODY.TABLE.PRESERVATION", title: "Bảo toàn Bảng biểu nội dung", regime: "administrative", prop: "table_geometry", desc: "Bảo toàn số hàng, số cột, ô gộp ngang/dọc và nội dung ô của bảng" },
     { id: "BODY.TABLE.HEADER_ROW", title: "Hàng tiêu đề Bảng biểu", regime: "administrative", prop: "table_header_row", desc: "Hàng đầu bảng in đậm, căn giữa, lặp lại trên trang mới nếu bảng ngắt trang" },
+    { id: "ND30-BODY-FONT-SIZE", title: "Cỡ chữ thân bài", regime: "administrative", prop: "font_size", desc: "Font body theo profile Công ty 14pt nếu đã chọn, nếu không dùng ND30 fallback 13-14pt" },
     { id: "BODY.PARAGRAPH.LINE_SPACING", title: "Khoảng cách dòng", regime: "administrative", prop: "line_spacing", desc: "Giãn dòng thân bài theo khoảng từ đơn đến 1.5 dòng; profile Hoa Tiêu MB áp dụng exactly 19pt" },
     { id: "BODY.PARAGRAPH.FIRST_LINE_INDENT", title: "Thụt lề đầu dòng", regime: "administrative", prop: "first_line_indent", desc: "Đầu dòng đoạn văn thụt lề từ 1cm đến 1.27cm (567 - 720 twips)" },
     { id: "BODY.PARTY.FIVE_HYPHENS", title: "5 dấu gạch nối trước nội dung", regime: "party", prop: "five_hyphens", desc: "Văn bản Đảng có tên loại phải có đúng 5 dấu gạch nối '-----' trước nội dung" },
     { id: "BODY.PARTY.SUBJECT_UPRIGHT_BOLD", title: "Trích yếu đứng đậm", regime: "party", prop: "subject_format", desc: "Trích yếu văn bản Đảng có tên loại in thường, đứng, đậm (không in nghiêng)" },
+    { id: "HD05-BODY-FONT-SIZE", title: "Cỡ chữ thân bài Đảng", regime: "party", prop: "font_size", desc: "Font body theo profile Công ty 14pt nếu đã chọn, nếu không dùng HD05 fallback 14-15pt" },
     { id: "HD05-BODY-LINE-SPACING", title: "Khoảng cách dòng văn bản Đảng", regime: "party", prop: "line_spacing", desc: "Dãn dòng cố định (exactly) từ 18pt đến 22pt" },
     { id: "HD05-BODY-FIRST-LINE-INDENT", title: "Thụt lề đầu dòng văn bản Đảng", regime: "party", prop: "first_line_indent", desc: "Đầu dòng đoạn văn bản Đảng thụt lề ~10mm theo Hướng dẫn 05; profile Hoa Tiêu MB áp dụng ~10mm (567 twips)" },
   ];
@@ -1025,12 +1028,20 @@ export function evaluateDocumentRules(
   // -------------------------------------------------------------------------
   // PROCESS CANONICAL OOXML AUDIT (Strict 5-State Verification)
   // -------------------------------------------------------------------------
-  const isUsingNd30CompanyProfile =
-    doc.headerProfile === COMPANY_HEADER_PROFILE_ID ||
-    ooxmlEvidence?.header_profile === COMPANY_HEADER_PROFILE_ID;
-  const isUsingHd05CompanyProfile =
-    doc.headerProfile === COMPANY_HEADER_HD05_PROFILE_ID ||
-    ooxmlEvidence?.header_profile === COMPANY_HEADER_HD05_PROFILE_ID;
+  // OOXML evidence describes the candidate, NOT a user decision to select a profile.
+  const isUsingNd30CompanyProfile = effectiveRegime === "administrative" && doc.headerProfile === COMPANY_HEADER_PROFILE_ID;
+  const isUsingHd05CompanyProfile = effectiveRegime === "party" && doc.headerProfile === COMPANY_HEADER_HD05_PROFILE_ID;
+  const companyBodyProfile = resolveCompanyBodyProfile(effectiveRegime, doc.headerProfile);
+  const companyPageGeometry = isUsingNd30CompanyProfile
+    ? COMPANY_HEADER_GEOMETRY_MM
+    : isUsingHd05CompanyProfile ? COMPANY_HEADER_HD05_GEOMETRY_MM : null;
+  // The profile JSON currently defines paper and page margins for its first-page scope.
+  // Do not compare those properties against ND30 generic ranges when profile is selected.
+  const pageProfileAttributes: Record<string, number | string> = companyPageGeometry
+    ? { margin_top_mm: companyPageGeometry.marginTop, margin_bottom_mm: companyPageGeometry.marginBottom,
+        margin_left_mm: companyPageGeometry.marginLeft, margin_right_mm: companyPageGeometry.marginRight,
+        page_size: "A4" }
+    : {};
 
   if (ooxmlEvidence) {
     evidenceNotes.push("Đã nạp bằng chứng thực tế trích xuất từ OOXML Word (.docx).");
@@ -1051,7 +1062,10 @@ export function evaluateDocumentRules(
           status = "NOT_APPLICABLE";
           reason = "Ngoài phạm vi, trạng thái hoặc thời điểm hiệu lực.";
         } else if (r.id === "ND30.PL1.I.II.1B.MOTTO_UNDERLINE_LENGTH") {
-          if (ooxmlEvidence.motto_underline_length_relation !== undefined) {
+          if (isUsingNd30CompanyProfile) {
+            status = "NOT_APPLICABLE";
+            reason = "Đường kẻ tiêu ngữ đã được profile Công ty thiết lập; không hậu kiểm theo tỷ lệ ND30.";
+          } else if (ooxmlEvidence.motto_underline_length_relation !== undefined) {
             actual = ooxmlEvidence.motto_underline_length_relation;
             status = actual === "equal_to_text_length" ? "PASS" : "FAIL";
             reason = status === "PASS"
@@ -1059,7 +1073,10 @@ export function evaluateDocumentRules(
               : "Độ dài đường kẻ dưới tiêu ngữ không khớp độ dài dòng chữ.";
           }
         } else if (r.id === "ND30.PL1.I.II.2B.ISSUER_UNDERLINE_RANGE") {
-          if (typeof ooxmlEvidence.issuer_underline_fraction === "number") {
+          if (isUsingNd30CompanyProfile) {
+            status = "NOT_APPLICABLE";
+            reason = "Đường kẻ cơ quan đã được profile Công ty thiết lập; không hậu kiểm tỷ lệ ND30.";
+          } else if (typeof ooxmlEvidence.issuer_underline_fraction === "number") {
             const frac = ooxmlEvidence.issuer_underline_fraction;
             actual = frac;
             const min = typeof r.expected.min === "number" ? r.expected.min : 0.3333;
@@ -1084,7 +1101,12 @@ export function evaluateDocumentRules(
           if (val !== undefined) {
             actual = val;
             let matched: boolean | null = null;
-            if (r.expected.type === "range_inclusive" && typeof val === "number" && typeof r.expected.min === "number" && typeof r.expected.max === "number") {
+            if (Object.prototype.hasOwnProperty.call(pageProfileAttributes, r.target.property)) {
+              const target = pageProfileAttributes[r.target.property];
+              matched = typeof target === "number" && typeof val === "number"
+                ? Math.abs(val - target) <= 0.08
+                : val === target;
+            } else if (r.expected.type === "range_inclusive" && typeof val === "number" && typeof r.expected.min === "number" && typeof r.expected.max === "number") {
               matched = val + 0.08 >= r.expected.min && val - 0.08 <= r.expected.max;
             } else if (r.expected.type === "equals") {
               if (typeof val === "number" && typeof r.expected.value === "number") {
@@ -1097,9 +1119,12 @@ export function evaluateDocumentRules(
             }
             if (matched !== null) {
               status = matched ? "PASS" : "FAIL";
+              const expectedDescription = Object.prototype.hasOwnProperty.call(pageProfileAttributes, r.target.property)
+                ? `profile Công ty (${String(pageProfileAttributes[r.target.property])})`
+                : r.expected.description;
               reason = matched
-                ? "Kích thước hình học trang đo từ OOXML đạt chuẩn."
-                : `Kích thước hình học trang đo từ OOXML (${String(val)}) không khớp quy chuẩn (${r.expected.description}).`;
+                ? `Hình học trang đạt thông số hiệu lực: ${expectedDescription}.`
+                : `Hình học trang (${String(val)}) không khớp ${expectedDescription}.`;
             }
           }
         } else if (r.id === "PROFILE.ND30.HOA_TIEU_MB.TABLE_WIDTH") {
@@ -1148,11 +1173,12 @@ export function evaluateDocumentRules(
               const min = bEv.firstLineIndentRangeDxa.min;
               const max = bEv.firstLineIndentRangeDxa.max;
               actual = `${min} - ${max} dxa`;
-              const ok = min >= 560 && max <= 730;
+              const profileIndentDxa = companyBodyProfile ? Math.round(companyBodyProfile.body.firstLineIndentIn * 1440) : undefined;
+              const ok = profileIndentDxa !== undefined ? Math.abs(min - profileIndentDxa) <= 1 && Math.abs(max - profileIndentDxa) <= 1 : min >= 560 && max <= 730;
               status = ok ? "PASS" : "FAIL";
-              reason = ok
-                ? `Thụt đầu dòng đoạn thân bài (${min}-${max} dxa) đạt chuẩn 1.0-1.27cm (567-720 dxa) theo NĐ 30.`
-                : `Thụt đầu dòng đoạn thân bài (${min}-${max} dxa) nằm ngoài khoảng 1.0-1.27cm (567-720 dxa).`;
+              const expectedDescription = profileIndentDxa !== undefined
+                ? `profile Công ty (${profileIndentDxa} dxa)` : "ND30 (560-730 dxa)";
+              reason = `Thụt đầu dòng thân bài (${min}-${max} dxa) ${ok ? "khớp" : "không khớp"} ${expectedDescription}.`;
             }
           }
         } else if (r.id === "BODY.PARAGRAPH.LINE_SPACING" || r.id === "ND30-BODY-LINE-SPACING") {
@@ -1174,7 +1200,7 @@ export function evaluateDocumentRules(
                   p.text.trim().length > 0 && (p.isEligibleBody || p.role === "heading")
                 );
                 const exactCompanySpacing = bodyParagraphs.length > 0 && bodyParagraphs.every((p: any) =>
-                  p.lineRule === "exact" && p.lineSpacingDxa === 380
+                  p.lineRule === "exact" && p.lineSpacingDxa === companyBodyProfile!.body.lineSpacingPt * 20
                 );
                 status = exactCompanySpacing ? "PASS" : "FAIL";
                 reason = exactCompanySpacing
@@ -1203,11 +1229,11 @@ export function evaluateDocumentRules(
               const min = bEv.fontSizeRangePt.min;
               const max = bEv.fontSizeRangePt.max;
               actual = `${min} - ${max} pt`;
-              const ok = min >= 13 && max <= 14;
+              const profileFont = companyBodyProfile?.body.fontSizePt;
+              const ok = profileFont !== undefined ? min === profileFont && max === profileFont : min >= 13 && max <= 14;
               status = ok ? "PASS" : "FAIL";
-              reason = ok
-                ? `Cỡ chữ thân bài (${min}-${max}pt) đạt chuẩn 13-14pt theo NĐ 30.`
-                : `Cỡ chữ thân bài (${min}-${max}pt) không nằm trong khoảng 13-14pt.`;
+              const expectedDescription = profileFont !== undefined ? `profile Công ty ${profileFont}pt` : "ND30 13-14pt";
+              reason = `Cỡ chữ thân bài (${min}-${max}pt) ${ok ? "khớp" : "không khớp"} ${expectedDescription}.`;
             }
           }
         } else if (r.id === "BODY.TABLE.PRESERVATION") {
@@ -1424,11 +1450,11 @@ export function evaluateDocumentRules(
               const min = bEv.fontSizeRangePt.min;
               const max = bEv.fontSizeRangePt.max;
               actual = `${min} - ${max} pt`;
-              const ok = min >= 14 && max <= 15;
+              const profileFont = companyBodyProfile?.body.fontSizePt;
+              const ok = profileFont !== undefined ? min === profileFont && max === profileFont : min >= 14 && max <= 15;
               status = ok ? "PASS" : "FAIL";
-              reason = ok
-                ? `Cỡ chữ thân bài văn bản Đảng (${min}-${max}pt) đạt chuẩn 14-15pt theo HD 05.`
-                : `Cỡ chữ thân bài văn bản Đảng (${min}-${max}pt) không thuộc khoảng 14-15pt.`;
+              const expectedDescription = profileFont !== undefined ? `profile Công ty ${profileFont}pt` : "HD05 14-15pt";
+              reason = `Cỡ chữ thân bài Đảng (${min}-${max}pt) ${ok ? "khớp" : "không khớp"} ${expectedDescription}.`;
             }
           }
         } else if (r.id === "HD05-BODY-FIRST-LINE-INDENT") {
@@ -1445,11 +1471,12 @@ export function evaluateDocumentRules(
               const min = bEv.firstLineIndentRangeDxa.min;
               const max = bEv.firstLineIndentRangeDxa.max;
               actual = `${min} - ${max} dxa`;
-              const ok = min >= 540 && max <= 600;
+              const profileIndentDxa = companyBodyProfile ? Math.round(companyBodyProfile.body.firstLineIndentIn * 1440) : undefined;
+              const ok = profileIndentDxa !== undefined ? Math.abs(min - profileIndentDxa) <= 1 && Math.abs(max - profileIndentDxa) <= 1 : min >= 540 && max <= 600;
               status = ok ? "PASS" : "FAIL";
-              reason = ok
-                ? `Thụt đầu dòng văn bản Đảng (${min}-${max} dxa) đạt dải 540-600 dxa (~10mm) theo HD 05.`
-                : `Thụt đầu dòng văn bản Đảng (${min}-${max} dxa) nằm ngoài dải 540-600 dxa (~10mm) theo HD 05.`;
+              const expectedDescription = profileIndentDxa !== undefined
+                ? `profile Công ty (${profileIndentDxa} dxa)` : "HD05 (540-600 dxa)";
+              reason = `Thụt đầu dòng Đảng (${min}-${max} dxa) ${ok ? "khớp" : "không khớp"} ${expectedDescription}.`;
             }
           }
         } else if (r.id === "HD05-BODY-LINE-SPACING") {
@@ -1465,7 +1492,7 @@ export function evaluateDocumentRules(
             } else {
               if (isUsingHd05CompanyProfile) {
                 const exactCompanySpacing = eligible.every((p: any) =>
-                  p.lineRule === "exact" && p.lineSpacingDxa === 380
+                  p.lineRule === "exact" && p.lineSpacingDxa === companyBodyProfile!.body.lineSpacingPt * 20
                 );
                 actual = exactCompanySpacing ? "exact 19pt (380 dxa)" : `chưa đạt exactly 19pt`;
                 status = exactCompanySpacing ? "PASS" : "FAIL";
@@ -1515,19 +1542,40 @@ export function evaluateDocumentRules(
         }
       }
 
+      // Every explicitly configured company attribute is checked against its
+      // profile value only. Catalog metadata must not imply a legal fallback.
+      const bodyAttribute: Record<string, "fontSizePt" | "lineSpacingPt" | "firstLineIndentIn"> = {
+        "BODY.PARAGRAPH.LINE_SPACING": "lineSpacingPt",
+        "ND30-BODY-LINE-SPACING": "lineSpacingPt",
+        "HD05-BODY-LINE-SPACING": "lineSpacingPt",
+        "BODY.PARAGRAPH.FIRST_LINE_INDENT": "firstLineIndentIn",
+        "ND30-BODY-FIRST-LINE-INDENT": "firstLineIndentIn",
+        "HD05-BODY-FIRST-LINE-INDENT": "firstLineIndentIn",
+        "ND30-BODY-FONT-SIZE": "fontSizePt",
+        "HD05-BODY-FONT-SIZE": "fontSizePt",
+      };
+      const selectedBodyAttribute = companyBodyProfile && bodyAttribute[r.id];
+      const hasPageAttribute = isUsingNd30CompanyProfile && r.target.objectType === "section" &&
+        Object.prototype.hasOwnProperty.call(pageProfileAttributes, r.target.property);
+      const profileAttributeExpected = selectedBodyAttribute
+        ? companyBodyProfile.body[selectedBodyAttribute]
+        : hasPageAttribute ? pageProfileAttributes[r.target.property] : undefined;
+      const profileSourced = selectedBodyAttribute || hasPageAttribute;
       counts[status]++;
       results.push({
         ruleId: r.id,
         regime: effectiveRegime,
         componentGroup: r.componentGroup,
-        category: r.category,
+        category: profileSourced ? "company_profile" : r.category,
         title: r.title,
         status,
-        sourceLocator: r.sourceLocator,
-        expected: r.expected.description,
+        sourceLocator: selectedBodyAttribute
+          ? "src/canonical/nd30/companyBodyProfile.ts"
+          : hasPageAttribute ? "company header profile.json / selections.page" : r.sourceLocator,
+        expected: profileSourced ? profileAttributeExpected : r.expected.description,
         actual,
         reason,
-        severity: r.severity,
+        severity: profileSourced ? "INFO" : r.severity,
         fixPolicy: r.fixPolicy,
       });
     }

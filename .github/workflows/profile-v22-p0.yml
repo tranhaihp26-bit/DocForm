@@ -1,0 +1,35 @@
+name: DocForm V2.2 focused profile checks
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/profile-v22-p0.yml"
+      - "src/canonical/**"
+      - "src/utils/documentComposer.ts"
+      - "src/utils/importSessionLifecycle.ts"
+      - "src/server/middleware/compliance.middleware.ts"
+      - "src/components/WorkspaceExport.tsx"
+      - "test/profile-first-v22.test.ts"
+  workflow_dispatch:
+
+jobs:
+  profile-first:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps # Existing esbuild 0.25 / Vite 8 peer mismatch; tracked separately
+      - name: Typecheck
+        run: npm run lint
+      - name: Focused V2.2 regression tests
+        run: >
+          npx tsx --test
+          test/profile-first-v22.test.ts
+          test/company-body-profile.test.ts
+          test/import-session-lifecycle.test.ts
+          test/semantic-rule-formatting.test.ts
+          test/source-mismatch-profile.test.ts
