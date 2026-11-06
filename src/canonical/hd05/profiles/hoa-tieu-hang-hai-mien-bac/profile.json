@@ -17,13 +17,18 @@
   "selections": {
     "page": {
       "paper": "A4",
-      "margin_mm": { "top": 20, "bottom": 20, "left": 30, "right": 15 }
+      "margin_mm": {
+        "top": 20,
+        "bottom": 20,
+        "left": 30,
+        "right": 15
+      }
     },
     "header_table": {
-      "width_twips": 10170,
-      "left_column_twips": 5580,
-      "right_column_twips": 4590,
-      "indent_twips": -540,
+      "width_twips": 9980,
+      "left_column_twips": 5540,
+      "right_column_twips": 4440,
+      "indent_twips": -593,
       "layout": "fixed",
       "borders": "none",
       "cell_padding_twips": 0
@@ -42,7 +47,7 @@
       "reference_number_placeholder": "Số …-…/ĐU"
     },
     "right_column": {
-      "alignment": "right",
+      "alignment": "center",
       "party_title": "ĐẢNG CỘNG SẢN VIỆT NAM",
       "place_date_placeholder": "Hải Phòng, ngày … tháng … năm 2026",
       "title_line_shape": {
@@ -54,7 +59,8 @@
         "weight_pt": 0.75,
         "left_pt": 360.1,
         "top_pt": 76.1,
-        "width_pt": 207
+        "width_pt": 204.35,
+        "width_mm": 72.09
       }
     },
     "typography": {

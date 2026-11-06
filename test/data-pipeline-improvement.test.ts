@@ -1022,7 +1022,7 @@ test("Cổng ứng viên: Hoa Tiêu thay thế Shape phần đầu an toàn; pro
   const subjectPlainBlock: SourceBlock = { id: "block-2", index: 2, kind: "paragraph", role: "metadata", text: "Về việc kiểm thử phần đầu Hoa Tiêu" };
   const bodyBlock: SourceBlock = { id: "block-3", index: 3, kind: "paragraph", role: "body", text: "Nội dung thân bài kiểm thử.", html: "<p>Nội dung thân bài kiểm thử.</p>" };
 
-  const makeApprovedSnapshot = (headerProfile: "generic" | typeof COMPANY_HEADER_PROFILE_ID, subjectBlock: SourceBlock, orgHeader2 = COMPANY_HEADER_ISSUER) => {
+  const makeApprovedSnapshot = (headerProfile: "generic" | typeof COMPANY_HEADER_PROFILE_ID, subjectBlock: SourceBlock, orgHeader2 = COMPANY_HEADER_ISSUER, overrideBodyBlock = bodyBlock) => {
     const effectiveHeaderBlock: SourceBlock = {
       ...headerBlock,
       text: `${COMPANY_HEADER_PARENT}\n${orgHeader2}\t${COMPANY_NATIONAL_HEADER}\n${COMPANY_MOTTO}\tSố: 01/TB-HTMB\tHải Phòng, ngày 20 tháng 10 năm 2026`,
@@ -1039,7 +1039,7 @@ test("Cổng ứng viên: Hoa Tiêu thay thế Shape phần đầu an toàn; pro
         }],
       },
     };
-    const blocks = [effectiveHeaderBlock, typeBlock, subjectBlock, bodyBlock];
+    const blocks = [effectiveHeaderBlock, typeBlock, subjectBlock, overrideBodyBlock];
     const structuredImport = {
       fields: {
         orgHeader1: { value: COMPANY_HEADER_PARENT, sourceBlockIds: ["block-0"] },
@@ -1088,25 +1088,51 @@ test("Cổng ứng viên: Hoa Tiêu thay thế Shape phần đầu an toàn; pro
   assert.equal(hoaTieuCandidate.safe, true, "Ứng viên Hoa Tiêu thay thế hợp lệ phải đạt safe: true");
   assert.equal(hoaTieuCandidate.downloadable, true, "Ứng viên Hoa Tiêu thay thế hợp lệ phải đạt downloadable: true");
 
-  // 2) Cơ quan khác Hoa Tiêu (generic profile) có Shape phần đầu -> giữ trạng thái chỉ đối chiếu
+  // 2) Profile generic không được tự thay Shape nguồn bằng header Hoa Tiêu.
   const genericSnap = makeApprovedSnapshot("generic", subjectPlainBlock, "ĐOÀN THANH NIÊN ĐƠN VỊ");
   const genericCandidate = await prepareExportCandidate(genericSnap);
-  assert.equal(genericCandidate.safe, false, "Profile generic không đóng dấu Shape gốc nên không được coi là safe");
-  assert.equal(genericCandidate.downloadable, false, "Profile generic có Shape nguồn phải khóa tải bản chính thức");
+  assert.equal(genericCandidate.safe, false, "Profile generic không đóng dấu Shape nguồn nên không được coi là safe");
+  assert.equal(genericCandidate.downloadable, false, "Profile generic có Shape nguồn phải khóa tải chính thức");
   assert.equal(genericCandidate.reviewDownloadable, true, "Vẫn cho phép tải bản đối chiếu chưa xác nhận");
   assert.ok(genericCandidate.blockers.includes("unsupported_source_ooxml:block-0"));
 
-  // 3) Khối trích yếu (block-2) có gắn kèm đối tượng Shape Line (như tệp pilot thực) -> giữ trạng thái chỉ đối chiếu
+  // 3) Shape ở khối trích yếu chưa được chứng minh tái tạo nên vẫn chỉ cho tải bản đối chiếu.
   const subjectWithShape: SourceBlock = {
     ...subjectPlainBlock,
     rawXml: `<w:p>${shapeFragment}</w:p>`,
   };
   const pilotLikeSnap = makeApprovedSnapshot("generic", subjectWithShape, "ĐOÀN THANH NIÊN ĐƠN VỊ");
   const pilotLikeCandidate = await prepareExportCandidate(pilotLikeSnap);
-  assert.equal(pilotLikeCandidate.safe, false, "Shape trong khối trích yếu chưa được chứng minh bảo toàn phải giữ safe: false");
+  assert.equal(pilotLikeCandidate.safe, false, "Shape trong trích yếu chưa được chứng minh bảo toàn phải giữ safe: false");
   assert.equal(pilotLikeCandidate.downloadable, false, "Phải khóa tải chính thức khi còn blocker OOXML ở block-0 và block-2");
   assert.equal(pilotLikeCandidate.reviewDownloadable, true, "Phải giữ chế độ tải bản đối chiếu");
   assert.deepEqual(pilotLikeCandidate.blockers, ["unsupported_source_ooxml:block-0", "unsupported_source_ooxml:block-2"]);
-  assert.match(describeExportBlocker("unsupported_source_ooxml:block-0").messageVi, /#1 \(block-0\)/);
-  assert.match(describeExportBlocker("unsupported_source_ooxml:block-2").messageVi, /#3 \(block-2\)/);
+
+  // 4) Đường DrawingML không thuộc mẫu Shape đã hỗ trợ cũng phải giữ blocker.
+  const rawDrawingBlock: SourceBlock = {
+    ...subjectPlainBlock,
+    id: "block-2",
+    role: "separator",
+    text: "",
+    rawXml: `<w:p><w:r><w:drawing><wp:inline><a:graphic><a:graphicData><wps:wsp><wps:spPr><a:prstGeom prst="line"/></wps:spPr></wps:wsp></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`,
+  };
+  const rawDrawingSnap = makeApprovedSnapshot("generic", rawDrawingBlock, "DOAN THANH NIEN");
+  const rawDrawingCandidate = await prepareExportCandidate(rawDrawingSnap);
+  assert.equal(rawDrawingCandidate.safe, false, "Đường line chưa được nhận diện/tái tạo phải giữ safe: false");
+  assert.equal(rawDrawingCandidate.downloadable, false, "Không cho tải chính thức khi có DrawingML chưa hỗ trợ");
+  assert.equal(rawDrawingCandidate.reviewDownloadable, true);
+  assert.ok(rawDrawingCandidate.blockers.includes("unsupported_source_ooxml:block-2"));
+
+  // 5) Phân biệt với đường line/Shape nằm trong Body hoặc Phụ lục (thường dùng trong sơ đồ, quy trình):
+  // Chỉ áp dụng thay thế cho phần đầu; các đường line/Shape trong Body vẫn phải bị chặn để đối chiếu tệp gốc
+  const bodyWithShape: SourceBlock = {
+    ...bodyBlock,
+    rawXml: `<w:p>${shapeFragment}</w:p>`,
+  };
+  const bodyShapeSnap = makeApprovedSnapshot("generic", subjectPlainBlock, "ĐOÀN THANH NIÊN ĐƠN VỊ", bodyWithShape);
+  const bodyShapeCandidate = await prepareExportCandidate(bodyShapeSnap);
+  assert.equal(bodyShapeCandidate.safe, false, "Shape trong phần Body (sơ đồ) chưa được chứng minh bảo toàn phải giữ safe: false");
+  assert.equal(bodyShapeCandidate.downloadable, false, "Shape trong phần Body phải khóa tải chính thức");
+  assert.ok(bodyShapeCandidate.blockers.includes("unsupported_source_ooxml:block-3"), "Phải giữ blocker unsupported_source_ooxml cho khối Body");
+  assert.match(describeExportBlocker("unsupported_source_ooxml:block-3").messageVi, /#4 \(block-3\)/);
 });

@@ -36,28 +36,180 @@ export interface A4DocumentPreviewProps {
   isExportingPdf?: boolean;
 }
 
-// docx-preview does not currently apply the negative OOXML table indent. Restore
-// that placement in its HTML view so it matches the exported Word document.
-function positionCompanyTableInDocxPreview(root: HTMLElement, isParty: boolean) {
+// docx-preview does not currently apply the negative OOXML table indent nor render
+// shape lines (DrawingML/VML). Restore that placement and render crisp statutory dividers
+// in its HTML view so it matches the exported Word document.
+function enhanceDocxPreviewLinesAndGeometry(root: HTMLElement, isParty: boolean) {
+  // 1. Phục hồi vị trí lề nếu là Company Header (bảo toàn logic gốc)
   if (isParty) {
     const table = Array.from(root.querySelectorAll("table"))
       .find((candidate) => candidate.textContent?.includes(COMPANY_HEADER_HD05_TITLE));
-    if (!table) return;
-    table.style.marginLeft = `${COMPANY_HEADER_HD05_GEOMETRY_MM.headerIndent}mm`;
-    table.style.width = `${COMPANY_HEADER_HD05_GEOMETRY_MM.headerWidth}mm`;
-    table.style.minWidth = `${COMPANY_HEADER_HD05_GEOMETRY_MM.headerWidth}mm`;
-    table.style.tableLayout = "fixed";
-    const headerCells = table.rows[0]?.cells;
-    if (headerCells?.length === 2) {
-      headerCells[0].style.width = `${COMPANY_HEADER_HD05_GEOMETRY_MM.leftColumn}mm`;
-      headerCells[1].style.width = `${COMPANY_HEADER_HD05_GEOMETRY_MM.rightColumn}mm`;
+    if (table) {
+      table.style.marginLeft = `${COMPANY_HEADER_HD05_GEOMETRY_MM.headerIndent}mm`;
+      table.style.width = `${COMPANY_HEADER_HD05_GEOMETRY_MM.headerWidth}mm`;
+      table.style.minWidth = `${COMPANY_HEADER_HD05_GEOMETRY_MM.headerWidth}mm`;
+      table.style.tableLayout = "fixed";
+      const headerCells = table.rows[0]?.cells;
+      if (headerCells?.length === 2) {
+        headerCells[0].style.width = `${COMPANY_HEADER_HD05_GEOMETRY_MM.leftColumn}mm`;
+        headerCells[1].style.width = `${COMPANY_HEADER_HD05_GEOMETRY_MM.rightColumn}mm`;
+      }
     }
   } else {
     const table = Array.from(root.querySelectorAll("table"))
       .find((candidate) => candidate.textContent?.includes(COMPANY_HEADER_ISSUER_LINES[0]));
-    if (!table) return;
-    table.style.marginLeft = `${COMPANY_HEADER_GEOMETRY_MM.headerIndent}mm`;
-    table.style.tableLayout = "fixed";
+    if (table) {
+      table.style.marginLeft = `${COMPANY_HEADER_GEOMETRY_MM.headerIndent}mm`;
+      table.style.tableLayout = "fixed";
+    }
+  }
+
+  // 2. Tinh chỉnh các đường line phần Header (Cơ quan ban hành & Tiêu ngữ)
+  const tables = Array.from(root.querySelectorAll("table"));
+  const headerTable = tables.find(t =>
+    t.textContent?.includes("CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM") ||
+    t.textContent?.includes("ĐẢNG CỘNG SẢN VIỆT NAM") ||
+    t.textContent?.includes("Số:") ||
+    t.textContent?.includes("Số ")
+  );
+
+  if (headerTable) {
+    const cells = Array.from(headerTable.querySelectorAll("td"));
+    if (cells.length >= 2) {
+      const leftCell = cells[0];
+      const rightCell = cells[1];
+
+      // A. Cột trái: Cơ quan ban hành (theo NĐ 30: kẻ đường nét liền 1/3 - 1/2)
+      if (!isParty) {
+        const borderPs = Array.from(leftCell.querySelectorAll("p")).filter(p => {
+          const s = window.getComputedStyle(p);
+          return (s.borderBottomWidth && s.borderBottomWidth !== "0px" && !s.borderBottom.includes("none"));
+        });
+
+        if (borderPs.length > 0) {
+          borderPs.forEach(p => {
+            p.style.setProperty("border-bottom", "1.2px solid #000", "important");
+            p.style.setProperty("display", "block", "important");
+            p.style.setProperty("visibility", "visible", "important");
+            p.style.setProperty("opacity", "1", "important");
+          });
+        } else if (!leftCell.querySelector(".df-docx-line-issuer")) {
+          const leftPs = Array.from(leftCell.querySelectorAll("p"));
+          const refP = leftPs.find(p => p.textContent?.includes("Số:") || p.textContent?.includes("Số "));
+          const refIdx = refP ? leftPs.indexOf(refP) : leftPs.length;
+          const orgPs = leftPs.slice(0, refIdx).filter(p => (p.textContent || "").trim().length > 0);
+          const lastOrgP = orgPs[orgPs.length - 1];
+
+          if (lastOrgP) {
+            const line = document.createElement("div");
+            line.className = "df-docx-line df-docx-line-issuer";
+            line.setAttribute("style", "width: 155px; max-width: 80%; height: 1.2px; background-color: #000; margin: 3px auto 5px auto;");
+            lastOrgP.insertAdjacentElement("afterend", line);
+          }
+        }
+      }
+
+      // B. Cột phải: Tiêu ngữ "Độc lập - Tự do - Hạnh phúc" hoặc Đảng
+      if (!isParty) {
+        const borderPs = Array.from(rightCell.querySelectorAll("p")).filter(p => {
+          const s = window.getComputedStyle(p);
+          return (s.borderBottomWidth && s.borderBottomWidth !== "0px" && !s.borderBottom.includes("none"));
+        });
+
+        if (borderPs.length > 0) {
+          borderPs.forEach(p => {
+            p.style.setProperty("border-bottom", "1.2px solid #000", "important");
+            p.style.setProperty("display", "block", "important");
+            p.style.setProperty("visibility", "visible", "important");
+            p.style.setProperty("opacity", "1", "important");
+          });
+        } else if (!rightCell.querySelector(".df-docx-line-motto")) {
+          const rightPs = Array.from(rightCell.querySelectorAll("p"));
+          const mottoP = rightPs.find(p => p.textContent?.includes("Độc lập - Tự do - Hạnh phúc"));
+          if (mottoP) {
+            const line = document.createElement("div");
+            line.className = "df-docx-line df-docx-line-motto";
+            line.setAttribute("style", "width: 208px; max-width: 100%; height: 1.2px; background-color: #000; margin: 3px auto 5px auto;");
+            mottoP.insertAdjacentElement("afterend", line);
+          }
+        }
+        // Căn giữa ngày tháng khớp với thiết lập file mẫu chuẩn NĐ 30
+        const dateP = Array.from(rightCell.querySelectorAll("p")).find(p => p.textContent?.includes("ngày") && p.textContent?.includes("tháng"));
+        if (dateP) {
+          dateP.style.setProperty("text-align", "center", "important");
+        }
+      } else if (!rightCell.querySelector(".df-docx-line-party")) {
+        // Văn bản Đảng: Quốc hiệu ĐẢNG CỘNG SẢN VIỆT NAM có đường line 100%
+        const rightPs = Array.from(rightCell.querySelectorAll("p"));
+        const partyP = rightPs.find(p => p.textContent?.includes("ĐẢNG CỘNG SẢN VIỆT NAM"));
+        if (partyP) {
+          const line = document.createElement("div");
+          line.className = "df-docx-line df-docx-line-party";
+          line.setAttribute("style", "width: 208px; max-width: 100%; height: 1.2px; background-color: #000; margin: 3px auto 5px auto;");
+          partyP.insertAdjacentElement("afterend", line);
+        }
+      }
+    }
+  }
+
+  // 3. Đường kẻ Trích yếu văn bản (phần giữa trang trước Body)
+  if (!isParty) {
+    const allPs = Array.from(root.querySelectorAll("p"));
+    const borderPs = allPs.filter(p => {
+      if (headerTable?.contains(p)) return false;
+      const s = window.getComputedStyle(p);
+      return (s.borderBottomWidth && s.borderBottomWidth !== "0px" && !s.borderBottom.includes("none"));
+    });
+
+    if (borderPs.length > 0) {
+      borderPs.forEach(p => {
+        p.style.setProperty("border-bottom", "1.2px solid #000", "important");
+        p.style.setProperty("display", "block", "important");
+        p.style.setProperty("visibility", "visible", "important");
+        p.style.setProperty("opacity", "1", "important");
+      });
+    } else if (!root.querySelector(".df-docx-line-subject")) {
+      const knownDocTypes = ["THÔNG BÁO", "QUYẾT ĐỊNH", "KẾ HOẠCH", "BÁO CÁO", "TỜ TRÌNH", "CHỈ THỊ", "NGHỊ QUYẾT", "QUY ĐỊNH", "QUY CHẾ", "BIÊN BẢN", "CÔNG ĐIỆN", "HƯỚNG DẪN"];
+      const typeP = allPs.find(p => {
+        const t = (p.textContent || "").trim();
+        return knownDocTypes.includes(t) && !headerTable?.contains(p);
+      });
+
+      if (typeP) {
+        let cur = typeP.nextElementSibling;
+        while (cur && (cur.tagName === "P" && (cur.textContent || "").trim().length === 0)) {
+          cur = cur.nextElementSibling;
+        }
+        if (cur && cur.tagName === "P") {
+          const line = document.createElement("div");
+          line.className = "df-docx-line df-docx-line-subject";
+          line.setAttribute("style", "width: 155px; max-width: 60%; height: 1.2px; background-color: #000; margin: 4px auto 8px auto;");
+          cur.insertAdjacentElement("afterend", line);
+        }
+      }
+    }
+  }
+
+  // 4. Bảng Chữ ký & Nơi nhận (cân chuẩn 48% Nơi nhận / 52% Ký tên)
+  const sigTable = tables.find(t =>
+    t !== headerTable && (
+      t.textContent?.includes("Nơi nhận:") ||
+      t.textContent?.includes("GIÁM ĐỐC") ||
+      t.textContent?.includes("CHỦ TỊCH") ||
+      t.textContent?.includes("HIỆU TRƯỞNG") ||
+      t.textContent?.includes("Ký, đóng dấu") ||
+      t.textContent?.includes("Ký và đóng dấu")
+    )
+  );
+
+  if (sigTable) {
+    const cells = Array.from(sigTable.querySelectorAll("td"));
+    if (cells.length >= 2) {
+      cells[0].style.setProperty("width", "52.14%", "important");
+      cells[0].style.setProperty("min-width", "52.14%", "important");
+      cells[1].style.setProperty("width", "47.86%", "important");
+      cells[1].style.setProperty("min-width", "47.86%", "important");
+    }
   }
 }
 
@@ -182,8 +334,8 @@ export const A4DocumentPreview: React.FC<A4DocumentPreviewProps> = ({
           trimXmlDeclaration: true,
           debug: false,
         });
-        if (isAnyCompanyHeader && docxContainerRef.current) {
-          positionCompanyTableInDocxPreview(docxContainerRef.current, isParty);
+        if (docxContainerRef.current) {
+          enhanceDocxPreviewLinesAndGeometry(docxContainerRef.current, isParty);
         }
 
         if (isMounted) {
@@ -231,8 +383,8 @@ export const A4DocumentPreview: React.FC<A4DocumentPreviewProps> = ({
           trimXmlDeclaration: true,
           debug: false,
         });
-        if (isAnyCompanyHeader && modalDocxContainerRef.current) {
-          positionCompanyTableInDocxPreview(modalDocxContainerRef.current, isParty);
+        if (modalDocxContainerRef.current) {
+          enhanceDocxPreviewLinesAndGeometry(modalDocxContainerRef.current, isParty);
         }
       } catch (err) {
         console.warn("Modal docx-preview render error:", err);
@@ -319,7 +471,7 @@ export const A4DocumentPreview: React.FC<A4DocumentPreviewProps> = ({
             </>}
           </div>
           <p className="mt-1" style={{ fontSize: "13pt" }}>{doc.referenceNumber || "Số: …/…"}</p>
-          <p className="mt-1 italic text-right" style={{ fontSize: "13pt" }}>{doc.locationAndDate || "Hải Phòng, ngày … tháng … năm …"}</p>
+          <p className="mt-1 italic text-center" style={{ fontSize: "13pt" }}>{doc.locationAndDate || "Hải Phòng, ngày … tháng … năm …"}</p>
         </div>
       )}
       {!hasEmbeddedHeader && isCompanyHeaderHD05 && (
@@ -476,6 +628,51 @@ export const A4DocumentPreview: React.FC<A4DocumentPreviewProps> = ({
         </div>
       )}
 
+      {/* 3b. Khối Kính gửi / Kính trình (Recipient Header) */}
+      {doc.recipientHeader && doc.recipientHeader.items && doc.recipientHeader.items.length > 0 && (() => {
+        const isToTrinh = /tờ\s*trình/i.test(doc.documentType || "") || /tờ\s*trình/i.test(doc.subject || "");
+        const kind = (!isParty && isToTrinh) ? "kinh_gui" : doc.recipientHeader.kind;
+        const labelText = kind === "kinh_trinh" ? "Kính trình:" : "Kính gửi:";
+        const items: any[] = doc.recipientHeader.items.filter((it: any) => it.text && it.text.trim());
+        if (items.length === 0) return null;
+
+        return (
+          <div className="my-3 text-[14pt] leading-[calc(19/14)] font-['Times_New_Roman'] text-black select-text">
+            {isParty ? (
+              <div className="space-y-1">
+                <p className="text-center italic">{labelText}</p>
+                <div className="pl-[2.9cm] -indent-[0.6cm] space-y-0.5">
+                  {items.map((it: any, idx: number) => {
+                    const cleanText = it.text.replace(/^[-*•–—]\s*/, "").replace(/;+$/, "").trim();
+                    return <p key={it.id || idx}>- {cleanText};</p>;
+                  })}
+                </div>
+              </div>
+            ) : (
+              items.length === 1 ? (
+                <p className="indent-[1.27cm]">
+                  <span>{labelText} </span>
+                  <span>{items[0].text.replace(/^[-*•–—]\s*/, "").replace(/[\.;]+$/, "").trim()}</span>
+                </p>
+              ) : (
+                <div className="space-y-0.5">
+                  <p className="indent-[1.27cm]">{labelText}</p>
+                  <div className="pl-[3.6cm] -indent-[0.6cm] space-y-0.5">
+                    {items.map((it, idx) => {
+                      const isLast = idx === items.length - 1;
+                      const cleanText = it.text.replace(/^[-*•–—]\s*/, "").replace(/[\.;]+$/, "").trim();
+                      return (
+                        <p key={it.id || idx}>- {cleanText}{isLast ? "." : ";"}</p>
+                      );
+                    })}
+                  </div>
+                </div>
+              )
+            )}
+          </div>
+        );
+      })()}
+
       {/* 4. Main Body HTML */}
       <div
         className={`text-justify my-4 space-y-2 ${
@@ -526,7 +723,7 @@ export const A4DocumentPreview: React.FC<A4DocumentPreviewProps> = ({
             )}
           </div>
         ) : (
-          <div className="mt-8 grid grid-cols-[38%_62%] gap-4 pt-2 items-start break-inside-avoid">
+          <div className="mt-4 grid grid-cols-[52.14%_47.86%] gap-4 pt-2 items-start break-inside-avoid">
             {/* Left Column: Recipients */}
             <div className="text-[10pt] leading-normal">
               {(doc.recipients && doc.recipients.trim()) ? <>
@@ -943,6 +1140,16 @@ export const CandidateDocumentPreview=React.memo(function CandidateDocumentPrevi
   const [currentPage,setCurrentPage]=useState(1);
   const [viewportWidth,setViewportWidth]=useState(0);
   const [geometry,setGeometry]=useState<{width:number;height:number;pageWidth:number;pageCount:number}|null>(null);
+  const [isFullscreen,setIsFullscreen]=useState(false);
+
+  useEffect(()=>{
+    if(!isFullscreen)return;
+    const handleKeyDown=(e:KeyboardEvent)=>{
+      if(e.key==='Escape')setIsFullscreen(false);
+    };
+    window.addEventListener('keydown',handleKeyDown);
+    return()=>window.removeEventListener('keydown',handleKeyDown);
+  },[isFullscreen]);
   useEffect(()=>{
     let cancelled=false;
     pageElements.current=[];
@@ -954,7 +1161,7 @@ export const CandidateDocumentPreview=React.memo(function CandidateDocumentPrevi
     render().then(async actualSha=>{
       if(cancelled||!host.current)return;
       host.current.replaceChildren(...Array.from(staging.childNodes));
-      if(companyHeaderRegime) positionCompanyTableInDocxPreview(host.current,companyHeaderRegime==='party');
+      enhanceDocxPreviewLinesAndGeometry(host.current, companyHeaderRegime === 'party');
       await nextFrame();
       if(cancelled||!host.current)return;
       const wrapper=host.current.querySelector<HTMLElement>('.docx-wrapper');
@@ -1018,12 +1225,24 @@ export const CandidateDocumentPreview=React.memo(function CandidateDocumentPrevi
         <button type="button" aria-label="Phóng to" disabled={!ready} onClick={()=>setRelativeZoom(1)}>+</button>
         <button type="button" data-preview-fit aria-pressed={zoomScale===null} disabled={!ready} onClick={()=>setZoomScale(null)}>Vừa chiều rộng</button>
         <button type="button" data-preview-actual aria-pressed={zoomScale===1} disabled={!ready} onClick={()=>setZoomScale(1)}>100%</button>
+        <button
+          type="button"
+          data-testid="preview-fullscreen-btn"
+          className="df-candidate-fullscreen-toggle"
+          aria-label={isFullscreen ? "Thu nhỏ về trang" : "Xem toàn màn hình"}
+          title={isFullscreen ? "Thu nhỏ về trang (Esc)" : "Xem toàn màn hình"}
+          disabled={!ready}
+          onClick={()=>setIsFullscreen(fs=>!fs)}
+        >
+          {isFullscreen ? <Minimize2 className="w-3.5 h-3.5 inline mr-1" /> : <Maximize2 className="w-3.5 h-3.5 inline mr-1" />}
+          <span>{isFullscreen ? "Thu nhỏ" : "Toàn màn hình"}</span>
+        </button>
       </div>
     </div>;
-  return <section className="df-candidate-preview" data-candidate-preview data-preview-bytes-sha={renderedSha||undefined} data-candidate-sha={sha256} data-candidate-instance={instanceId} data-preview-page-count={ready?geometry?.pageCount:undefined} aria-label="Bản xem DOCX ứng viên">
+  return <section className={`df-candidate-preview ${isFullscreen ? "is-fullscreen" : ""}`} data-candidate-preview data-preview-bytes-sha={renderedSha||undefined} data-candidate-sha={sha256} data-candidate-instance={instanceId} data-preview-page-count={ready?geometry?.pageCount:undefined} aria-label="Bản xem DOCX ứng viên">
       {!ready&&!error&&<p role="status">Đang dựng bản xem từ DOCX ứng viên…</p>}
     {error&&<p role="alert">Không dựng được bản xem: {error}. Không thay bằng bản dựng khác.</p>}
-    {toolbarTarget?createPortal(toolbar,toolbarTarget):toolbar}
+    {toolbarTarget && !isFullscreen ? createPortal(toolbar,toolbarTarget) : toolbar}
     <div className="df-candidate-preview-layout">
       <div className="df-candidate-preview-scroll" ref={viewport} data-preview-mode={zoomScale===null?'fit':zoomScale===1?'actual':'manual'} data-preview-ready={String(ready)}>
         <div className="df-candidate-preview-frame" style={{width:layoutWidth,height:layoutHeight}}>

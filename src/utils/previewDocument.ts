@@ -19,6 +19,7 @@ export interface PreviewDocumentSource {
   regime?: "administrative" | "party";
   appendices?: any[];
   unclassified?: SourceBlock[];
+  recipientHeader?: DocumentFormatType["recipientHeader"];
   importMetadata?: DocumentFormatType["importMetadata"];
 }
 
@@ -43,5 +44,6 @@ export function preparePreviewDocument(
     recipients: doc.recipients ?? "",
     signTitle: doc.signTitle ?? "",
     signName: doc.signName ?? "",
+    recipientHeader: doc.recipientHeader,
   };
 }

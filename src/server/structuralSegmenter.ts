@@ -10,6 +10,9 @@ import type {
   ExtractedField,
   AppendixDocument,
   SourceRegion,
+  RecipientBlock,
+  RecipientItem,
+  RecipientKind,
 } from "../shared/schemas/document.schema.ts";
 import { classifyTable, HEADER_MARKER_REGEX, type TableClassificationResult, type TableOwner, type TableRole } from "./tableRoleClassifier.ts";
 import { isSeparatorParagraph } from "../shared/separator.ts";
@@ -1417,6 +1420,97 @@ export function segmentSourceBlocks(
   }
 
   // =========================================================================
+  // STEP 5b: RECIPIENT HEADER EXTRACTION (Kính gửi / Kính trình)
+  // =========================================================================
+  let recipientHeader: RecipientBlock | undefined;
+  let rScanIdx = nextStartIndex;
+
+  // Skip leading empty spacing paragraphs
+  while (rScanIdx < bodyEndExclusive && blocks[rScanIdx].kind === "paragraph" && !blocks[rScanIdx].text.trim()) {
+    rScanIdx++;
+  }
+
+  if (rScanIdx < bodyEndExclusive && blocks[rScanIdx].kind === "paragraph") {
+    const firstBlock = blocks[rScanIdx];
+    const rawText = firstBlock.text.trim();
+    const kgHeaderMatch = rawText.match(/^Kính\s*(gửi|trình)\s*:?(.*)$/i);
+
+    if (kgHeaderMatch) {
+      const isTrinh = /trình/i.test(kgHeaderMatch[1]);
+      const kind: RecipientKind = isTrinh ? "kinh_trinh" : "kinh_gui";
+      const remainder = kgHeaderMatch[2].trim();
+      const matchedBlockIds: string[] = [firstBlock.id];
+      const items: RecipientItem[] = [];
+
+      if (remainder.length > 0 && !remainder.startsWith("\n")) {
+        const remainderLines = remainder.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+        if (remainderLines.length === 1 && !remainderLines[0].startsWith("-")) {
+          // Single inline recipient
+          items.push({
+            id: "recipient-1",
+            text: remainderLines[0].replace(/^[-–•\s]+/, "").replace(/[;.\s]+$/, "").trim(),
+            sourceBlockId: firstBlock.id,
+            sourceAnchor: `recipient_block_${firstBlock.id}`,
+          });
+          firstBlock.role = "recipients";
+          rScanIdx++;
+        } else {
+          // Remainder itself has multi-line items
+          firstBlock.role = "recipients";
+          rScanIdx++;
+          remainderLines.forEach((line, idx) => {
+            const clean = line.replace(/^[-–•\s]+/, "").replace(/[;.\s]+$/, "").trim();
+            if (clean) {
+              items.push({
+                id: `recipient-${idx + 1}`,
+                text: clean,
+                sourceBlockId: firstBlock.id,
+                sourceAnchor: `recipient_block_${firstBlock.id}`,
+              });
+            }
+          });
+        }
+      } else {
+        // Multi-line: line 1 is only the label "Kính gửi:"
+        firstBlock.role = "recipients";
+        rScanIdx++;
+
+        let itemIndex = 1;
+        while (rScanIdx < bodyEndExclusive && blocks[rScanIdx].kind === "paragraph") {
+          const itemText = blocks[rScanIdx].text.trim();
+          if (/^[-–•]\s*(.+)$/.test(itemText)) {
+            const rawItem = itemText.replace(/^[-–•]\s*/, "").replace(/[;.\s]+$/, "").trim();
+            items.push({
+              id: `recipient-${itemIndex++}`,
+              text: rawItem,
+              sourceBlockId: blocks[rScanIdx].id,
+              sourceAnchor: `recipient_block_${blocks[rScanIdx].id}`,
+            });
+            matchedBlockIds.push(blocks[rScanIdx].id);
+            blocks[rScanIdx].role = "recipients";
+            rScanIdx++;
+          } else {
+            break;
+          }
+        }
+      }
+
+      if (items.length > 0) {
+        recipientHeader = {
+          id: `recipient-header-${matchedBlockIds[0]}`,
+          kind,
+          presence: "confirmed",
+          items,
+          sourceBlockId: matchedBlockIds[0],
+          sourceAnchor: `recipient_anchor_${matchedBlockIds[0]}`,
+          originalText: blocks.filter(b => matchedBlockIds.includes(b.id)).map(b => b.text).join("\n"),
+        };
+        nextStartIndex = rScanIdx;
+      }
+    }
+  }
+
+  // =========================================================================
   // STEP 6: BODY EXTRACTION (Between nextStartIndex and bodyEndExclusive)
   // =========================================================================
   const bodyBlockIds: string[] = [];
@@ -1554,6 +1648,7 @@ export function segmentSourceBlocks(
     signatureHtml,
     signatures: signatures.length > 0 ? signatures : undefined,
     recipients: recipientsData,
+    recipientHeader,
     appendices,
     unclassified: unclassifiedBlocks,
     blocks,

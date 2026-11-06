@@ -451,7 +451,7 @@ export function buildCanonicalRuleRegistry(): CanonicalRuleDef[] {
     severity: "INFO",
     fixPolicy: "AUTO_FIX",
     title: "Khung bảng Header Đảng bộ",
-    description: `Bảng Header Đảng bộ mẫu đạt chính xác ${COMPANY_HEADER_HD05_TABLE_TWIPS.width} twips (5580/4590)`,
+    description: `Bảng Header Đảng bộ mẫu đạt chính xác ${COMPANY_HEADER_HD05_TABLE_TWIPS.width} twips (5540/4440)`,
   });
   registry.push({
     id: "PROFILE.HD05.HOA_TIEU_MB.SHAPE_LINE_TITLE",
@@ -461,13 +461,13 @@ export function buildCanonicalRuleRegistry(): CanonicalRuleDef[] {
     sourceId: "PROFILE-HOA-TIEU-MB-HD05",
     sourceLocator: "header-reference.docx Straight Connector 1",
     target: { objectType: "party_title_line", property: "drawingml" },
-    expected: { type: "equals", value: true, description: "Straight Connector 1 (207pt / 2628900 EMU)" },
+    expected: { type: "equals", value: true, description: "Straight Connector 1 (204.35pt / 2595245 EMU)" },
     evidenceType: "layout",
     checkMethod: "ooxml_measurement",
     severity: "INFO",
     fixPolicy: "AUTO_FIX",
     title: "Shape Line Tiêu đề Đảng Đơn vị",
-    description: "Độ dài đường kẻ 207pt bằng 100% dòng chữ ĐẢNG CỘNG SẢN VIỆT NAM",
+    description: "Độ dài đường kẻ ≈72.09mm (204.35pt) bằng 100% dòng chữ ĐẢNG CỘNG SẢN VIỆT NAM",
   });
 
   // =========================================================================
@@ -483,7 +483,7 @@ export function buildCanonicalRuleRegistry(): CanonicalRuleDef[] {
     { id: "BODY.PARTY.FIVE_HYPHENS", title: "5 dấu gạch nối trước nội dung", regime: "party", prop: "five_hyphens", desc: "Văn bản Đảng có tên loại phải có đúng 5 dấu gạch nối '-----' trước nội dung" },
     { id: "BODY.PARTY.SUBJECT_UPRIGHT_BOLD", title: "Trích yếu đứng đậm", regime: "party", prop: "subject_format", desc: "Trích yếu văn bản Đảng có tên loại in thường, đứng, đậm (không in nghiêng)" },
     { id: "HD05-BODY-LINE-SPACING", title: "Khoảng cách dòng văn bản Đảng", regime: "party", prop: "line_spacing", desc: "Dãn dòng cố định (exactly) từ 18pt đến 22pt" },
-    { id: "HD05-BODY-FIRST-LINE-INDENT", title: "Thụt lề đầu dòng văn bản Đảng", regime: "party", prop: "first_line_indent", desc: "Đầu dòng đoạn văn bản Đảng thụt lề ~10mm theo Hướng dẫn 05; profile Hoa Tiêu MB áp dụng 0.5 inch (720 twips)" },
+    { id: "HD05-BODY-FIRST-LINE-INDENT", title: "Thụt lề đầu dòng văn bản Đảng", regime: "party", prop: "first_line_indent", desc: "Đầu dòng đoạn văn bản Đảng thụt lề ~10mm theo Hướng dẫn 05; profile Hoa Tiêu MB áp dụng ~10mm (567 twips)" },
   ];
 
   for (const b of bodySubRules) {
@@ -1404,7 +1404,7 @@ export function evaluateDocumentRules(
             actual = ooxmlEvidence.has_hd05_shape_line;
             status = actual ? "PASS" : "FAIL";
             reason = actual
-              ? "Shape Line Straight Connector 1 (207pt) khớp mẫu chuẩn Word."
+              ? "Shape Line Straight Connector 1 (≈72.09mm) khớp mẫu chuẩn Word."
               : "Thiếu hoặc sai lệch Shape Line Straight Connector 1 của mẫu Đảng bộ.";
           } else {
             status = "NOT_EVALUATED";
@@ -1445,19 +1445,11 @@ export function evaluateDocumentRules(
               const min = bEv.firstLineIndentRangeDxa.min;
               const max = bEv.firstLineIndentRangeDxa.max;
               actual = `${min} - ${max} dxa`;
-              if (isUsingHd05CompanyProfile) {
-                const ok = min >= 700 && max <= 740;
-                status = ok ? "PASS" : "FAIL";
-                reason = ok
-                  ? `Thụt đầu dòng văn bản Đảng profile Hoa Tiêu MB (${min}-${max} dxa) đạt chuẩn 0.5 inch (720 dxa / ~1.27cm).`
-                  : `Thụt đầu dòng văn bản Đảng profile Hoa Tiêu MB (${min}-${max} dxa) không khớp chuẩn profile 0.5 inch (720 dxa).`;
-              } else {
-                const ok = min >= 500 && max <= 650;
-                status = ok ? "PASS" : "FAIL";
-                reason = ok
-                  ? `Thụt đầu dòng văn bản Đảng (${min}-${max} dxa) đạt chuẩn ~10mm theo HD 05.`
-                  : `Thụt đầu dòng văn bản Đảng (${min}-${max} dxa) không khớp quy chuẩn ~10mm.`;
-              }
+              const ok = min >= 540 && max <= 600;
+              status = ok ? "PASS" : "FAIL";
+              reason = ok
+                ? `Thụt đầu dòng văn bản Đảng (${min}-${max} dxa) đạt dải 540-600 dxa (~10mm) theo HD 05.`
+                : `Thụt đầu dòng văn bản Đảng (${min}-${max} dxa) nằm ngoài dải 540-600 dxa (~10mm) theo HD 05.`;
             }
           }
         } else if (r.id === "HD05-BODY-LINE-SPACING") {

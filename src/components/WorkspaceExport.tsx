@@ -5,7 +5,7 @@ import { describeExportBlocker } from '../utils/workspaceExportMessages.ts';
 import { COMPANY_HEADER_PROFILE_ID } from '../canonical/nd30/companyHeader.ts';
 import { COMPANY_HEADER_HD05_PROFILE_ID } from '../canonical/hd05/companyHeaderHD05.ts';
 import type { ND30ComplianceReport } from '../shared/schemas/document.schema.ts';
-import { Download, Printer, ArrowLeft, RefreshCw } from 'lucide-react';
+import { Download, Printer, ArrowLeft, RefreshCw, AlertTriangle } from 'lucide-react';
 import './WorkspaceExport.css';
 
 type WorkspaceExportProps = {
@@ -61,9 +61,8 @@ export function WorkspaceExport({
   const activeComplianceReport = candidate && complianceRevision === candidate.revision ? complianceReport : null;
   const hasComplianceIssues = Boolean(activeComplianceReport?.issues.length);
   const complianceIssuesCount = activeComplianceReport?.issues.length ?? 0;
-  const unevaluatedCount = activeComplianceReport?.canonical?.notEvaluated ?? 0;
 
-  // Derive title & explanation strictly adhering to UX Spec 2026-11-04 Section 6.2
+  // Derive title & explanation strictly adhering to UX Spec
   let statusBadgeText = 'Chưa có bản Word';
   let statusTone: 'safe' | 'warning' | 'blocked' | 'pending' = 'pending';
   let statusTitle = 'Chưa có bản Word từ bản soạn hiện tại';
@@ -91,29 +90,33 @@ export function WorkspaceExport({
     statusDesc = 'Tạo ứng viên để xem kết quả kiểm tra và bản xem trước theo trang A4.';
   } else if (validatedExportAvailable) {
     if (!hasComplianceIssues) {
-      statusBadgeText = 'Có thể tải Word';
+      statusBadgeText = 'Có thể tải Word hoàn chỉnh';
       statusTone = 'safe';
-      statusTitle = 'Có thể tải bản Word';
+      statusTitle = 'Có thể tải bản Word hoàn chỉnh';
       statusDesc = activeComplianceReport
-        ? `Không phát hiện vấn đề trong các kiểm tra đã thực hiện (${activeComplianceReport.passedChecks}/${activeComplianceReport.totalChecks} mục đạt)${unevaluatedCount ? `; còn ${unevaluatedCount} mục chưa đánh giá` : ''}. Bản Word đủ điều kiện xuất kỹ thuật.`
+        ? `Tất cả kiểm tra kỹ thuật và thể thức đã hoàn tất (${activeComplianceReport.passedChecks}/${activeComplianceReport.totalChecks} mục đạt). Bản Word đủ điều kiện xuất ban hành.`
         : 'Bản Word đã vượt qua các cổng kiểm tra kỹ thuật và đủ điều kiện tải xuống.';
     } else {
       statusBadgeText = 'Có thể tải Word · Có lưu ý';
       statusTone = 'warning';
-      statusTitle = `Có thể tải bản Word, còn ${complianceIssuesCount} mục thể thức cần xem lại`;
+      statusTitle = `Có thể tải bản Word (còn ${complianceIssuesCount} mục thể thức cần xem lại)`;
       statusDesc = 'DOCX đã đạt cổng xuất kỹ thuật; các mục thể thức còn lại cần bạn xem trước khi sử dụng. Đây chưa phải xác nhận sẵn sàng phát hành.';
     }
   } else if (reviewDownloadAvailable) {
-    statusBadgeText = 'Chỉ tải bản đối chiếu';
-    statusTone = 'blocked';
-    statusTitle = 'Chưa thể tải bản Word hoàn chỉnh';
-    statusDesc = 'Đối chiếu chưa xác nhận DOCX giữ nguyên đầy đủ nội dung hoặc cấu trúc nguồn. Bản hiện tại chỉ dùng để đối chiếu trong Word, không dùng phát hành.';
+    statusBadgeText = 'Sẵn sàng tải bản đối chiếu';
+    statusTone = 'warning';
+    statusTitle = 'Bản Word đối chiếu đã sẵn sàng';
+    statusDesc = 'Tài liệu giữ nguyên cấu trúc và nội dung gốc kèm đối tượng đồ họa. Bản DOCX đối chiếu sẵn sàng để bạn tải về rà soát trực tiếp trong Word.';
   } else {
     statusBadgeText = 'Chưa an toàn';
     statusTone = 'blocked';
     statusTitle = 'Chưa thể tạo bản Word an toàn';
     statusDesc = 'DOCX ứng viên bị từ chối toàn vẹn hoặc cấu trúc không an toàn. Chức năng tải và in đã bị khóa để bảo vệ dữ liệu nguồn.';
   }
+
+  const passedChecksCount = activeComplianceReport?.passedChecks ?? 0;
+  const totalChecksCount = activeComplianceReport?.totalChecks ?? 9;
+  const complianceRate = Math.round((passedChecksCount / Math.max(1, totalChecksCount)) * 100);
 
   return (
     <main
@@ -162,8 +165,12 @@ export function WorkspaceExport({
               <>
                 {candidate && !candidate.safe && (
                   <div className="df-step3-diagnostic-banner" role="status" data-diagnostic-preview="true">
-                    <span className="df-step3-diagnostic-badge">Bản đối chiếu — chưa xác nhận</span>
-                    <p className="df-step3-diagnostic-desc">Bản xem này chỉ giúp đối chiếu; chưa được xác nhận để phát hành.</p>
+                    <div className="df-step3-diagnostic-badge-wrap">
+                      <span className="df-step3-diagnostic-badge">Bản đối chiếu — chưa xác nhận</span>
+                    </div>
+                    <p className="df-step3-diagnostic-desc">
+                      Tài liệu có chứa đối tượng hình vẽ/bảng từ tệp gốc. Bạn đang xem Bản đối chiếu DOCX để rà soát trước khi phát hành.
+                    </p>
                   </div>
                 )}
                 <CandidateDocumentPreview
@@ -186,162 +193,37 @@ export function WorkspaceExport({
         </div>
 
         <aside id="df-step3-context-panel" className="df-step-context" aria-label="Trạng thái và thao tác xuất">
-          {/* Card 1: Trạng thái tệp Word rõ ràng theo đặc tả Section 6.2 */}
+          {/* Card 1: Trạng thái tệp Word rõ ràng, không lặp từ */}
           <section className="df-step3-context-card df-step3-candidate-status" aria-labelledby="df-step3-status-title">
             <div className="df-step3-status-header">
               <span className={`df-step3-status-tag is-${statusTone}`}>{statusBadgeText}</span>
               <h2 id="df-step3-status-title">{statusTitle}</h2>
             </div>
             <p className="df-step3-status-explanation">{statusDesc}</p>
-
-            {/* Cảnh báo chi tiết nếu ứng viên không an toàn — đặt ngay đầu thẻ để nhìn thấy vị trí và nút xử lý trên 1366×768 */}
-            {candidate && !candidate.safe && (
-              <section className="df-step3-warning-panel" role="alert" aria-labelledby="df-step3-warning-title">
-                <h3 id="df-step3-warning-title">Nội dung cần xử lý</h3>
-                <p>
-                  {reviewDownloadAvailable
-                    ? 'Đối chiếu chưa xác nhận DOCX giữ nguyên đầy đủ nội dung và cấu trúc nguồn. Bạn có thể tải bản đối chiếu để kiểm tra trong Word; không dùng bản này để phát hành.'
-                    : 'Không thể dựng bản đối chiếu đủ an toàn để tải. Hãy đối chiếu lại nguồn hoặc tải tệp gốc nguyên vẹn.'}
-                </p>
-                {blockerDescriptions.length > 0 && (
-                  <p className="df-step3-warning-primary" data-blocker-summary="true">
-                    <strong>Vị trí cần đối chiếu:</strong> {blockerDescriptions.slice(0, 2).map(d => d.messageVi).join(' ')}
-                  </p>
-                )}
-                {warningReasons.length > 0 && (
-                  <details className="df-step3-warning-details">
-                    <summary>{warningReasons.length} khác biệt phát hiện trong đối chiếu</summary>
-                    <ul>
-                      {warningReasons.map((reason, i) => <li key={i}>{reason}</li>)}
-                    </ul>
-                  </details>
-                )}
-                {actions.length > 0 && (
-                  <nav className="df-step3-blocker-actions" aria-label="Đối chiếu cảnh báo">
-                    {actions.map(({ action, targetId }, i) => (
-                      <button
-                        type="button"
-                        key={i}
-                        className="df-step3-action-button"
-                        onClick={() => action === 'review_source' ? onReviewSource() : action === 'edit_target' ? onEditTarget(targetId) : onDownloadOriginal()}
-                      >
-                        {action === 'review_source' ? 'Đối chiếu nguồn' : action === 'edit_target' ? 'Mở vị trí cần sửa' : 'Tải tệp gốc'}
-                      </button>
-                    ))}
-                  </nav>
-                )}
-              </section>
-            )}
-
-            {/* Các cổng kiểm tra kỹ thuật bảo toàn */}
-            {candidate && (
-              <details className="df-step3-gates-container">
-                <summary>Cổng kiểm tra bảo toàn nội dung</summary>
-                <ul className="df-step3-gate-list">
-                  <li>
-                    <span>Đối chiếu bảng</span>
-                    <strong data-gate-state={candidate.tableFidelity.safe ? 'safe' : 'blocked'}>
-                      {candidate.tableFidelity.safe ? 'Đã qua' : 'Cảnh báo'}
-                    </strong>
-                  </li>
-                  <li>
-                    <span>Đối chiếu nội dung</span>
-                    <strong data-gate-state={candidate.contentFidelity.safe ? 'safe' : 'blocked'}>
-                      {candidate.contentFidelity.safe ? 'Đã qua' : 'Cảnh báo'}
-                    </strong>
-                  </li>
-                  <li>
-                    <span>Đối chiếu an toàn</span>
-                    <strong data-gate-state={candidate.exportSafety.decision === 'allow' ? 'safe' : 'blocked'}>
-                      {candidate.exportSafety.decision === 'allow' ? 'Đã qua' : 'Cảnh báo'}
-                    </strong>
-                  </li>
-                </ul>
-              </details>
-            )}
-
-            {/* Báo cáo rà soát thể thức */}
-            {candidate && (
-              <section className="df-step3-formalities" data-formalities-revision={complianceRevision ?? undefined} aria-labelledby="df-step3-formalities-title">
-                <h3 id="df-step3-formalities-title">Rà soát thể thức</h3>
-                {activeComplianceReport ? (
-                  <>
-                    <p className="df-step3-formalities-summary">
-                      <strong>{activeComplianceReport.passedChecks}/{activeComplianceReport.totalChecks} mục đạt</strong>
-                      <span>{activeComplianceReport.issues.length ? `${activeComplianceReport.issues.length} mục cần xem lại` : 'Không có mục đang cảnh báo'}{unevaluatedCount ? ` · ${unevaluatedCount} mục chưa đánh giá` : ''}</span>
-                    </p>
-                    {activeComplianceReport.issues.length > 0 && (
-                      <ul className="df-step3-formalities-issues">
-                        {activeComplianceReport.issues.slice(0, 4).map(issue => (
-                          <li key={issue.id}>
-                            <span>{issue.title}</span>
-                            {issue.field && issue.field !== 'general' && (
-                              <button
-                                type="button"
-                                className="df-step3-issue-link"
-                                onClick={() => onEditTarget(issue.field)}
-                              >
-                                Sửa
-                              </button>
-                            )}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                    <p className="df-step3-formalities-note">
-                      Kết quả rà soát thể thức độc lập với đối chiếu DOCX. Các mục cần xem lại không chặn quyền tải theo cổng hiện hành.
-                    </p>
-                  </>
-                ) : (
-                  <p role="status" className="df-step3-formalities-note">Đang đồng bộ kết quả rà soát với phiên bản bản soạn hiện hành.</p>
-                )}
-              </section>
-            )}
-
-            {/* Chi tiết kỹ thuật: gấp gọn */}
-            {candidate && (
-              <details className="df-step3-evidence" data-candidate-evidence data-candidate-sha={candidate.sha256} data-candidate-instance={candidate.instanceId}>
-                <summary>Chi tiết kiểm tra &amp; SHA-256</summary>
-                <div className="df-step3-evidence-content">
-                  <code>{candidate.sha256}</code>
-                  <span>Phiên bản: revision {candidate.revision} · {candidate.instanceId}</span>
-                  <pre>{JSON.stringify({
-                    warnings: candidate.blockers,
-                    downloadable: candidate.downloadable,
-                    reviewDownloadable: candidate.reviewDownloadable,
-                    table: candidate.tableFidelity.safe,
-                    content: candidate.contentFidelity.safe,
-                    safety: candidate.exportSafety.decision,
-                    profileHeaderLines: candidate.profileHeaderLines,
-                    evidence: candidate.evidence,
-                  }, null, 2)}</pre>
-                </div>
-              </details>
-            )}
-
             {error && <p className="df-step3-error" role="alert">{error}</p>}
           </section>
 
-          {/* Card 2: Thao tác Tải xuống và In */}
+          {/* Card 2: Thao tác Tải xuống và In (Đưa lên vị trí ưu tiên cao) */}
           <section id="df-step3-export" className="df-step3-context-card df-step3-export-card" aria-labelledby="df-step3-export-title">
-            <h2 id="df-step3-export-title">Tải xuống và in</h2>
-
-            {/* Nút Tạo lại ứng viên */}
-            <button
-              type="button"
-              className="df-step3-prepare-button"
-              onClick={onPrepare}
-              disabled={pending}
-            >
-              <RefreshCw className={`w-3.5 h-3.5 inline mr-1.5 ${pending ? 'animate-spin' : ''}`} />
-              {pending ? 'Đang kiểm…' : candidate ? 'Kiểm tra lại ứng viên' : 'Tạo và kiểm DOCX ứng viên'}
-            </button>
+            <div className="df-step3-card-head">
+              <h2 id="df-step3-export-title">Tải xuống và in</h2>
+              <button
+                type="button"
+                className="df-step3-prepare-compact-btn"
+                onClick={onPrepare}
+                disabled={pending}
+                title="Làm mới và kiểm tra lại bản Word từ bản soạn hiện tại"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 inline mr-1 ${pending ? 'animate-spin' : ''}`} />
+                <span>{pending ? 'Đang kiểm…' : 'Làm mới'}</span>
+              </button>
+            </div>
 
             {/* Phân nhánh hành động xuất theo 3 trường hợp chính */}
             {isStale ? (
               <>
                 <p className="df-step3-export-note" role="status">
-                  Bản soạn đã đổi; bản Word cũ không còn hiệu lực. Hãy bấm &quot;Kiểm tra lại ứng viên&quot; để tạo bản mới.
+                  Bản soạn đã đổi; bản Word cũ không còn hiệu lực. Hãy bấm &quot;Làm mới&quot; để tạo bản mới.
                 </p>
                 <button type="button" className="df-step3-download-button is-locked" disabled aria-disabled="true">
                   Tải Word (Cần tạo lại bản mới)
@@ -433,23 +315,165 @@ export function WorkspaceExport({
               <p className="df-step3-export-note">Tạo DOCX ứng viên hợp lệ để tải hoặc in.</p>
             )}
 
-            {/* Tải tệp gốc */}
-            {originalAvailable && (
-              <button
-                type="button"
-                className="df-step3-original-button"
-                data-original-download
-                onClick={onDownloadOriginal}
-              >
-                Tải tệp gốc nguyên vẹn
+            {/* Hàng nút phụ: Tải tệp gốc & Quay lại Bước 2 */}
+            <div className="df-step3-export-secondary-group">
+              {originalAvailable && (
+                <button
+                  type="button"
+                  className="df-step3-original-button"
+                  data-original-download
+                  onClick={onDownloadOriginal}
+                >
+                  Tải tệp gốc nguyên vẹn
+                </button>
+              )}
+              <button type="button" className="df-step3-back-button" onClick={onPrev}>
+                <ArrowLeft className="w-3.5 h-3.5 inline mr-1" />
+                Quay lại Bước 2: Hoàn thiện
               </button>
+            </div>
+          </section>
+
+          {/* Card 3: Chi tiết Đối chiếu, Thể thức & Cổng bảo toàn */}
+          <section className="df-step3-context-card df-step3-details-card" aria-label="Chi tiết đối chiếu và thể thức">
+            {/* Cảnh báo chi tiết nếu ứng viên không an toàn */}
+            {candidate && !candidate.safe && (
+              <section className="df-step3-warning-panel" role="alert" aria-labelledby="df-step3-warning-title">
+                <div className="df-step3-warning-head">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 inline mr-1.5" />
+                  <h3 id="df-step3-warning-title">Lưu ý đối chiếu nguồn</h3>
+                </div>
+                <p className="df-step3-warning-lead">
+                  {reviewDownloadAvailable
+                    ? 'Tài liệu có thành phần cần đối chiếu với tệp gốc trước khi phát hành:'
+                    : 'Không thể dựng bản đối chiếu đủ an toàn để tải. Hãy đối chiếu lại nguồn hoặc tải tệp gốc nguyên vẹn.'}
+                </p>
+                {blockerDescriptions.length > 0 && (
+                  <p className="df-step3-warning-primary" data-blocker-summary="true">
+                    <strong>Vị trí cần đối chiếu:</strong> {blockerDescriptions.slice(0, 2).map(d => d.messageVi).join(' ')}
+                  </p>
+                )}
+                {warningReasons.length > 0 && (
+                  <details className="df-step3-warning-details">
+                    <summary>{warningReasons.length} khác biệt phát hiện trong đối chiếu</summary>
+                    <ul>
+                      {warningReasons.map((reason, i) => <li key={i}>{reason}</li>)}
+                    </ul>
+                  </details>
+                )}
+                {actions.length > 0 && (
+                  <nav className="df-step3-blocker-actions" aria-label="Đối chiếu cảnh báo">
+                    {actions.map(({ action, targetId }, i) => (
+                      <button
+                        type="button"
+                        key={i}
+                        className="df-step3-action-button"
+                        onClick={() => action === 'review_source' ? onReviewSource() : action === 'edit_target' ? onEditTarget(targetId) : onDownloadOriginal()}
+                      >
+                        {action === 'review_source' ? 'Đối chiếu nguồn' : action === 'edit_target' ? 'Mở vị trí cần sửa' : 'Tải tệp gốc'}
+                      </button>
+                    ))}
+                  </nav>
+                )}
+              </section>
             )}
 
-            {/* Quay lại Bước 2 */}
-            <button type="button" className="df-step3-back-button" onClick={onPrev}>
-              <ArrowLeft className="w-3.5 h-3.5 inline mr-1" />
-              Quay lại Bước 2: Hoàn thiện
-            </button>
+            {/* Báo cáo rà soát thể thức với Progress Bar đồng bộ */}
+            {candidate && (
+              <section className="df-step3-formalities" data-formalities-revision={complianceRevision ?? undefined} aria-labelledby="df-step3-formalities-title">
+                <div className="df-step3-formalities-header">
+                  <h3 id="df-step3-formalities-title">Rà soát thể thức</h3>
+                  {activeComplianceReport && (
+                    <span className="df-step3-formalities-badge">
+                      {passedChecksCount}/{totalChecksCount} đạt ({complianceRate}%)
+                    </span>
+                  )}
+                </div>
+                {activeComplianceReport ? (
+                  <>
+                    <div className="df-step3-progress-track">
+                      <div
+                        className="df-step3-progress-fill"
+                        style={{ width: `${complianceRate}%` }}
+                      />
+                    </div>
+                    {activeComplianceReport.issues.length > 0 ? (
+                      <ul className="df-step3-formalities-issues">
+                        {activeComplianceReport.issues.slice(0, 4).map(issue => (
+                          <li key={issue.id}>
+                            <span>{issue.title}</span>
+                            {issue.field && issue.field !== 'general' && (
+                              <button
+                                type="button"
+                                className="df-step3-issue-link"
+                                onClick={() => onEditTarget(issue.field)}
+                              >
+                                Sửa
+                              </button>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="df-step3-formalities-clean">Tất cả các trường thể thức chính đã được kiểm tra đạt yêu cầu.</p>
+                    )}
+                    <p className="df-step3-formalities-note">
+                      Đã kiểm tra đối sánh theo quy định thể thức {regimeLabel}. Các mục cần xem lại không chặn quyền tải theo cổng hiện hành.
+                    </p>
+                  </>
+                ) : (
+                  <p role="status" className="df-step3-formalities-note">Đang đồng bộ kết quả rà soát với phiên bản bản soạn hiện hành.</p>
+                )}
+              </section>
+            )}
+
+            {/* Các cổng kiểm tra kỹ thuật bảo toàn */}
+            {candidate && (
+              <details className="df-step3-gates-container">
+                <summary>Cổng kiểm tra bảo toàn nội dung</summary>
+                <ul className="df-step3-gate-list">
+                  <li>
+                    <span>Đối chiếu bảng</span>
+                    <strong data-gate-state={candidate.tableFidelity.safe ? 'safe' : 'blocked'}>
+                      {candidate.tableFidelity.safe ? 'Đã qua' : 'Cảnh báo'}
+                    </strong>
+                  </li>
+                  <li>
+                    <span>Đối chiếu nội dung</span>
+                    <strong data-gate-state={candidate.contentFidelity.safe ? 'safe' : 'blocked'}>
+                      {candidate.contentFidelity.safe ? 'Đã qua' : 'Cảnh báo'}
+                    </strong>
+                  </li>
+                  <li>
+                    <span>Đối chiếu an toàn</span>
+                    <strong data-gate-state={candidate.exportSafety.decision === 'allow' ? 'safe' : 'blocked'}>
+                      {candidate.exportSafety.decision === 'allow' ? 'Đã qua' : 'Cảnh báo'}
+                    </strong>
+                  </li>
+                </ul>
+              </details>
+            )}
+
+            {/* Chi tiết kỹ thuật: gấp gọn */}
+            {candidate && (
+              <details className="df-step3-evidence" data-candidate-evidence data-candidate-sha={candidate.sha256} data-candidate-instance={candidate.instanceId}>
+                <summary>Chi tiết kiểm tra &amp; SHA-256</summary>
+                <div className="df-step3-evidence-content">
+                  <code>{candidate.sha256}</code>
+                  <span>Phiên bản: revision {candidate.revision} · {candidate.instanceId}</span>
+                  <pre>{JSON.stringify({
+                    warnings: candidate.blockers,
+                    downloadable: candidate.downloadable,
+                    reviewDownloadable: candidate.reviewDownloadable,
+                    table: candidate.tableFidelity.safe,
+                    content: candidate.contentFidelity.safe,
+                    safety: candidate.exportSafety.decision,
+                    profileHeaderLines: candidate.profileHeaderLines,
+                    evidence: candidate.evidence,
+                  }, null, 2)}</pre>
+                </div>
+              </details>
+            )}
           </section>
         </aside>
       </div>

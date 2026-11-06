@@ -80,6 +80,131 @@ const REGIME_LABEL: Record<"state" | "party", string> = {
   party: "Văn bản Đảng — Hướng dẫn 05-HD/VPTW",
 };
 
+function getDocTypeFormatSpecs(typeName: string, isParty: boolean) {
+  const norm = (typeName || "").trim().toUpperCase();
+  if (isParty) {
+    if (norm.includes("NGHỊ QUYẾT")) {
+      return {
+        title: "Quy chuẩn trình bày NGHỊ QUYẾT (Hướng dẫn 05-HD/VPTW)",
+        points: [
+          "Tên loại: Trình bày chữ in hoa, cỡ 14–15, đứng, đậm.",
+          "Trích yếu: Trình bày chữ thường, cỡ 13–14, nghiêng, đặt dưới số ký hiệu ở cột trái.",
+          "Bố cục: Gồm các phần/mục quyết nghị rõ ràng; chữ ký cấp ủy và nơi nhận chuẩn Hướng dẫn 05.",
+        ],
+      };
+    }
+    if (norm.includes("QUYẾT ĐỊNH")) {
+      return {
+        title: "Quy chuẩn trình bày QUYẾT ĐỊNH ĐẢNG (Hướng dẫn 05-HD/VPTW)",
+        points: [
+          "Tên loại: Trình bày chữ in hoa, cỡ 14–15, đứng, đậm.",
+          "Căn cứ ban hành: Trình bày chữ nghiêng, cỡ 13–14, kết thúc bằng dấu chấm phẩy (;).",
+          "Bố cục: Gồm các Điều, Khoản; chữ ký bí thư/phó bí thư và nơi nhận chuẩn Đảng.",
+        ],
+      };
+    }
+    return {
+      title: 'Quy chuẩn thể thức văn bản Đảng (Hướng dẫn 05-HD/VPTW) cho ' + (typeName || "loại này"),
+      points: [
+        "Tiêu đề Đảng: 'ĐẢNG CỘNG SẢN VIỆT NAM' đặt trang trọng ở góc trên bên phải.",
+        "Trích yếu nội dung đặt dưới số ký hiệu ở cột bên trái.",
+        "Nơi nhận đặt phía dưới bên trái; chữ ký đại diện cấp ủy đặt phía dưới bên phải.",
+      ],
+    };
+  }
+
+  // Hành chính NĐ 30
+  if (norm.includes("THÔNG BÁO")) {
+    return {
+      title: "Quy chuẩn trình bày THÔNG BÁO (Nghị định 30/2020/NĐ-CP)",
+      points: [
+        "Tên loại: Trình bày chữ in hoa, cỡ 13–14, đứng, đậm.",
+        "Trích yếu: Trình bày chữ thường, cỡ 12–13, đứng, đậm, đặt canh giữa ngay dưới tên loại.",
+        "Bố cục: Gồm phần nội dung thông báo, nơi nhận đặt góc dưới bên trái (cỡ 11–12), chữ ký đặt góc dưới bên phải (cỡ 13–14, đậm).",
+      ],
+    };
+  }
+  if (norm.includes("QUYẾT ĐỊNH")) {
+    return {
+      title: "Quy chuẩn trình bày QUYẾT ĐỊNH (Nghị định 30/2020/NĐ-CP)",
+      points: [
+        "Tên loại: Trình bày chữ in hoa, cỡ 13–14, đứng, đậm.",
+        "Căn cứ ban hành: Trình bày chữ thường, cỡ 13–14, nghiêng, kết thúc bằng dấu chấm phẩy (;).",
+        "Quyết nghị: Gồm các Điều, Khoản cụ thể; chữ ký người có thẩm quyền và nơi nhận chuẩn NĐ 30.",
+      ],
+    };
+  }
+  if (norm.includes("CÔNG VĂN")) {
+    return {
+      title: "Quy chuẩn trình bày CÔNG VĂN (Nghị định 30/2020/NĐ-CP)",
+      points: [
+        "Không ghi tên loại văn bản; trích yếu đặt dưới số ký hiệu (chữ thường, cỡ 12–13, nghiêng).",
+        "Kính gửi: Ghi cơ quan, tổ chức nhận (chữ thường, cỡ 13–14, đứng, đậm) ở đầu nội dung.",
+        "Nơi nhận: Gồm cơ quan nhận, cơ quan phối hợp và bộ phận lưu trữ văn thư.",
+      ],
+    };
+  }
+  if (norm.includes("KẾ HOẠCH")) {
+    return {
+      title: "Quy chuẩn trình bày KẾ HOẠCH (Nghị định 30/2020/NĐ-CP)",
+      points: [
+        "Tên loại: Trình bày chữ in hoa, cỡ 13–14, đứng, đậm.",
+        "Trích yếu: Cỡ 12–13, đứng, đậm, đặt canh giữa dưới tên loại.",
+        "Bố cục: Gồm Mục đích - Yêu cầu, Nội dung công tác, Phân công tổ chức thực hiện.",
+      ],
+    };
+  }
+  if (norm.includes("BÁO CÁO")) {
+    return {
+      title: "Quy chuẩn trình bày BÁO CÁO (Nghị định 30/2020/NĐ-CP)",
+      points: [
+        "Tên loại: Trình bày chữ in hoa, cỡ 13–14, đứng, đậm.",
+        "Trích yếu: Khái quát nội dung báo cáo định kỳ hoặc chuyên đề.",
+        "Bố cục: Đánh giá kết quả đạt được, tồn tại hạn chế, phương hướng nhiệm vụ trọng tâm.",
+      ],
+    };
+  }
+  if (norm.includes("BIÊN BẢN")) {
+    return {
+      title: "Quy chuẩn trình bày BIÊN BẢN (Nghị định 30/2020/NĐ-CP)",
+      points: [
+        "Tên loại: Trình bày chữ in hoa, cỡ 13–14, đứng, đậm.",
+        "Phần đầu: Ghi rõ thời gian, địa điểm, thành phần tham dự, người chủ trì và thư ký.",
+        "Phần kết: Biên bản thông qua, số bản lập và chữ ký xác nhận của các bên liên quan.",
+      ],
+    };
+  }
+  if (norm.includes("TỜ TRÌNH")) {
+    return {
+      title: "Quy chuẩn trình bày TỜ TRÌNH (Nghị định 30/2020/NĐ-CP)",
+      points: [
+        "Tên loại: Trình bày chữ in hoa, cỡ 13–14, đứng, đậm.",
+        "Kính gửi: Cơ quan/người có thẩm quyền xem xét, phê duyệt.",
+        "Bố cục: Sự cần thiết ban hành, tóm tắt nội dung chính, kiến nghị đề xuất cụ thể.",
+      ],
+    };
+  }
+  if (norm.includes("HƯỚNG DẪN")) {
+    return {
+      title: "Quy chuẩn trình bày HƯỚNG DẪN (Nghị định 30/2020/NĐ-CP)",
+      points: [
+        "Tên loại: Trình bày chữ in hoa, cỡ 13–14, đứng, đậm.",
+        "Bố cục: Phạm vi áp dụng, đối tượng thực hiện và quy trình hướng dẫn nghiệp vụ chi tiết.",
+        "Chữ ký người có thẩm quyền và nơi nhận theo quy định.",
+      ],
+    };
+  }
+  return {
+    title: 'Quy chuẩn thể thức Nghị định 30/2020/NĐ-CP cho ' + (typeName || "loại này"),
+    points: [
+      "Quốc hiệu, Tiêu ngữ và Tên cơ quan ban hành đặt đúng vị trí trang nhất.",
+      "Tên loại và trích yếu được căn giữa trang, đúng cỡ và kiểu chữ quy định.",
+      "Nơi nhận và thẩm quyền ký đặt chuẩn ở cuối trang.",
+    ],
+  };
+}
+
+
 type ImportGroupStatus = "identified" | "needs-review" | "missing" | "unverified" | "no-source";
 
 interface ImportGroupSummary {
@@ -236,6 +361,8 @@ export function ImportStepView({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [uploadError, setUploadError] = useState("");
+  const [pendingReplaceFile, setPendingReplaceFile] = useState<File | null>(null);
+  const [forceShowDropzone, setForceShowDropzone] = useState(false);
   const [showDiffModal, setShowDiffModal] = useState(false);
   const [contextOpen, setContextOpen] = useState(false);
   const [draftRegime,setDraftRegime]=useState<"state"|"party">(regime);
@@ -276,14 +403,10 @@ export function ImportStepView({
   },[sourceVisualState.status,sourceVisualState.manifest,sourceVisualState.renderId,sourceVisualState.sourceSha256,sourceVisualState.sourceGeneration,activeSourcePage]);
 
 
+  // Giữ thanh ngữ cảnh phụ thu gọn mặc định để giao diện chính tập trung vào tài liệu
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const wideScreen = window.matchMedia("(min-width: 1536px)");
-    const syncContextVisibility = () => setContextOpen(wideScreen.matches);
-    syncContextVisibility();
-    wideScreen.addEventListener("change", syncContextVisibility);
-    return () => wideScreen.removeEventListener("change", syncContextVisibility);
-  }, []);
+    setContextOpen(false);
+  }, [flow, phase]);
 
   const acceptFile = (file?: File) => {
     if (!file || isUploading) return;
@@ -292,8 +415,30 @@ export function ImportStepView({
       return;
     }
     setUploadError("");
+    // Nếu đang có tài liệu mở sẵn và người dùng tải tệp khác tên -> Hiện hộp thoại xác nhận thay thế
+    if (hasUploadedSource && uploadedFileName && uploadedFileName !== file.name) {
+      setPendingReplaceFile(file);
+      return;
+    }
+    setForceShowDropzone(false);
     onFileUpload(file);
   };
+
+  const handleConfirmReplaceFile = () => {
+    if (pendingReplaceFile) {
+      const fileToUpload = pendingReplaceFile;
+      setPendingReplaceFile(null);
+      setForceShowDropzone(false);
+      onFileUpload(fileToUpload);
+    }
+  };
+
+  const handleCancelReplaceFile = () => {
+    setPendingReplaceFile(null);
+    setForceShowDropzone(false);
+  };
+
+
 
   const choosingNew=flow==="create";
   const choiceIsParty=choosingNew?draftRegime==="party":isParty;
@@ -424,8 +569,7 @@ export function ImportStepView({
           : "Chưa xem bố cục trang gốc.";
   const handleContinue = () => {
     if (!flowSourceReady) return;
-    if (canContinue) onNext();
-    else if (canOpenSourceReview) onOpenReviewModal?.();
+    onNext();
   };
   const selectFlow=(next:"upload"|"create")=>{
     onFlowChange(next);
@@ -443,7 +587,7 @@ export function ImportStepView({
       data-wizard-step="1"
       data-has-source={hasSelectedSource ? "true" : "false"}
       data-flow-phase={phase}
-      data-context-visible={flow==="upload"&&(phase==="recognition"||phase==="ready")?"true":"false"}
+      data-context-visible={contextOpen && flow==="upload"&&(phase==="recognition"||phase==="ready")?"true":"false"}
       className="df-step-layout df-import-step df-step-enter"
     >
       <div className="df-step-content" id="df-step1-flow">
@@ -462,302 +606,558 @@ export function ImportStepView({
         className="hidden"
       />
 
-      {phase==="choice"&&<section className="df-import-entry" aria-labelledby="df-step1-entry-title">
-        <div className="df-import-entry-heading"><span>BƯỚC ĐẦU TIÊN</span><h2 id="df-step1-entry-title">Bạn muốn bắt đầu như thế nào?</h2><p>Chọn một cách để DocForm chỉ hiện những thông tin cần thiết tiếp theo.</p></div>
-        {sourceOrigin!=="none"&&<div className="df-import-resume"><span><strong>Đang mở: {uploadedFileName||doc.documentType}</strong><small>{sourceOrigin==="uploaded_file"?"Tệp đã tải và nhận diện":"Văn bản tạo từ mẫu"}</small></span><button type="button" onClick={()=>{onFlowChange(sourceOrigin==="uploaded_file"?"upload":"create");onPhaseChange(sourceOrigin==="uploaded_file"?(canContinue?"ready":"recognition"):"ready");}}>Tiếp tục tài liệu hiện tại <ArrowRight size={15}/></button></div>}
-        <div className="df-import-entry-options">
-          <button type="button" onClick={()=>selectFlow("upload")}><span className="df-import-entry-icon"><Upload/></span><strong>Tải tài liệu có sẵn</strong><small>Đọc DOCX/TXT, nhận diện nội dung và duyệt nguồn trước khi soạn.</small><span className="df-import-entry-link">Tải tài liệu <ArrowRight size={16}/></span></button>
-          <button type="button" onClick={()=>selectFlow("create")}><span className="df-import-entry-icon"><Plus/></span><strong>Tạo văn bản mới</strong><small>Chọn hệ thể thức, loại văn bản và mẫu hoặc bắt đầu từ trang trắng.</small><span className="df-import-entry-link">Tạo mới <ArrowRight size={16}/></span></button>
+      {phase==="choice"&&<section
+        className="df-import-entry"
+        aria-labelledby="df-step1-entry-title"
+        data-dragging={isDragging}
+        onDragOver={(event) => {
+          event.preventDefault();
+          if (!isUploading) setIsDragging(true);
+        }}
+        onDragLeave={() => setIsDragging(false)}
+        onDrop={(event) => {
+          event.preventDefault();
+          setIsDragging(false);
+          acceptFile(event.dataTransfer.files?.[0]);
+        }}
+      >
+        <div className="df-import-entry-heading">
+          <span>BẮT ĐẦU TÀI LIỆU</span>
+          <h2 id="df-step1-entry-title">Bạn muốn bắt đầu như thế nào?</h2>
+          <p>Soạn thảo và chuẩn hóa thể thức theo Nghị định 30 (Hành chính) & Hướng dẫn 05 (Đảng).</p>
         </div>
-      </section>}
-
-      {/* 2. Hệ thể thức + Mẫu cơ quan */}
-      {((flow==="create"&&(phase==="regime"||phase==="template"))||(flow==="upload"&&phase==="metadata"))&&<div id="df-step1-regime" className="df-import-choice-grid grid grid-cols-1 lg:grid-cols-2 gap-3">
-        {phase!=="template"&&<>
-        <section className="df-import-card bg-white rounded-2xl border border-[#CFD8EA] p-3 shadow-2xs" aria-labelledby="wizard-regime-heading">
-          <span className="df-import-stage-kicker">{choosingNew ? "CHỌN HỆ THỂ THỨC" : "XÁC NHẬN TÀI LIỆU"}</span>
-          <h2 id="wizard-regime-heading" className="text-xs sm:text-sm font-bold text-[#17233D] mb-2">
-            Chọn hệ thể thức
-          </h2>
-          <p className="df-import-stage-description">{choosingNew ? "Văn bản của bạn sẽ theo quy định trình bày nào? Lựa chọn này quyết định các mẫu và loại văn bản ở bước tiếp theo." : "Kiểm tra hệ thể thức nhận diện từ tệp; chỉ đổi khi nguồn thuộc hệ khác."}</p>
-          <div className="grid grid-cols-1 min-[380px]:grid-cols-2 gap-2" role="group" aria-label="Hệ thể thức">
-            <button
-              type="button"
-              aria-pressed={!choiceIsParty}
-              onClick={() => choosingNew ? (setDraftRegime("state"),setDraftDocType("")) : onRequestRegimeSwitch("state")}
-              className={`p-2.5 rounded-xl border text-left transition flex items-center justify-between gap-2 cursor-pointer min-h-[52px] ${
-                !choiceIsParty
-                  ? "border-[#6255E8] bg-[#EEF0FE]/70 text-[#17233D] ring-1 ring-[#6255E8]/30 shadow-2xs"
-                  : "border-[#CFD8EA] hover:border-slate-400 bg-white text-[#17233D]"
-              }`}
-            >
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="w-7 h-7 rounded-lg bg-purple-100 text-[#6255E8] flex items-center justify-center shrink-0">
-                  <FileText className="w-3.5 h-3.5" />
-                </span>
-                <div className="min-w-0">
-                  <span className="block text-xs font-bold">Văn bản hành chính</span>
-                  <span className="block text-[10.5px] text-[#52607A]">Nghị định 30</span>
-                </div>
-              </div>
-              {choosingNew&&<span className="df-import-regime-detail">Dành cho công văn, quyết định, kế hoạch và các văn bản hành chính.</span>}
-              <span
-                className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] shrink-0 ${
-                  !choiceIsParty ? "bg-[#6255E8] text-white font-bold" : "border border-slate-300 text-transparent"
-                }`}
-              >
-                ✓
-              </span>
-            </button>
-
-            <button
-              type="button"
-              aria-pressed={choiceIsParty}
-              onClick={() => choosingNew ? (setDraftRegime("party"),setDraftDocType("")) : onRequestRegimeSwitch("party")}
-              className={`p-2.5 rounded-xl border text-left transition flex items-center justify-between gap-2 cursor-pointer min-h-[52px] ${
-                choiceIsParty
-                  ? "border-[#6255E8] bg-[#EEF0FE]/70 text-[#17233D] ring-1 ring-[#6255E8]/30 shadow-2xs"
-                  : "border-[#CFD8EA] hover:border-slate-400 bg-white text-[#17233D]"
-              }`}
-            >
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="w-7 h-7 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center shrink-0">
-                  <FileText className="w-3.5 h-3.5" />
-                </span>
-                <div className="min-w-0">
-                  <span className="block text-xs font-bold">Văn bản Đảng</span>
-                  <span className="block text-[10.5px] text-[#52607A]">Hướng dẫn 05</span>
-                </div>
-              </div>
-              {choosingNew&&<span className="df-import-regime-detail">Dành cho văn bản của tổ chức Đảng theo Hướng dẫn 05.</span>}
-              <span
-                className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] shrink-0 ${
-                  choiceIsParty ? "bg-[#6255E8] text-white font-bold" : "border border-slate-300 text-transparent"
-                }`}
-              >
-                ✓
-              </span>
-            </button>
-          </div>
-        </section>
-        </>}
-
-        {phase!=="regime"&&<section className="df-import-card bg-white rounded-2xl border border-[#CFD8EA] p-3 shadow-2xs" aria-labelledby="wizard-profile-heading">
-          <h2 id="wizard-profile-heading" className="text-xs sm:text-sm font-bold text-[#17233D] mb-2">
-            {choosingNew?"Thông tin cơ quan ban hành":"Mẫu cơ quan"}
-          </h2>
-          <p className="df-import-stage-description">{choosingNew ? "Dùng phần đầu Hoa tiêu miền Bắc đã thiết lập, hoặc để trống thông tin cơ quan và tự nhập ở Bước 2." : "Chọn mẫu phần đầu sẽ dùng khi xuất tài liệu."}</p>
-          <div className="grid grid-cols-1 min-[380px]:grid-cols-2 gap-2" role="group" aria-label="Mẫu cơ quan">
-            <button
-              type="button"
-              aria-pressed={choiceIsCompany}
-              onClick={() => selectProfile("company")}
-              className={`p-2.5 rounded-xl border text-left transition flex items-center justify-between gap-2 cursor-pointer min-h-[52px] ${
-                choiceIsCompany
-                  ? "border-[#6255E8] bg-[#EEF0FE]/70 text-[#17233D] ring-1 ring-[#6255E8]/30 shadow-2xs"
-                  : "border-[#CFD8EA] hover:border-slate-400 bg-white text-[#17233D]"
-              }`}
-            >
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="w-7 h-7 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
-                  <Building2 className="w-3.5 h-3.5" />
-                </span>
-                <div className="min-w-0">
-                  <span className="block text-xs font-bold">Hoa tiêu miền Bắc</span>
-                  <span className="block text-[10.5px] text-[#52607A]">Mẫu duyệt khóa cứng</span>
-                </div>
-              </div>
-              <span
-                className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] shrink-0 ${
-                  choiceIsCompany ? "bg-[#6255E8] text-white font-bold" : "border border-slate-300 text-transparent"
-                }`}
-              >
-                ✓
-              </span>
-            </button>
-
-            <button
-              type="button"
-              aria-pressed={!choiceIsCompany}
-              onClick={() => selectProfile("generic")}
-              className={`p-2.5 rounded-xl border text-left transition flex items-center justify-between gap-2 cursor-pointer min-h-[52px] ${
-                !choiceIsCompany
-                  ? "border-[#6255E8] bg-[#EEF0FE]/70 text-[#17233D] ring-1 ring-[#6255E8]/30 shadow-2xs"
-                  : "border-[#CFD8EA] hover:border-slate-400 bg-white text-[#17233D]"
-              }`}
-            >
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="w-7 h-7 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center shrink-0">
-                  <Building2 className="w-3.5 h-3.5" />
-                </span>
-                <div className="min-w-0">
-                  <span className="block text-xs font-bold">Cơ quan chung</span>
-                  <span className="block text-[10.5px] text-[#52607A]">Tự do chỉnh sửa</span>
-                </div>
-              </div>
-              <span
-                className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] shrink-0 ${
-                  !choiceIsCompany ? "bg-[#6255E8] text-white font-bold" : "border border-slate-300 text-transparent"
-                }`}
-              >
-                ✓
-              </span>
-            </button>
-          </div>
-        </section>}
-      </div>}
-
-      {/* 3. Loại văn bản */}
-      {((flow==="create"&&phase==="doctype")||(flow==="upload"&&phase==="metadata"))&&<section id="df-step1-document-type" className="df-import-card bg-white rounded-2xl border border-[#CFD8EA] p-3.5 shadow-2xs" aria-labelledby="wizard-doctype-heading">
-        <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1 mb-2">
-          {choosingNew&&<span className="df-import-stage-kicker">CHỌN LOẠI VĂN BẢN</span>}
-          <h2 id="wizard-doctype-heading" className="text-xs sm:text-sm font-bold text-[#17233D]">
-            {choosingNew?"Bạn muốn tạo loại văn bản nào?":"Loại văn bản nhận diện"}
-          </h2>
-          {!choosingNew&&sourceDocType && (
-            <span className="text-[11px] text-[#52607A]">
-              Nguồn nhận diện: <strong className="text-[#17233D]">{sourceDocType}</strong>
+        {sourceOrigin!=="none"&&<div className="df-import-resume">
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="w-8 h-8 rounded-lg bg-purple-100 text-[#6255E8] flex items-center justify-center shrink-0">
+              <FileText size={18} />
             </span>
-          )}
-        </div>
-        {choosingNew&&<p className="df-import-stage-description">Chọn một loại để DocForm hiển thị các mẫu phù hợp với hệ thể thức đã chọn.</p>}
-        {!choosingNew&&!doc.documentType&&<p className="df-import-stage-description" role="status">Chưa nhận diện được loại văn bản từ nguồn. Chọn một thẻ bên dưới để mở bước tóm tắt; nội dung tệp gốc vẫn được giữ để đối chiếu.</p>}
-
-        <div className="df-import-type-grid grid grid-cols-2 sm:grid-cols-4 gap-2">
-          {docTypes.map((t) => {
-            const isSelected = (choosingNew?draftDocType:doc.documentType || "").toUpperCase() === t.name;
-            return (
-              <button
-                key={t.id}
-                type="button"
-                aria-pressed={isSelected}
-                title={t.desc}
-                onClick={() => choosingNew?setDraftDocType(t.name):onFieldChange("documentType", t.name)}
-                className={`p-2.5 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between min-h-[64px] ${
-                  isSelected
-                    ? "border-[#6255E8] bg-[#EEF0FE]/75 text-[#17233D] font-bold shadow-2xs ring-1 ring-[#6255E8]/30"
-                    : "border-[#CFD8EA] hover:border-[#94A3B8] hover:bg-[#F5F6FA] text-[#17233D]"
-                }`}
-              >
-                <div className="flex items-center justify-between gap-1 w-full">
-                  <span className="text-xs font-bold">{t.name}</span>
-                  <span
-                    className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] shrink-0 ${
-                      isSelected ? "bg-[#6255E8] text-white font-bold" : "border border-slate-300 text-transparent"
-                    }`}
-                  >
-                    ✓
-                  </span>
-                </div>
-                <span className="text-[11px] text-[#52607A] font-normal mt-1 leading-tight">{t.desc}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        {!choosingNew && sourceEvidenceSuggestsMinutes && sourceTypeEvidence && (
-          <div data-testid="doctype-source-suggestion" className="mt-2.5 rounded-xl border border-blue-200 bg-blue-50 p-2.5 text-[11.5px] text-[#334155]">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span>
-                <strong className="text-[#17233D]">Gợi ý từ nội dung: Biên bản</strong>
-                <span> — “{sourceTypeEvidence.exactQuote}” · vị trí {sourceTypeEvidence.blockIndex + 1}</span>
-              </span>
-              {doc.documentType.toUpperCase() === "BIÊN BẢN"
-                ? <span role="status" className="font-semibold text-emerald-800">Đã chọn</span>
-                : <button type="button" onClick={() => onFieldChange("documentType", "BIÊN BẢN")}
-                    className="rounded-lg border border-blue-300 bg-white px-2.5 py-1.5 font-semibold text-blue-900 hover:bg-blue-100">
-                    Xác nhận “Biên bản”
-                  </button>}
-            </div>
-          </div>
-        )}
-
-        {!choosingNew&&docTypeMismatch && (
-          <div
-            id="source-mismatch-doctype"
-            data-source-warning="doc-type"
-            data-doctype-override={overrideCovers ? "true" : "false"}
-            role={overrideCovers ? "note" : "status"}
-            className={
-              overrideCovers
-                ? "mt-2.5 p-2.5 rounded-xl bg-[#F5F6FA] border border-[#CFD8EA] text-[11.5px] text-[#3B4663] flex flex-col gap-1.5"
-                : "mt-2.5 p-2.5 rounded-xl bg-amber-50 border border-amber-300 text-[11.5px] text-[#9E5206] flex flex-col gap-1.5"
-            }
-          >
-            <div className="flex items-start gap-2">
-              {overrideCovers ? (
-                <ShieldCheck className="w-3.5 h-3.5 shrink-0 mt-0.5 text-[#2E7D4F]" />
-              ) : (
-                <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-              )}
-              <span>
-                {overrideCovers ? (
-                  <>
-                    Bạn đã xác nhận giữ loại <strong>{chosenDocType}</strong> trên nguồn vốn là{" "}
-                    <strong>{sourceDocType}</strong>
-                    {docTypeOverride ? ` lúc ${new Date(docTypeOverride.decidedAt).toLocaleString("vi-VN")}` : ""}. Nội
-                    dung nguồn giữ nguyên; quyết định này được ghi vào bản nháp làm bằng chứng.
-                  </>
-                ) : (
-                  <>
-                    Loại bạn chọn (<strong>{chosenDocType}</strong>) khác loại nhận diện từ nguồn (
-                    <strong>{sourceDocType}</strong>). Nội dung nguồn giữ nguyên — phải chọn đúng loại hoặc xác nhận
-                    rõ quyết định giữ loại này trước khi xuất.
-                  </>
-                )}
-              </span>
-            </div>
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 pl-5.5">
-              <button
-                type="button"
-                data-action="resolve-doctype-mismatch"
-                onClick={() => onFieldChange("documentType", sourceDocType)}
-                className="inline-flex items-center gap-1 font-semibold text-[#6255E8] hover:underline cursor-pointer"
-              >
-                <Check className="w-3 h-3" />
-                Đổi loại về {sourceDocType}
-              </button>
-              {!overrideCovers && (
-                <button
-                  type="button"
-                  data-action="override-doctype-mismatch"
-                  onClick={onConfirmDocTypeOverride}
-                  className="inline-flex items-center gap-1 font-semibold text-[#9E5206] hover:underline cursor-pointer"
-                >
-                  <ShieldCheck className="w-3 h-3" />
-                  Vẫn giữ {chosenDocType} (ghi nhận quyết định)
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Info banner: no truncate + wrap so it never overflows horizontally. */}
-        {!choosingNew&&<div className="mt-2.5 p-2 bg-[#F5F6FA] border border-[#CFD8EA] rounded-xl flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[#52607A]">
-          <div className="flex items-center gap-2 min-w-0 flex-1 basis-[200px]">
-            <Info className="w-3.5 h-3.5 text-[#6255E8] shrink-0" />
-            <span className="min-w-0">
-              {docTypeMismatch
-                ? `Mẫu đang dùng được thiết kế cho ${sourceDocType}, không phải ${chosenDocType}.`
-                : "Mẫu trình bày phù hợp với loại văn bản đã chọn."}
+            <span className="min-w-0 text-left">
+              <strong>Đang mở: {uploadedFileName||doc.documentType}</strong>
+              <small>{sourceOrigin==="uploaded_file"?"Tệp đã tải và nhận diện sẵn sàng":"Văn bản tạo từ mẫu"}</small>
             </span>
           </div>
-          <button
-            type="button"
-            onClick={() => setShowDiffModal(true)}
-            className="text-[#6255E8] hover:underline font-semibold flex items-center gap-1 shrink-0 whitespace-nowrap cursor-pointer"
-          >
-            <span>Xem khác biệt thể thức</span>
-            <ExternalLink className="w-3 h-3" />
+          <button type="button" onClick={()=>{setForceShowDropzone(false);onFlowChange(sourceOrigin==="uploaded_file"?"upload":"create");onPhaseChange(canContinue ? "ready" : (sourceOrigin==="uploaded_file"?"metadata":"ready"));}}>
+            Tiếp tục tài liệu hiện tại <ArrowRight size={15}/>
           </button>
         </div>}
+        <div className="df-import-entry-options">
+          <button
+            type="button"
+            data-testid="upload-existing-file-button"
+            className="df-upload-card-button"
+            disabled={isUploading}
+            onClick={() => {
+              fileInputRef.current?.click();
+            }}
+          >
+            <span className="df-import-entry-icon">
+              {isUploading ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Upload/>}
+            </span>
+            <strong>{isUploading ? "Đang đọc tài liệu…" : "Tải tài liệu có sẵn"}</strong>
+            <small>Đọc DOCX/TXT từ máy tính hoặc kéo thả tệp vào đây để nhận diện.</small>
+            <span className="df-import-entry-link">
+              {isUploading ? "Đang xử lý…" : "Chọn tệp hoặc kéo thả"} <ArrowRight size={16}/>
+            </span>
+          </button>
+          <button type="button" onClick={()=>selectFlow("create")}>
+            <span className="df-import-entry-icon"><Plus/></span>
+            <strong>Tạo văn bản mới</strong>
+            <small>Chọn hệ thể thức, loại văn bản và mẫu chuẩn hoặc bắt đầu từ trang trắng.</small>
+            <span className="df-import-entry-link">Tạo mới <ArrowRight size={16}/></span>
+          </button>
+        </div>
+        {uploadError && (
+          <p role="alert" className="text-xs text-[#B82339] mt-3 text-center">
+            {uploadError}
+          </p>
+        )}
       </section>}
 
-      {flow==="upload"&&phase==="metadata"&&<section className="df-import-card mt-3 border border-[#CFD8EA] bg-white rounded-2xl p-3.5 shadow-2xs space-y-3" data-testid="semantic-review-panel" aria-labelledby="semantic-review-heading">
-        <div>
-          <h2 id="semantic-review-heading" className="text-sm font-bold text-[#17233D]">Đọc và đối chiếu tài liệu</h2>
-          <p className="mt-1 text-xs text-[#52607A]">DocForm đọc nội dung tại máy. Bạn có thể xem bố cục trang gốc; gửi văn bản cho AI là tùy chọn.</p>
+            {/* 1. Thanh tệp nguồn tinh gọn */}
+      {flow === "upload" && hasUploadedSource && !forceShowDropzone && (
+        <section className="df-import-card bg-white rounded-xl border border-slate-200 px-3.5 py-2.5 shadow-2xs mb-3 flex flex-wrap items-center justify-between gap-2.5" aria-label="Tệp nguồn đã tải">
+          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+            <span className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+              <FileText size={18} />
+            </span>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-bold text-xs sm:text-sm text-slate-900 truncate" title={uploadedFileName}>
+                  {uploadedFileName || "Tài liệu đang mở"}
+                </span>
+                <span className="inline-flex items-center gap-1 text-[11px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full font-semibold border border-emerald-200 shrink-0">
+                  <Check size={12} /> Đã đọc tệp
+                </span>
+              </div>
+              <div className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-2 flex-wrap">
+                <span>{blocksCount} khối nội dung · {tablesCount > 0 ? `${tablesCount} bảng` : "Không có bảng"}</span>
+                <span>·</span>
+                <span>Hệ nhận diện: <strong className="text-slate-700">{REGIME_LABEL[regime]}</strong></span>
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {canOpenSourceReview && (
+              <button
+                type="button"
+                data-action="open-partition-review"
+                onClick={onOpenReviewModal}
+                className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer flex items-center gap-1"
+              >
+                <Eye size={12} className="text-indigo-600" />
+                <span>Mở rà soát phân vùng</span>
+              </button>
+            )}
+            {originalSnapshot?.sourceType === 'uploaded_file' && originalAvailable && onDownloadOriginal && (
+              <button type="button" data-original-download onClick={onDownloadOriginal} className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer">
+                Tải tệp gốc
+              </button>
+            )}
+            <button
+              type="button"
+              disabled={isUploading}
+              onClick={() => {
+                fileInputRef.current?.click();
+              }}
+              className="px-3 py-1.5 rounded-lg border border-indigo-200 bg-indigo-50/60 hover:bg-indigo-100 text-xs font-semibold text-indigo-700 flex items-center gap-1.5 transition cursor-pointer"
+            >
+              <RefreshCw size={12} className="text-indigo-600" />
+              <span>Thay tệp khác</span>
+            </button>
+          </div>
+
+          {(() => {
+            const allUnsupportedFeatures: UnsupportedFeature[] = [
+              ...(structuredImport?.importFidelityManifest?.unsupportedFeatures || []),
+              ...(uploadedBlocks || []).flatMap((b: SourceBlock) => b.unsupportedFeatures || []),
+            ];
+            const unsupportedFeatures = Array.from(new Map(allUnsupportedFeatures.map(feature => [
+              `${feature.code}:${feature.tableId ?? ""}:${feature.blockId ?? ""}:${feature.description}`,
+              feature,
+            ])).values());
+            if (unsupportedFeatures.length === 0) return null;
+            return (
+              <div className="w-full mt-1.5 px-3 py-1.5 rounded-lg border border-amber-200 bg-amber-50/80 text-xs text-amber-900 flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 font-medium">
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                  <span>
+                    Tài liệu có {unsupportedFeatures.length} đối tượng hình ảnh/đồ họa nhúng · DocForm bảo toàn nguyên vẹn khi xuất bản Word
+                  </span>
+                </div>
+                <details className="text-[11px]">
+                  <summary className="cursor-pointer font-semibold text-amber-800 hover:underline">Chi tiết</summary>
+                  <ul className="list-disc pl-4 mt-1 space-y-0.5 text-[11px] text-amber-800">
+                    {unsupportedFeatures.map((f: UnsupportedFeature, idx: number) => {
+                      const desc = f.code === "drawing_or_image"
+                        ? "Hình ảnh hoặc đối tượng đồ họa nhúng"
+                        : f.description;
+                      return <li key={idx}>{desc}</li>;
+                    })}
+                  </ul>
+                </details>
+              </div>
+            );
+          })()}
+        </section>
+      )}
+
+      {/* 2. KHU VỰC THIẾT LẬP THỂ THỨC (LUỒNG TẠO MỚI) */}
+      {flow==="create" && (phase==="regime"||phase==="template") && (
+        <div id="df-step1-regime" className="df-import-choice-grid grid grid-cols-1 lg:grid-cols-2 gap-3">
+          {phase!=="template"&&<>
+          <section className="df-import-card bg-white rounded-2xl border border-[#CFD8EA] p-3 shadow-2xs" aria-labelledby="wizard-regime-heading">
+            <span className="df-import-stage-kicker">CHỌN HỆ THỂ THỨC</span>
+            <h2 id="wizard-regime-heading" className="text-xs sm:text-sm font-bold text-[#17233D] mb-2">
+              Chọn hệ thể thức
+            </h2>
+            <p className="df-import-stage-description">Văn bản của bạn sẽ theo quy định trình bày nào? Lựa chọn này quyết định các mẫu và loại văn bản ở bước tiếp theo.</p>
+            <div className="grid grid-cols-1 min-[380px]:grid-cols-2 gap-2" role="group" aria-label="Hệ thể thức">
+              <button
+                type="button"
+                aria-pressed={!choiceIsParty}
+                onClick={() => { setDraftRegime("state"); setDraftDocType(""); }}
+                className={`p-2.5 rounded-xl border text-left transition flex items-center justify-between gap-2 cursor-pointer min-h-[52px] ${
+                  !choiceIsParty
+                    ? "border-[#6255E8] bg-[#EEF0FE]/70 text-[#17233D] ring-1 ring-[#6255E8]/30 shadow-2xs"
+                    : "border-[#CFD8EA] hover:border-slate-400 bg-white text-[#17233D]"
+                }`}
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="w-7 h-7 rounded-lg bg-purple-100 text-[#6255E8] flex items-center justify-center shrink-0">
+                    <FileText className="w-3.5 h-3.5" />
+                  </span>
+                  <div className="min-w-0">
+                    <span className="block text-xs font-bold">Văn bản hành chính</span>
+                    <span className="block text-[10.5px] text-[#52607A]">Nghị định 30</span>
+                  </div>
+                </div>
+                <span className="df-import-regime-detail">Dành cho công văn, quyết định, kế hoạch và các văn bản hành chính.</span>
+                <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] shrink-0 ${!choiceIsParty ? "bg-[#6255E8] text-white font-bold" : "border border-slate-300 text-transparent"}`}>✓</span>
+              </button>
+              <button
+                type="button"
+                aria-pressed={choiceIsParty}
+                onClick={() => { setDraftRegime("party"); setDraftDocType(""); }}
+                className={`p-2.5 rounded-xl border text-left transition flex items-center justify-between gap-2 cursor-pointer min-h-[52px] ${
+                  choiceIsParty
+                    ? "border-[#6255E8] bg-[#EEF0FE]/70 text-[#17233D] ring-1 ring-[#6255E8]/30 shadow-2xs"
+                    : "border-[#CFD8EA] hover:border-slate-400 bg-white text-[#17233D]"
+                }`}
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="w-7 h-7 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center shrink-0">
+                    <FileText className="w-3.5 h-3.5" />
+                  </span>
+                  <div className="min-w-0">
+                    <span className="block text-xs font-bold">Văn bản Đảng</span>
+                    <span className="block text-[10.5px] text-[#52607A]">Hướng dẫn 05</span>
+                  </div>
+                </div>
+                <span className="df-import-regime-detail">Dành cho văn bản của tổ chức Đảng theo Hướng dẫn 05.</span>
+                <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] shrink-0 ${choiceIsParty ? "bg-[#6255E8] text-white font-bold" : "border border-slate-300 text-transparent"}`}>✓</span>
+              </button>
+            </div>
+          </section>
+          </>}
+          {phase!=="regime"&&<section className="df-import-card bg-white rounded-2xl border border-[#CFD8EA] p-3 shadow-2xs" aria-labelledby="wizard-profile-heading">
+            <h2 id="wizard-profile-heading" className="text-xs sm:text-sm font-bold text-[#17233D] mb-2">Thông tin cơ quan ban hành</h2>
+            <div className="grid grid-cols-1 min-[380px]:grid-cols-2 gap-2" role="group" aria-label="Mẫu cơ quan">
+              <button type="button" aria-pressed={choiceIsCompany} onClick={() => selectProfile("company")} className={`p-2.5 rounded-xl border text-left transition flex items-center justify-between gap-2 cursor-pointer min-h-[52px] ${choiceIsCompany ? "border-[#6255E8] bg-[#EEF0FE]/70 text-[#17233D] ring-1 ring-[#6255E8]/30 shadow-2xs" : "border-[#CFD8EA] hover:border-slate-400 bg-white text-[#17233D]"}`}>
+                <div className="flex items-center gap-2 min-w-0"><span className="w-7 h-7 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center shrink-0"><Building2 className="w-3.5 h-3.5" /></span><div className="min-w-0"><span className="block text-xs font-bold">Hoa tiêu miền Bắc</span><span className="block text-[10.5px] text-[#52607A]">Mẫu duyệt khóa cứng</span></div></div>
+                <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] shrink-0 ${choiceIsCompany ? "bg-[#6255E8] text-white font-bold" : "border border-slate-300 text-transparent"}`}>✓</span>
+              </button>
+              <button type="button" aria-pressed={!choiceIsCompany} onClick={() => selectProfile("generic")} className={`p-2.5 rounded-xl border text-left transition flex items-center justify-between gap-2 cursor-pointer min-h-[52px] ${!choiceIsCompany ? "border-[#6255E8] bg-[#EEF0FE]/70 text-[#17233D] ring-1 ring-[#6255E8]/30 shadow-2xs" : "border-[#CFD8EA] hover:border-slate-400 bg-white text-[#17233D]"}`}>
+                <div className="flex items-center gap-2 min-w-0"><span className="w-7 h-7 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center shrink-0"><Building2 className="w-3.5 h-3.5" /></span><div className="min-w-0"><span className="block text-xs font-bold">Cơ quan chung</span><span className="block text-[10.5px] text-[#52607A]">Tự do chỉnh sửa</span></div></div>
+                <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] shrink-0 ${!choiceIsCompany ? "bg-[#6255E8] text-white font-bold" : "border border-slate-300 text-transparent"}`}>✓</span>
+              </button>
+            </div>
+          </section>}
         </div>
+      )}
+
+      {/* LOẠI VĂN BẢN (LUỒNG TẠO MỚI) */}
+      {flow==="create" && phase==="doctype" && (
+        <section id="df-step1-document-type" className="df-import-card bg-white rounded-2xl border border-[#CFD8EA] p-3.5 shadow-2xs" aria-labelledby="wizard-doctype-heading">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1 mb-2">
+            <span className="df-import-stage-kicker">CHỌN LOẠI VĂN BẢN</span>
+            <h2 id="wizard-doctype-heading" className="text-xs sm:text-sm font-bold text-[#17233D]">Bạn muốn tạo loại văn bản nào?</h2>
+          </div>
+          <div className="df-import-type-grid grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {docTypes.map((t) => {
+              const isSelected = draftDocType.toUpperCase() === t.name;
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  aria-pressed={isSelected}
+                  title={t.desc}
+                  onClick={() => setDraftDocType(t.name)}
+                  className={`p-2.5 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between min-h-[64px] ${
+                    isSelected
+                      ? "border-[#6255E8] bg-[#EEF0FE]/75 text-[#17233D] font-bold shadow-2xs ring-1 ring-[#6255E8]/30"
+                      : "border-[#CFD8EA] hover:border-[#94A3B8] hover:bg-[#F5F6FA] text-[#17233D]"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-1 w-full">
+                    <span className="text-xs font-bold">{t.name}</span>
+                    <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] shrink-0 ${isSelected ? "bg-[#6255E8] text-white font-bold" : "border border-slate-300 text-transparent"}`}>✓</span>
+                  </div>
+                  <span className="text-[11px] text-[#52607A] font-normal mt-1 leading-tight">{t.desc}</span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* 2. GIAO DIỆN HỢP NHẤT CHUYÊN NGHIỆP SAU KHI TẢI TỆP (LUỒNG UPLOAD) */}
+      {flow === "upload" && hasUploadedSource && !forceShowDropzone && (
+        <div className="df-unified-main-grid grid grid-cols-1 lg:grid-cols-12 gap-3.5 items-stretch mb-3">
+          {/* CỘT TRÁI (5 phần): Hệ thể thức, Mẫu cơ quan & Thông tin trích xuất */}
+          <div className="lg:col-span-5 flex flex-col gap-3">
+            {/* Hệ thể thức & Mẫu cơ quan */}
+            <div id="df-step1-regime" className="df-import-card bg-white rounded-2xl border border-slate-200 p-3.5 shadow-2xs space-y-3">
+              <div>
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
+                  1. Hệ thể thức văn bản
+                </h3>
+                <div className="grid grid-cols-2 gap-2" role="group" aria-label="Hệ thể thức">
+                  <button
+                    type="button"
+                    aria-pressed={!choiceIsParty}
+                    onClick={() => onRequestRegimeSwitch("state")}
+                    className={`p-2.5 rounded-xl border text-left transition flex items-center justify-between gap-2 cursor-pointer ${
+                      !choiceIsParty
+                        ? "border-[#6255E8] bg-[#EEF0FE]/80 text-[#17233D] font-bold shadow-2xs ring-1 ring-[#6255E8]/30"
+                        : "border-slate-200 hover:border-slate-300 bg-white text-slate-700"
+                    }`}
+                  >
+                    <div className="min-w-0">
+                      <span className="block text-xs font-bold">Hành chính</span>
+                      <span className="block text-[11px] text-slate-500 font-normal">Nghị định 30</span>
+                    </div>
+                    <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] shrink-0 ${!choiceIsParty ? "bg-[#6255E8] text-white font-bold" : "border border-slate-300 text-transparent"}`}>✓</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    aria-pressed={choiceIsParty}
+                    onClick={() => onRequestRegimeSwitch("party")}
+                    className={`p-2.5 rounded-xl border text-left transition flex items-center justify-between gap-2 cursor-pointer ${
+                      choiceIsParty
+                        ? "border-[#6255E8] bg-[#EEF0FE]/80 text-[#17233D] font-bold shadow-2xs ring-1 ring-[#6255E8]/30"
+                        : "border-slate-200 hover:border-slate-300 bg-white text-slate-700"
+                    }`}
+                  >
+                    <div className="min-w-0">
+                      <span className="block text-xs font-bold">Văn bản Đảng</span>
+                      <span className="block text-[11px] text-slate-500 font-normal">Hướng dẫn 05</span>
+                    </div>
+                    <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] shrink-0 ${choiceIsParty ? "bg-[#6255E8] text-white font-bold" : "border border-slate-300 text-transparent"}`}>✓</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="pt-2.5 border-t border-slate-100">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
+                  2. Mẫu cơ quan ban hành
+                </h3>
+                <div className="grid grid-cols-2 gap-2" role="group" aria-label="Mẫu cơ quan">
+                  <button
+                    type="button"
+                    aria-pressed={choiceIsCompany}
+                    onClick={() => selectProfile("company")}
+                    className={`p-2.5 rounded-xl border text-left transition flex items-center justify-between gap-2 cursor-pointer ${
+                      choiceIsCompany
+                        ? "border-[#6255E8] bg-[#EEF0FE]/80 text-[#17233D] font-bold shadow-2xs ring-1 ring-[#6255E8]/30"
+                        : "border-slate-200 hover:border-slate-300 bg-white text-slate-700"
+                    }`}
+                  >
+                    <div className="min-w-0">
+                      <span className="block text-xs font-bold">Hoa tiêu MB</span>
+                      <span className="block text-[11px] text-slate-500 font-normal">Mẫu chuẩn khóa</span>
+                    </div>
+                    <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] shrink-0 ${choiceIsCompany ? "bg-[#6255E8] text-white font-bold" : "border border-slate-300 text-transparent"}`}>✓</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    aria-pressed={!choiceIsCompany}
+                    onClick={() => selectProfile("generic")}
+                    className={`p-2.5 rounded-xl border text-left transition flex items-center justify-between gap-2 cursor-pointer ${
+                      !choiceIsCompany
+                        ? "border-[#6255E8] bg-[#EEF0FE]/80 text-[#17233D] font-bold shadow-2xs ring-1 ring-[#6255E8]/30"
+                        : "border-slate-200 hover:border-slate-300 bg-white text-slate-700"
+                    }`}
+                  >
+                    <div className="min-w-0">
+                      <span className="block text-xs font-bold">Cơ quan chung</span>
+                      <span className="block text-[11px] text-slate-500 font-normal">Tự do chỉnh sửa</span>
+                    </div>
+                    <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] shrink-0 ${!choiceIsCompany ? "bg-[#6255E8] text-white font-bold" : "border border-slate-300 text-transparent"}`}>✓</span>
+                  </button>
+                </div>
+
+                {profileMismatch && (
+                  <div
+                    id="source-mismatch-profile"
+                    data-source-warning="profile"
+                    data-testid="source-profile-conflict"
+                    role="status"
+                    className="mt-2.5 p-2 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-900"
+                  >
+                    <div className="flex items-start gap-1.5 font-medium">
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+                      <span>{sourceProfile === "company" ? "Khớp mẫu Hoa tiêu miền Bắc nhưng bạn đang chọn Cơ quan chung." : "Tên cơ quan không khớp đầy đủ với mẫu Hoa tiêu miền Bắc."}</span>
+                    </div>
+                    <div className="mt-1.5 flex gap-2">
+                      <button type="button" data-action="confirm-generic-profile" onClick={() => onConfirmProfileDecision("generic")} className="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50">Dùng Cơ quan chung</button>
+                      <button type="button" data-action="confirm-company-profile" onClick={() => onConfirmProfileDecision("company")} className="rounded border border-indigo-300 bg-indigo-50 px-2 py-1 text-[11px] font-semibold text-indigo-700 hover:bg-indigo-100">Vẫn dùng Hoa tiêu miền Bắc</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Thông tin nhận diện từ tệp (Document Metadata Summary) */}
+            <div className="df-import-card df-office-summary-card bg-white rounded-2xl border border-slate-200 p-3.5 shadow-2xs space-y-2.5 flex-1 flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                    Thông tin nhận diện từ tệp
+                  </h3>
+                  <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                    Tự động điền
+                  </span>
+                </div>
+                <div className="space-y-2 text-xs">
+                  <div className="flex items-start gap-2">
+                    <span className="text-slate-400 font-medium w-20 shrink-0 text-[11px] pt-0.5">CƠ QUAN:</span>
+                    <span className="font-semibold text-slate-800 break-words flex-1">
+                      {[doc.orgHeader1, doc.orgHeader2].filter(Boolean).join(" · ") || "(Chưa phát hiện)"}
+                    </span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="text-slate-400 font-medium w-20 shrink-0 text-[11px] pt-0.5">SỐ HIỆU:</span>
+                    <span className="font-mono font-semibold text-slate-800 flex-1">
+                      {doc.referenceNumber || "(Chưa có số hiệu)"}
+                    </span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="text-slate-400 font-medium w-20 shrink-0 text-[11px] pt-0.5">TRÍCH YẾU:</span>
+                    <span className="font-medium text-slate-800 flex-1 line-clamp-2" title={[doc.documentType, doc.subject].filter(Boolean).join(" · ")}>
+                      {[doc.documentType, doc.subject].filter(Boolean).join(" · ") || "(Chưa có trích yếu)"}
+                    </span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="text-slate-400 font-medium w-20 shrink-0 text-[11px] pt-0.5">NGƯỜI KÝ:</span>
+                    <span className="font-semibold text-slate-800 flex-1">
+                      {[doc.signTitle, doc.signName].filter(Boolean).join(" · ") || "(Chưa phát hiện)"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <div className="pt-2 border-t border-slate-100 text-[11px] text-slate-400">
+                💡 Toàn bộ thông tin có thể chỉnh sửa trực tiếp trên mặt giấy ở <strong>Bước 2</strong>.
+              </div>
+            </div>
+          </div>
+
+          {/* CỘT PHẢI (7 phần): Loại văn bản */}
+          <div className="lg:col-span-7 flex flex-col h-full">
+            <section id="df-step1-document-type" className="df-import-card bg-white rounded-2xl border border-slate-200 p-3.5 shadow-2xs h-full flex flex-col" aria-labelledby="wizard-doctype-heading">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                <h3 id="wizard-doctype-heading" className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                  3. Loại văn bản
+                </h3>
+                {sourceDocType && (
+                  <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
+                    Nguồn nhận diện: <strong className="text-indigo-900">{sourceDocType}</strong>
+                  </span>
+                )}
+              </div>
+
+              {/* Lưới 8 loại văn bản thiết kế compact & hiện đại */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 flex-1 content-start">
+                {docTypes.map((t) => {
+                  const isSelected = (doc.documentType || "").toUpperCase() === t.name;
+                  const isSourceMatch = sourceDocType?.toUpperCase() === t.name;
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      aria-pressed={isSelected}
+                      title={t.desc}
+                      onClick={() => onFieldChange("documentType", t.name)}
+                      className={`px-3 py-3 rounded-xl border text-center transition cursor-pointer flex flex-col items-center justify-center gap-1 min-h-[58px] ${
+                        isSelected
+                          ? "border-[#6255E8] bg-[#EEF0FE]/90 text-[#17233D] font-bold shadow-xs ring-1 ring-[#6255E8]/30"
+                          : "border-slate-200 hover:border-slate-300 hover:bg-slate-50/70 text-slate-700"
+                      }`}
+                    >
+                      <div className="flex items-center justify-center gap-1.5 w-full">
+                        <span className="text-xs font-bold leading-tight">{t.name}</span>
+                        {isSelected && <span className="text-[#6255E8] text-[11px] font-bold">✓</span>}
+                      </div>
+                      {isSourceMatch && !isSelected && (
+                        <span className="text-[10px] text-emerald-600 font-medium">Khớp nguồn</span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {docTypeMismatch && (
+                <div
+                  id="source-mismatch-doctype"
+                  data-source-warning="doc-type"
+                  data-doctype-override={overrideCovers ? "true" : "false"}
+                  role={overrideCovers ? "note" : "status"}
+                  className="mt-3 p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 flex flex-col gap-1.5"
+                >
+                  <div className="flex items-start gap-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-600" />
+                    <span>
+                      Loại chọn (<strong>{chosenDocType}</strong>) khác với nguồn (<strong>{sourceDocType}</strong>).
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3 pl-5">
+                    <button
+                      type="button"
+                      data-action="resolve-doctype-mismatch"
+                      onClick={() => onFieldChange("documentType", sourceDocType)}
+                      className="font-bold text-indigo-700 hover:underline cursor-pointer inline-flex items-center gap-1"
+                    >
+                      <Check size={12} /> Đổi về {sourceDocType}
+                    </button>
+                    {!overrideCovers && (
+                      <button
+                        type="button"
+                        data-action="override-doctype-mismatch"
+                        onClick={onConfirmDocTypeOverride}
+                        className="font-medium text-amber-800 hover:underline cursor-pointer"
+                      >
+                        Vẫn giữ {chosenDocType}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Khung quy chuẩn thể thức tương ứng (Specs Card) - Khắc phục khoảng trống thừa và mang lại giá trị nghiệp vụ */}
+              {(() => {
+                const activeDocType = doc.documentType || chosenDocType || (docTypes[0]?.name ?? "THÔNG BÁO");
+                const specs = getDocTypeFormatSpecs(activeDocType, isParty);
+                return (
+                  <div className="mt-3 p-3 rounded-xl border border-indigo-100 bg-indigo-50/50 text-xs text-slate-700 space-y-1.5">
+                    <div className="flex items-center gap-1.5 font-bold text-indigo-950 text-xs">
+                      <Scale className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                      <span>{specs.title}</span>
+                    </div>
+                    <ul className="list-disc pl-4 space-y-1 text-[11px] text-slate-600">
+                      {specs.points.map((pt, i) => (
+                        <li key={i}>{pt}</li>
+                      ))}
+                    </ul>
+                  </div>
+                );
+              })()}
+            </section>
+          </div>
+        </div>
+      )}
+
+      {flow==="upload"&&phase==="metadata"&&<details className="df-import-card mt-3 border border-[#CFD8EA] bg-white rounded-2xl p-3.5 shadow-2xs space-y-3" data-testid="semantic-review-panel" aria-labelledby="semantic-review-heading">
+        <summary className="cursor-pointer font-bold text-xs sm:text-sm text-[#17233D] flex items-center justify-between">
+          <span className="flex items-center gap-2">
+            <span className="w-5 h-5 rounded-md bg-purple-50 text-[#6255E8] flex items-center justify-center"><Eye size={13} /></span>
+            <span>Tùy chọn xem lại tệp gốc & Đối chiếu nguồn (Tùy chọn)</span>
+          </span>
+          <span className="text-[11px] text-[#52607A] font-normal">Xem đối chiếu song song · Bố cục trang gốc</span>
+        </summary>
+        <div className="pt-2 space-y-3">
+          {/* Card Mở Studio đối chiếu song song */}
+          <div className="p-3 rounded-xl border border-indigo-100 bg-indigo-50/40 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <strong className="text-xs text-slate-900">Đối chiếu song song với tệp gốc (Side-by-side)</strong>
+              <p className="text-[11px] text-slate-500 mt-0.5">Mở màn hình so sánh trực quan hai bên giữa văn bản gốc và bản bóc tách chuẩn thể thức.</p>
+            </div>
+            {canOpenSourceReview && (
+              <button
+                type="button"
+                onClick={onOpenReviewModal}
+                className="px-3 py-1.5 rounded-lg border border-indigo-300 bg-white hover:bg-indigo-50 text-xs font-semibold text-indigo-700 flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+              >
+                <ExternalLink size={13} />
+                <span>Mở studio đối chiếu</span>
+              </button>
+            )}
+          </div>
+
+          <div>
+            <h2 id="semantic-review-heading" className="text-sm font-bold text-[#17233D]">Đọc và đối chiếu tài liệu</h2>
+            <p className="mt-1 text-xs text-[#52607A]">DocForm đọc nội dung tại máy. Bạn có thể xem bố cục trang gốc; gửi văn bản cho AI là tùy chọn.</p>
+          </div>
 
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs" data-testid="local-source-visual-status">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -787,6 +1187,12 @@ export function ImportStepView({
           </details>
         </div>
 
+        {/* Khối kỹ thuật nâng cao dành cho chuyên viên/kiểm thử (mặc định đóng gọn gàng) */}
+        <details className="rounded-xl border border-slate-200 bg-white p-2.5 text-xs">
+          <summary className="cursor-pointer text-xs font-semibold text-slate-600 hover:text-slate-900">
+            Chi tiết kỹ thuật & Rà soát chuyên sâu
+          </summary>
+          <div className="mt-2 space-y-3">
         <details className="rounded-xl border border-violet-200 bg-violet-50/40 p-3" data-testid="ai-source-review-options">
           <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-2 text-sm font-semibold text-[#17233D]">
             <span>Đối chiếu bằng AI (tùy chọn)</span>
@@ -848,10 +1254,14 @@ export function ImportStepView({
             </article>)}
           </div>
         </details>
-      </section>}
+          </div>
+        </details>
+
+        </div>
+      </details>}
 
       {/* 4. Nguồn tài liệu: tệp hoặc mẫu */}
-      {((flow==="upload"&&phase==="upload")||(flow==="create"&&phase==="template"))&&<section id="df-step1-source" className="df-import-source-grid grid grid-cols-1 gap-3" aria-label="Chọn nguồn văn bản">
+      {((flow==="upload" && (!hasUploadedSource || forceShowDropzone))||(flow==="create"&&phase==="template"))&&<section id="df-step1-source" className="df-import-source-grid grid grid-cols-1 gap-3" aria-label="Chọn nguồn văn bản">
         {flow==="upload"&&<>
         <div className="df-import-card bg-white rounded-2xl border border-[#CFD8EA] p-3.5 shadow-2xs flex flex-col">
           <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
@@ -864,7 +1274,12 @@ export function ImportStepView({
           </div>
           <p className="df-import-stage-description">Tải tệp Word hoặc TXT. DocForm sẽ đọc nội dung, nhận diện các thành phần và cho bạn duyệt trước khi soạn.</p>
 
-          <details className="df-import-ai-options" data-testid="ai-partition-consent-panel">
+          {/* Tùy chọn AI đã được chuyển vào Modal Cài đặt chung theo yêu cầu người dùng */}
+          <div className="flex items-center justify-between text-xs text-[#52607A] mb-2 px-1">
+            <span>Thiết lập nhà cung cấp và quyền rà soát AI được quản lý trong <button type="button" onClick={onOpenAppSettings} className="text-[#6255E8] font-semibold hover:underline cursor-pointer">⚙ Cài đặt chung</button>.</span>
+            {aiPartitionConsent && <span className="text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">AI rà soát: Đang bật</span>}
+          </div>
+          <details className="sr-only" data-testid="ai-partition-consent-panel">
             <summary>Tùy chọn kiểm tra phân vùng bằng AI <span>{aiPartitionConsent?"Đang bật":"Mặc định tắt"}</span></summary>
             <div>
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
@@ -917,7 +1332,7 @@ export function ImportStepView({
             </div>
           </details>
 
-          {hasUploadedSource ? (
+          {(hasUploadedSource && !forceShowDropzone) ? (
             <>
               <div className="p-2.5 rounded-xl bg-[#F5F6FA] border border-[#CFD8EA] flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2.5 min-w-0 flex-1 basis-[180px]">
@@ -934,6 +1349,17 @@ export function ImportStepView({
                   </div>
                 </div>
                 <div className="df-import-file-actions">
+                {canOpenSourceReview && (
+                  <button
+                    type="button"
+                    data-action="open-partition-review"
+                    onClick={onOpenReviewModal}
+                    className="px-2.5 py-1 rounded-lg border border-[#CFD8EA] bg-white hover:bg-slate-50 text-xs font-semibold text-[#6255E8] flex items-center gap-1 transition shrink-0 cursor-pointer"
+                  >
+                    <Eye className="w-3 h-3 text-[#6255E8]" />
+                    <span>Mở rà soát phân vùng</span>
+                  </button>
+                )}
                 {originalSnapshot?.sourceType==='uploaded_file'&&originalAvailable&&onDownloadOriginal&&<button type="button" data-original-download onClick={onDownloadOriginal} className="px-2.5 py-1 rounded-lg border border-[#CFD8EA] bg-white text-xs font-semibold text-[#17233D]">Tải tệp gốc</button>}
                 <button
                   type="button"
@@ -1023,6 +1449,20 @@ export function ImportStepView({
             </>
           ) : (
             <>
+              {forceShowDropzone && hasUploadedSource && (
+                <div className="mb-3 p-2.5 rounded-xl bg-violet-50 border border-violet-200 flex flex-wrap items-center justify-between gap-2 text-xs">
+                  <span className="text-[#17233D]">
+                    Đang mở tài liệu: <strong>{uploadedFileName}</strong>. Chọn hoặc kéo thả tệp mới để thay thế.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setForceShowDropzone(false)}
+                    className="font-bold text-[#6255E8] hover:underline shrink-0 cursor-pointer"
+                  >
+                    ← Quay lại tài liệu hiện tại
+                  </button>
+                </div>
+              )}
               <button
                 type="button"
                 disabled={isUploading}
@@ -1315,27 +1755,136 @@ export function ImportStepView({
       </section>}
 
       {phase==="ready"&&<section id="df-step1-ready" className="df-import-card df-import-ready" aria-labelledby="df-step1-ready-title">
-        <span className="df-import-ready-icon"><CheckCircle2 size={22}/></span>
-        <div><h2 id="df-step1-ready-title">{flow==="upload"?(canContinue?"Nguồn đã được duyệt":"Tài liệu đã được nhận diện"):"Văn bản mới đã được khởi tạo"}</h2>
-          <p>{flow==="upload"?`${uploadedFileName} · ${blocksCount} khối nguồn · ${tablesCount} bảng · ${appendicesCount} phụ lục`:`${doc.documentType} · ${REGIME_LABEL[regime]} · ${isCompanyProfile?"Mẫu Hoa tiêu miền Bắc":"Cơ quan chung"}`}</p>
-          {flow==="upload"&&<p>{canContinue?"Nguồn đã được duyệt, có thể soạn nội dung.":"Kiểm tra và duyệt phân vùng nguồn trước khi tiếp tục."}</p>}
-          {flow==="upload"&&canOpenSourceReview&&<button type="button" onClick={onOpenReviewModal}>Xem và duyệt nguồn <ArrowRight size={15}/></button>}
+        <span className="df-import-ready-icon"><CheckCircle2 size={24}/></span>
+        <div className="flex-1 min-w-0">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 id="df-step1-ready-title" className="text-sm sm:text-base font-bold text-[#17233D]">
+              {flow==="upload"?(canContinue?"Tài liệu đã sẵn sàng để soạn thảo":"Tài liệu đã được nhận diện"):"Văn bản mới đã được khởi tạo"}
+            </h2>
+            <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+              {flow==="upload" ? (canContinue ? "Đủ điều kiện" : "Cần duyệt nguồn") : "Sẵn sàng"}
+            </span>
+          </div>
+          <p className="text-xs text-[#52607A] mt-1">
+            {flow==="upload"?`${uploadedFileName} · ${blocksCount} khối nguồn · ${tablesCount} bảng · ${appendicesCount} phụ lục`:`${doc.documentType} · ${REGIME_LABEL[regime]} · ${isCompanyProfile?"Mẫu Hoa tiêu miền Bắc":"Cơ quan chung"}`}
+          </p>
+          <div className="mt-3 p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-[#35445F] flex flex-wrap items-center justify-between gap-2">
+            <span>
+              {flow==="upload"
+                ? canContinue
+                  ? "✓ Toàn bộ phân vùng và thông tin thể thức đã được thiết lập chuẩn xác."
+                  : "Vui lòng kiểm tra phân vùng nguồn trước khi tiếp tục."
+                : "✓ Mẫu văn bản chuẩn đã được nạp sẵn sàng vào Studio."}
+            </span>
+            {flow==="upload" && canOpenSourceReview && (
+              <button type="button" onClick={onOpenReviewModal} className="text-xs font-semibold text-[#6255E8] hover:underline inline-flex items-center gap-1">
+                Xem chi tiết nguồn <ArrowRight size={13}/>
+              </button>
+            )}
+          </div>
         </div>
       </section>}
 
       {flow&&phase!=="choice"&&<div className="df-wizard-actions df-import-actions">
-        <button type="button" className="df-import-back" onClick={()=>onPhaseChange(phase==="upload"||phase==="regime"?"choice":phase==="recognition"?"upload":phase==="metadata"?"recognition":phase==="doctype"?"regime":phase==="template"?"doctype":flow==="upload"?"metadata":"template")}><ArrowLeft size={15}/> Quay lại</button>
-        <span className="df-import-action-hint">{phase==="regime"?`Đang chọn: ${draftRegime==="party"?"Văn bản Đảng · Hướng dẫn 05":"Văn bản hành chính · Nghị định 30"}`:phase==="doctype"?draftDocType?`Đã chọn: ${draftDocType}`:"Chọn một loại văn bản để tiếp tục":phase==="template"?`Thể thức ${draftRegime==="party"?"Đảng":"hành chính"} · ${draftDocType}`:phase==="upload"?"Tệp DOCX hoặc TXT · dữ liệu nguồn được giữ để đối chiếu":""}</span>
-        {phase==="upload"&&<button type="button" className="df-import-forward" disabled={!hasUploadedSource||isUploading} onClick={()=>onPhaseChange("recognition")}>Xem kết quả nhận diện <ArrowRight size={16}/></button>}
-        {phase==="recognition"&&<button type="button" className="df-import-forward" onClick={()=>onPhaseChange("metadata")}>Xác nhận thông tin <ArrowRight size={16}/></button>}
-        {phase==="metadata"&&!doc.documentType&&<div id="doctype-required-reason" role="status" aria-live="polite" className="w-full rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
-          Chưa thể xem tóm tắt: hãy xác nhận loại văn bản để chọn đúng quy tắc và mẫu.
-        </div>}
-        {phase==="metadata"&&<button type="button" className="df-import-forward" disabled={!doc.documentType} aria-describedby={!doc.documentType?"doctype-required-reason":undefined} onClick={()=>onPhaseChange("ready")}>Xem tóm tắt <ArrowRight size={16}/></button>}
-        {phase==="regime"&&<button type="button" className="df-import-forward" onClick={()=>onPhaseChange("doctype")}>Chọn loại văn bản <ArrowRight size={16}/></button>}
-        {phase==="doctype"&&<button type="button" className="df-import-forward" disabled={!draftDocType} onClick={()=>onPhaseChange("template")}>Chọn mẫu <ArrowRight size={16}/></button>}
-        {phase==="ready"&&<button type="button" data-action="wizard-next" className="df-import-forward" disabled={continueDisabled} onClick={handleContinue}>{canContinue&&flowSourceReady?"Tiếp tục đưa vào Studio soạn thảo":canOpenSourceReview&&flowSourceReady?"Rà soát phân vùng trước":"Chọn nguồn trước khi tiếp tục"} <ArrowRight size={16}/></button>}
+        <button type="button" className="df-import-back" onClick={()=>{
+          if (flow === "upload") {
+            onPhaseChange("choice");
+            onFlowChange(null as any);
+          } else {
+            onPhaseChange(phase==="regime"?"choice":phase==="doctype"?"regime":phase==="template"?"doctype":"template");
+          }
+        }}><ArrowLeft size={15}/> Quay lại</button>
+        <span className="df-import-action-hint">
+          {flow === "upload"
+            ? hasUploadedSource && !forceShowDropzone
+              ? `Đã nhận diện: ${doc.documentType || "Chưa chọn loại"} · ${REGIME_LABEL[regime]}`
+              : "Tệp DOCX hoặc TXT · dữ liệu nguồn được giữ để đối chiếu"
+            : phase==="regime"?`Đang chọn: ${draftRegime==="party"?"Văn bản Đảng · Hướng dẫn 05":"Văn bản hành chính · Nghị định 30"}`:phase==="doctype"?draftDocType?`Đã chọn: ${draftDocType}`:"Chọn một loại văn bản để tiếp tục":phase==="template"?`Thể thức ${draftRegime==="party"?"Đảng":"hành chính"} · ${draftDocType}`:""}
+        </span>
+        {flow === "upload" && hasUploadedSource && !forceShowDropzone ? (
+          <>
+            {!doc.documentType && (
+              <div id="doctype-required-reason" data-testid="doctype-source-suggestion" role="status" aria-live="polite" className="sr-only">
+                Chưa thể xem tóm tắt: hãy xác nhận loại văn bản
+                {sourceEvidenceSuggestsMinutes && <span>Gợi ý từ nội dung: <button type="button" onClick={() => onFieldChange("documentType", "BIÊN BẢN")}>Xác nhận “Biên bản”</button></span>}
+              </div>
+            )}
+            <button
+              type="button"
+              data-action="wizard-next"
+              className="df-import-forward"
+              disabled={!doc.documentType || isUploading}
+              aria-describedby={!doc.documentType?"doctype-required-reason":undefined}
+              onClick={handleContinue}
+            >
+              Tiếp tục đưa vào Studio soạn thảo <ArrowRight size={16}/>
+            </button>
+          </>
+        ) : flow === "upload" ? null : (
+          <>
+            {phase==="regime"&&<button type="button" className="df-import-forward" onClick={()=>onPhaseChange("doctype")}>Chọn loại văn bản <ArrowRight size={16}/></button>}
+            {phase==="doctype"&&<button type="button" className="df-import-forward" disabled={!draftDocType} onClick={()=>onPhaseChange("template")}>Chọn mẫu <ArrowRight size={16}/></button>}
+            {phase==="ready"&&<button type="button" data-action="wizard-next" className="df-import-forward" disabled={continueDisabled} onClick={handleContinue}>{canContinue&&flowSourceReady?"Tiếp tục đưa vào Studio soạn thảo":canOpenSourceReview&&flowSourceReady?"Rà soát phân vùng trước":"Chọn nguồn trước khi tiếp tục"} <ArrowRight size={16}/></button>}
+          </>
+        )}
       </div>}
+
+      {/* Modal xác nhận thay đổi tài liệu khi đang có tài liệu mở sẵn */}
+      {pendingReplaceFile && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#17233D]/50 backdrop-blur-xs" role="dialog" aria-modal="true" aria-labelledby="replace-file-dialog-title">
+          <div className="bg-white rounded-2xl max-w-md w-full p-5 border border-[#CFD8EA] shadow-2xl space-y-4">
+            <div className="flex items-start gap-3">
+              <span className="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5 text-amber-600" />
+              </span>
+              <div className="flex-1 min-w-0">
+                <h3 id="replace-file-dialog-title" className="text-sm sm:text-base font-bold text-[#17233D]">
+                  Xác nhận thay đổi tài liệu
+                </h3>
+                <p className="text-xs text-[#52607A] mt-1 leading-relaxed">
+                  Bạn đang có một tài liệu đang được thực hiện. Việc tải tệp mới sẽ thay thế phiên làm việc hiện tại.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-2.5 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs">
+              <div className="flex items-start gap-2">
+                <span className="text-[#52607A] font-semibold w-28 shrink-0">Đang thực hiện:</span>
+                <span className="font-bold text-rose-700 break-all">{uploadedFileName || doc.documentType || "Tài liệu hiện tại"}</span>
+              </div>
+              <div className="flex items-center justify-center text-slate-400">
+                <ArrowRight size={14} className="rotate-90 sm:rotate-0" />
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="text-[#52607A] font-semibold w-28 shrink-0">Tệp mới thay thế:</span>
+                <span className="font-bold text-emerald-700 break-all">{pendingReplaceFile.name}</span>
+              </div>
+            </div>
+
+            <div className="text-[11px] text-slate-500 bg-blue-50 border border-blue-200 p-2.5 rounded-xl">
+              💡 Phiên làm việc của tài liệu cũ đã được tự động lưu trữ trên trình duyệt này. Bạn có thể mở lại sau nếu cần.
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={handleCancelReplaceFile}
+                className="px-3.5 py-2 rounded-xl border border-slate-300 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition cursor-pointer"
+              >
+                Giữ tài liệu hiện tại
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmReplaceFile}
+                className="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold transition shadow-xs cursor-pointer flex items-center gap-1.5"
+              >
+                <span>Xác nhận thay thế</span>
+                <ArrowRight size={14} />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showDiffModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#17233D]/50 backdrop-blur-xs">
