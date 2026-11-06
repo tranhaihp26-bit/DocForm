@@ -8,7 +8,7 @@
  * Rules are strictly categorized into:
  * - mandatory_legal: Quy định pháp lý bắt buộc
  * - official_guidance: Hướng dẫn kỹ thuật chính thức
- * - company_profile: Profile riêng của Công ty Hoa tiêu hàng hải miền Bắc (không nới lỏng rule pháp lý)
+ * - company_profile: Thuộc tính đã thiết lập trong profile Công ty có quyền ưu tiên thông số tuyệt đối; fallback ND30/HD05 chỉ cho trường còn thiếu
  * - style_spelling: Khuyến nghị chính tả, ngữ pháp, văn phong
  *
  * Strict 5-state execution status:
@@ -21,8 +21,9 @@
 
 import rawNd30Catalog from "./nd30/rules.generated.json";
 import rawHd05Catalog from "./hd05/rules.2026.json";
-import { COMPANY_HEADER_PROFILE_ID, COMPANY_HEADER_TABLE_TWIPS } from "./nd30/companyHeader.ts";
-import { COMPANY_HEADER_HD05_PROFILE_ID, COMPANY_HEADER_HD05_TABLE_TWIPS } from "./hd05/companyHeaderHD05.ts";
+import { COMPANY_HEADER_PROFILE_ID, COMPANY_HEADER_TABLE_TWIPS, COMPANY_HEADER_GEOMETRY_MM } from "./nd30/companyHeader.ts";
+import { resolveCompanyBodyProfile } from "./nd30/companyBodyProfile.ts";
+import { COMPANY_HEADER_HD05_PROFILE_ID, COMPANY_HEADER_HD05_TABLE_TWIPS, COMPANY_HEADER_HD05_GEOMETRY_MM } from "./hd05/companyHeaderHD05.ts";
 import { evidenceFromDocumentXml } from "./nd30/canonicalAudit.ts";
 import { extractHD05EvidenceFromXml } from "./hd05/canonicalAuditHD05.ts";
 import { extractBodyOoxmlEvidence } from "./bodyOoxmlEvidence.ts";
@@ -1025,12 +1026,20 @@ export function evaluateDocumentRules(
   // -------------------------------------------------------------------------
   // PROCESS CANONICAL OOXML AUDIT (Strict 5-State Verification)
   // -------------------------------------------------------------------------
-  const isUsingNd30CompanyProfile =
-    doc.headerProfile === COMPANY_HEADER_PROFILE_ID ||
-    ooxmlEvidence?.header_profile === COMPANY_HEADER_PROFILE_ID;
-  const isUsingHd05CompanyProfile =
-    doc.headerProfile === COMPANY_HEADER_HD05_PROFILE_ID ||
-    ooxmlEvidence?.header_profile === COMPANY_HEADER_HD05_PROFILE_ID;
+  // OOXML evidence describes the candidate, NOT a user decision to select a profile.
+  const isUsingNd30CompanyProfile = effectiveRegime === "administrative" && doc.headerProfile === COMPANY_HEADER_PROFILE_ID;
+  const isUsingHd05CompanyProfile = effectiveRegime === "party" && doc.headerProfile === COMPANY_HEADER_HD05_PROFILE_ID;
+  const companyBodyProfile = resolveCompanyBodyProfile(effectiveRegime, doc.headerProfile);
+  const companyPageGeometry = isUsingNd30CompanyProfile
+    ? COMPANY_HEADER_GEOMETRY_MM
+    : isUsingHd05CompanyProfile ? COMPANY_HEADER_HD05_GEOMETRY_MM : null;
+  // The profile JSON currently defines paper and page margins for its first-page scope.
+  // Do not compare those properties against ND30 generic ranges when profile is selected.
+  const pageProfileAttributes: Record<string, number | string> = companyPageGeometry
+    ? { margin_top_mm: companyPageGeometry.marginTop, margin_bottom_mm: companyPageGeometry.marginBottom,
+        margin_left_mm: companyPageGeometry.marginLeft, margin_right_mm: companyPageGeometry.marginRight,
+        page_size: "A4" }
+    : {};
 
   if (ooxmlEvidence) {
     evidenceNotes.push("Đã nạp bằng chứng thực tế trích xuất từ OOXML Word (.docx).");
@@ -1148,7 +1157,8 @@ export function evaluateDocumentRules(
               const min = bEv.firstLineIndentRangeDxa.min;
               const max = bEv.firstLineIndentRangeDxa.max;
               actual = `${min} - ${max} dxa`;
-              const ok = min >= 560 && max <= 730;
+              const profileIndentDxa = companyBodyProfile ? Math.round(companyBodyProfile.body.firstLineIndentIn * 1440) : undefined;
+              const ok = profileIndentDxa !== undefined ? Math.abs(min - profileIndentDxa) <= 1 && Math.abs(max - profileIndentDxa) <= 1 : min >= 560 && max <= 730;
               status = ok ? "PASS" : "FAIL";
               reason = ok
                 ? `Thụt đầu dòng đoạn thân bài (${min}-${max} dxa) đạt chuẩn 1.0-1.27cm (567-720 dxa) theo NĐ 30.`
@@ -1174,7 +1184,7 @@ export function evaluateDocumentRules(
                   p.text.trim().length > 0 && (p.isEligibleBody || p.role === "heading")
                 );
                 const exactCompanySpacing = bodyParagraphs.length > 0 && bodyParagraphs.every((p: any) =>
-                  p.lineRule === "exact" && p.lineSpacingDxa === 380
+                  p.lineRule === "exact" && p.lineSpacingDxa === companyBodyProfile!.body.lineSpacingPt * 20
                 );
                 status = exactCompanySpacing ? "PASS" : "FAIL";
                 reason = exactCompanySpacing
@@ -1203,7 +1213,8 @@ export function evaluateDocumentRules(
               const min = bEv.fontSizeRangePt.min;
               const max = bEv.fontSizeRangePt.max;
               actual = `${min} - ${max} pt`;
-              const ok = min >= 13 && max <= 14;
+              const profileFont = companyBodyProfile?.body.fontSizePt;
+              const ok = profileFont !== undefined ? min === profileFont && max === profileFont : min >= 13 && max <= 14;
               status = ok ? "PASS" : "FAIL";
               reason = ok
                 ? `Cỡ chữ thân bài (${min}-${max}pt) đạt chuẩn 13-14pt theo NĐ 30.`
@@ -1424,7 +1435,8 @@ export function evaluateDocumentRules(
               const min = bEv.fontSizeRangePt.min;
               const max = bEv.fontSizeRangePt.max;
               actual = `${min} - ${max} pt`;
-              const ok = min >= 14 && max <= 15;
+              const profileFont = companyBodyProfile?.body.fontSizePt;
+              const ok = profileFont !== undefined ? min === profileFont && max === profileFont : min >= 14 && max <= 15;
               status = ok ? "PASS" : "FAIL";
               reason = ok
                 ? `Cỡ chữ thân bài văn bản Đảng (${min}-${max}pt) đạt chuẩn 14-15pt theo HD 05.`
@@ -1445,7 +1457,8 @@ export function evaluateDocumentRules(
               const min = bEv.firstLineIndentRangeDxa.min;
               const max = bEv.firstLineIndentRangeDxa.max;
               actual = `${min} - ${max} dxa`;
-              const ok = min >= 540 && max <= 600;
+              const profileIndentDxa = companyBodyProfile ? Math.round(companyBodyProfile.body.firstLineIndentIn * 1440) : undefined;
+              const ok = profileIndentDxa !== undefined ? Math.abs(min - profileIndentDxa) <= 1 && Math.abs(max - profileIndentDxa) <= 1 : min >= 540 && max <= 600;
               status = ok ? "PASS" : "FAIL";
               reason = ok
                 ? `Thụt đầu dòng văn bản Đảng (${min}-${max} dxa) đạt dải 540-600 dxa (~10mm) theo HD 05.`
