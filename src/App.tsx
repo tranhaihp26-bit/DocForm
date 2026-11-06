@@ -140,7 +140,7 @@ import {prepareTemplateTables} from './utils/templateWorkspace.ts';
 import {restoreWorkspaceVersion} from './utils/workspacePersistence.ts';
 import {createExportCandidateManager,exportCandidateKey,isCandidateEligibleForExport,type ExportCandidate} from './utils/exportCandidate.ts';
 import {createWorkspaceAiTarget,receiveWorkspaceAiResult,applyWorkspaceAiResult,type WorkspaceAiTarget} from './utils/workspaceAiTarget.ts';
-import { ImportStepView, type SemanticReviewRow, type SourceVisualUiState } from "./components/ImportStepView.tsx";
+import { ImportStepView, type ImportStepFlow, type ImportStepPhase, type SemanticReviewRow, type SourceVisualUiState } from "./components/ImportStepView.tsx";
 import type { FullTextManifestUiStatus, FullTextReviewUiStatus } from "./components/FullTextReviewPanel.tsx";
 import { classifyLocalSemantics } from "./utils/localSemanticObservations.ts";
 import { applyUserSemanticDecision, createFullTextSemanticState, createSemanticState, isPersistedUserSemanticDecisionCurrent, semanticApprovalContextKey } from "./utils/semanticState.ts";
@@ -1405,6 +1405,8 @@ export default function App() {
   // Chặng 3: 3-step Office Worker Wizard (Tải & nhận diện → Soạn & kiểm tra → Xuất văn bản).
   // Bước được giới hạn bởi dữ liệu đã hoàn thành thật, không dựa vào vị trí điều hướng.
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1);
+  const [step1Flow, setStep1Flow] = useState<ImportStepFlow>(null);
+  const [step1Phase, setStep1Phase] = useState<ImportStepPhase>("choice");
   useEffect(() => { window.scrollTo(0, 0); }, [currentStep]);
   /**
    * Nguồn người dùng đã chủ động chọn. Giá trị mặc định "none" nghĩa là tài liệu
@@ -2590,10 +2592,27 @@ export default function App() {
   const canEnterStep=(step:1|2|3)=>step===1||sourceChosen&&importMetadataReady&&canEnterProfileDecision&&canEnterWorkspaceStep(workspaceSnapshot,step)&&(step!==3||canExportSource);
   const stepIsComplete=(step:1|2|3)=>step===1?sourceChosen&&importMetadataReady&&canEnterProfileDecision&&canEnterWorkspaceStep(workspaceSnapshot,2):step===2?canExportSource:Boolean(isCandidateEligibleForExport(visibleCandidate));
 
-  const sidebarItemsByStep: Record<1 | 2 | 3, Array<{ id: string; label: string; selector?: string }>> = {
-    1: [
-      { id: "df-step1-flow", label: "Chọn nguồn và thiết lập" },
-    ],
+  const step1Substeps: Array<{ phase: ImportStepPhase; label: string }> = step1Flow === "upload"
+    ? [
+        { phase: "upload", label: "Tải tệp" },
+        { phase: "recognition", label: "Xem nhận diện" },
+        { phase: "metadata", label: "Xác nhận thông tin" },
+        { phase: "ready", label: "Sẵn sàng soạn" },
+      ]
+    : step1Flow === "create"
+      ? [
+          { phase: "regime", label: "Hệ thể thức" },
+          { phase: "doctype", label: "Loại văn bản" },
+          { phase: "template", label: "Chọn mẫu" },
+          { phase: "ready", label: "Sẵn sàng soạn" },
+        ]
+      : [];
+  const step1SubstepIndex = step1Substeps.findIndex(item => item.phase === step1Phase);
+  type SidebarItem = { id: string; label: string; selector?: string; phase?: ImportStepPhase };
+  const sidebarItemsByStep: Record<1 | 2 | 3, SidebarItem[]> = {
+    1: step1Flow
+      ? step1Substeps.map(({ phase, label }) => ({ id: `df-step1-stage-${phase}`, label, phase }))
+      : [{ id: "df-step1-flow", label: "Chọn nguồn và thiết lập" }],
     2: [
       { id: "df-step2-groups-before", label: "Phần đầu · Nhóm 01–05" },
       { id: "df-step2-body", label: "Nội dung văn bản · Body" },
@@ -2607,10 +2626,12 @@ export default function App() {
   };
   const [activeTocTarget, setActiveTocTarget] = useState("");
   useEffect(() => {
-    setActiveTocTarget(currentStep === 1 ? "df-step1-flow" : currentStep === 2 ? "df-step2-groups-before" : "df-step3-preview");
-  }, [currentStep]);
+    setActiveTocTarget(currentStep === 1
+      ? step1Flow ? `df-step1-stage-${step1Phase}` : "df-step1-flow"
+      : currentStep === 2 ? "df-step2-groups-before" : "df-step3-preview");
+  }, [currentStep, step1Flow, step1Phase]);
 
-  const scrollToTocItem = (item: { id: string; selector?: string }) => {
+  const scrollToTocItem = (item: SidebarItem) => {
     setActiveTocTarget(item.id);
     const target = item.selector
       ? document.querySelector<HTMLElement>(item.selector)
@@ -2618,6 +2639,22 @@ export default function App() {
     if (!target) return;
     target.closest("details")?.setAttribute("open", "");
     requestAnimationFrame(() => target.scrollIntoView({ behavior: "smooth", block: "start" }));
+  };
+
+  const navigateStep1Substep = (item: SidebarItem) => {
+    if (!item.phase) {
+      scrollToTocItem(item);
+      return;
+    }
+    const targetIndex = step1Substeps.findIndex(substep => substep.phase === item.phase);
+    if (targetIndex < 0 || targetIndex > step1SubstepIndex) return;
+    setActiveTocTarget(item.id);
+    setStep1Phase(item.phase);
+    requestAnimationFrame(() => {
+      const content = document.getElementById("df-step1-flow");
+      content?.scrollTo({ top: 0, behavior: "smooth" });
+      content?.scrollIntoView({ block: "start", behavior: "smooth" });
+    });
   };
 
   const goToStep = (step: 1 | 2 | 3) => {
@@ -3406,8 +3443,8 @@ export default function App() {
       orgHeader2: liveReconstructed.fields.orgHeader2 || "",
       draftNote: liveReconstructed.draftNote || "",
       includeDraftNoteInExport: Boolean(liveReconstructed.draftNote),
-      nationalHeader1: liveReconstructed.fields.nationalHeader1 || (standardType === "party" ? "ĐẢNG CỘNG SẢN VIỆT NAM" : "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM"),
-      nationalHeader2: liveReconstructed.fields.nationalHeader2 ?? (standardType === "party" ? "" : "Độc lập - Tự do - Hạnh phúc"),
+      nationalHeader1: liveReconstructed.fields.nationalHeader1 || "",
+      nationalHeader2: liveReconstructed.fields.nationalHeader2 ?? "",
       locationAndDate: liveReconstructed.fields.locationAndDate || "",
       documentType: liveReconstructed.fields.documentType || "",
       referenceNumber: liveReconstructed.fields.referenceNumber || "",
@@ -3887,21 +3924,39 @@ export default function App() {
                   >
                     <div className="df-sidebar-step-panel-inner">
                       <ol className="df-step-toc">
-                        {sidebarItemsByStep[step].map(item => (
-                          <li key={item.id}>
-                            <button
-                              type="button"
-                              aria-controls={item.id}
-                              aria-current={activeTocTarget === item.id ? "location" : undefined}
-                              data-toc-target={item.id}
-                              onClick={() => scrollToTocItem(item)}
-                            >
-                              <span aria-hidden="true" />
-                              <span>{item.label}</span>
-                            </button>
-                          </li>
-                        ))}
+                        {sidebarItemsByStep[step].map(item => {
+                          const substepIndex = item.phase ? step1Substeps.findIndex(substep => substep.phase === item.phase) : -1;
+                          const isCurrentSubstep = item.phase === step1Phase;
+                          const substepStatus = !item.phase ? undefined : isCurrentSubstep ? "current" : substepIndex < step1SubstepIndex ? "done" : "future";
+                          return (
+                            <li key={item.id}>
+                              <button
+                                type="button"
+                                aria-controls={item.phase ? "df-step1-flow" : item.id}
+                                aria-current={item.phase ? isCurrentSubstep ? "step" : undefined : activeTocTarget === item.id ? "location" : undefined}
+                                data-toc-target={item.id}
+                                data-step1-phase={item.phase}
+                                data-step1-status={substepStatus}
+                                disabled={Boolean(item.phase && substepIndex > step1SubstepIndex)}
+                                onClick={() => navigateStep1Substep(item)}
+                              >
+                                <span aria-hidden="true">{item.phase ? substepIndex + 1 : ""}</span>
+                                <span>{item.label}</span>
+                              </button>
+                            </li>
+                          );
+                        })}
                       </ol>
+                      {step === 1 && step1Flow && (
+                        <button
+                          type="button"
+                          className="df-step1-change-flow"
+                          data-step1-change-flow
+                          onClick={() => { setStep1Flow(null); setStep1Phase("choice"); }}
+                        >
+                          ← Đổi cách bắt đầu
+                        </button>
+                      )}
                     </div>
                   </div>
                 </section>
@@ -3926,6 +3981,10 @@ export default function App() {
           doc={doc}
           templates={TEMPLATES}
           sourceOrigin={sourceOrigin}
+          flow={step1Flow}
+          phase={step1Phase}
+          onFlowChange={setStep1Flow}
+          onPhaseChange={setStep1Phase}
           onCreateDocument={createNewDocument}
           onFieldChange={handleFieldChange}
           onFileUpload={handleFileUpload}
@@ -4400,8 +4459,8 @@ export default function App() {
                               onChange={(e) => handleUpdateBlockRole(b.id, e.target.value as SourceRegion)}
                               className={`text-[11px] font-bold px-2 py-0.5 rounded border shadow-2xs cursor-pointer ${roleColor}`}
                             >
-                              <option value="body">{embeddedFooter ? "Bảng kết hợp · Nơi nhận và chữ ký" : "Nội dung chính"}</option>
-                              <option value="signature">Chữ ký</option>
+                              <option value="body">Nội dung chính</option>
+                              <option value="signature">{embeddedFooter ? "Bảng kết hợp · Nơi nhận và chữ ký" : "Chữ ký"}</option>
                               <option value="recipients">Nơi nhận</option>
                               <option value="header">Đầu trang</option>
                               <option value="metadata">Thông tin thể thức</option>

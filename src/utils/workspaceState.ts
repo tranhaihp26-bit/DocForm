@@ -1,5 +1,7 @@
 import type { DocumentState, SourceBlock, SourceRegion, StructuredImport, ImportFidelityManifest } from '../shared/schemas/document.schema.ts';
 import { splitTopLevelHtml } from './proposalState.ts';
+import { buildSourceToWorkspaceCoverage } from '../shared/sourceMapping.ts';
+import { normalizeSemanticText, semanticHtmlParagraphs } from './candidateContentFidelity.ts';
 
 export type WorkspaceRegime = 'state' | 'party';
 export interface SourceManifest {
@@ -163,6 +165,10 @@ export function workspaceInvariantErrors(snapshot: WorkspaceSnapshot): string[] 
   const apps = snapshot.doc.appendices ?? [];
   if (new Set(apps.map(a => a.id)).size !== apps.length) errors.push('duplicate_appendix_id');
   if (w.nodes.filter(n => n.container === 'body').map(n => n.html).join('') !== snapshot.doc.bodyHtml) errors.push('body_node_mismatch');
+  if (w.source || snapshot.reviewBlocks.length > 0) {
+    const coverage = buildSourceToWorkspaceCoverage(snapshot);
+    if (!coverage.isFullyCovered) errors.push(...coverage.violations);
+  }
   for (const app of apps) if (w.nodes.filter(n => n.container === 'appendix' && n.appendixId === app.id).map(n => n.html).join('') !== app.html) errors.push('appendix_node_mismatch');
   if (w.nodes.some(n => n.container === 'appendix' && !apps.some(a => a.id === n.appendixId))) errors.push('orphan_appendix_node');
   let revision = 0;

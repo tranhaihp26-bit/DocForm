@@ -1094,6 +1094,7 @@ export async function extractBlocksFromDocx(buffer: Uint8Array | ArrayBuffer): P
         kind: "paragraph",
         text,
         html,
+        rawXml: child.xml,
         unsupportedFeatures: [
           ...(child.unsupportedFeatures ?? []),
           ...(numberingIssue ? [numberingIssue] : []),

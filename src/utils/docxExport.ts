@@ -25,7 +25,7 @@ import {
 import JSZip from "jszip";
 import { stampHoaTieuHeader } from "./hoaTieuHeaderStamp.ts";
 import { type DocumentFormatType, type SourceBlock, isPlaceholderValue } from "../shared/schemas/document.schema.ts";
-import { containsSeparatorParagraph } from "../shared/separator.ts";
+import { containsSeparatorParagraph, startsWithSeparatorParagraph } from "../shared/separator.ts";
 import type { TableModel } from "../shared/tableModel.ts";
 import { COMPANY_HEADER_PROFILE_ID, createCompanyHeaderTable, COMPANY_HEADER_GEOMETRY_MM } from "../canonical/nd30/companyHeader.ts";
 import { COMPANY_ND30_BODY_PROFILE, COMPANY_HD05_BODY_PROFILE, resolveCompanyBodyProfile } from "../canonical/nd30/companyBodyProfile.ts";
@@ -1374,7 +1374,7 @@ export function getHeaderRenderPlan(data:DocumentFormatType):HeaderRenderPlan{
   const renderSystemHeader=!hasEmbeddedHeader&&(company||hasOfficeReference);
   const renderType=Boolean(data.documentType&&!isCongVanParty&&!isCongVanState&&!detectEmbeddedHeaderField(data.bodyHtml??"",data.documentType));
   const renderSubject=Boolean(data.subject&&!detectEmbeddedHeaderField(data.bodyHtml??"",data.subject));
-  const renderPartySeparator=Boolean(isParty&&!isCongVanParty&&renderSubject&&data.subject&&!containsSeparatorParagraph(data.bodyHtml??""));
+  const renderPartySeparator=Boolean(isParty&&!isCongVanParty&&renderSubject&&data.subject&&!startsWithSeparatorParagraph(data.bodyHtml??""));
   return{renderSystemHeader,renderType,renderSubject,renderPartySeparator,isCongVanParty,isCongVanState};
 }
 

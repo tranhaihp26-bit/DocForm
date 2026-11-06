@@ -116,12 +116,19 @@ export interface SourceVisualUiState {
   reason?: string;
 }
 
+export type ImportStepFlow = "upload" | "create" | null;
+export type ImportStepPhase = "choice" | "upload" | "recognition" | "metadata" | "regime" | "doctype" | "template" | "ready";
+
 export interface ImportStepViewProps {
   regime: "state" | "party";
   onRequestRegimeSwitch: (target: "state" | "party") => void;
   doc: DocumentState;
   templates: TemplatePreset[];
   sourceOrigin: "none" | "uploaded_file" | "system_template";
+  flow: ImportStepFlow;
+  phase: ImportStepPhase;
+  onFlowChange: (flow: ImportStepFlow) => void;
+  onPhaseChange: (phase: ImportStepPhase) => void;
   onCreateDocument: (selection: {regime:"state"|"party";documentType:string;templateId?:string;headerProfile:"company"|"generic"}) => boolean;
   onFieldChange: (field: keyof DocumentState, value: string) => void;
   onFileUpload: (file: File) => void;
@@ -180,6 +187,10 @@ export function ImportStepView({
   doc,
   templates,
   sourceOrigin,
+  flow,
+  phase,
+  onFlowChange,
+  onPhaseChange,
   onCreateDocument,
   onFieldChange,
   onFileUpload,
@@ -227,8 +238,6 @@ export function ImportStepView({
   const [uploadError, setUploadError] = useState("");
   const [showDiffModal, setShowDiffModal] = useState(false);
   const [contextOpen, setContextOpen] = useState(false);
-  const [flow,setFlow]=useState<"upload"|"create"|null>(null);
-  const [phase,setPhase]=useState<"choice"|"upload"|"recognition"|"metadata"|"regime"|"doctype"|"template"|"ready">("choice");
   const [draftRegime,setDraftRegime]=useState<"state"|"party">(regime);
   const [draftDocType,setDraftDocType]=useState("");
   const [draftProfile,setDraftProfile]=useState<"company"|"generic">("company");
@@ -270,9 +279,9 @@ export function ImportStepView({
   useEffect(()=>{
     if(pendingUpload&&sourceOrigin==="uploaded_file"&&!isUploading&&uploadedFileName){
       setPendingUpload(false);
-      setPhase("recognition");
+      onPhaseChange("recognition");
     }
-  },[pendingUpload,sourceOrigin,isUploading,uploadedFileName]);
+  },[pendingUpload,sourceOrigin,isUploading,uploadedFileName,onPhaseChange]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -427,17 +436,15 @@ export function ImportStepView({
     else if (canOpenSourceReview) onOpenReviewModal?.();
   };
   const selectFlow=(next:"upload"|"create")=>{
-    setFlow(next);
-    setPhase(next==="upload"?"upload":"regime");
+    onFlowChange(next);
+    onPhaseChange(next==="upload"?"upload":"regime");
     setUploadError("");
     setDraftDocType("");
   };
   const createFromChoice=(templateId?:string)=>{
     if(!draftDocType)return;
-    if(onCreateDocument({regime:draftRegime,documentType:draftDocType,templateId,headerProfile:draftProfile}))setPhase("ready");
+    if(onCreateDocument({regime:draftRegime,documentType:draftDocType,templateId,headerProfile:draftProfile}))onPhaseChange("ready");
   };
-  const phaseLabels=flow==="upload"?["Tải tệp","Xem nhận diện","Xác nhận thông tin","Sẵn sàng soạn"]:["Hệ thể thức","Loại văn bản","Chọn mẫu","Sẵn sàng soạn"];
-  const phaseIndex=flow==="upload"?(["upload","recognition","metadata","ready"] as const).indexOf(phase as "upload"):(["regime","doctype","template","ready"] as const).indexOf(phase as "regime");
 
   return (
     <div
@@ -463,14 +470,9 @@ export function ImportStepView({
         className="hidden"
       />
 
-      {flow&&<div className="df-import-flow-progress" aria-label="Tiến trình trong Bước 1">
-        {phaseLabels.map((label,index)=><span key={label} className={index===phaseIndex?"is-current":index<phaseIndex?"is-done":""}><b>{index<phaseIndex?<Check className="w-3 h-3"/>:index+1}</b>{label}</span>)}
-        <button type="button" onClick={()=>{setFlow(null);setPhase("choice");}}><ArrowLeft className="w-3.5 h-3.5"/> Đổi cách bắt đầu</button>
-      </div>}
-
       {phase==="choice"&&<section className="df-import-entry" aria-labelledby="df-step1-entry-title">
         <div className="df-import-entry-heading"><span>BƯỚC ĐẦU TIÊN</span><h2 id="df-step1-entry-title">Bạn muốn bắt đầu như thế nào?</h2><p>Chọn một cách để DocForm chỉ hiện những thông tin cần thiết tiếp theo.</p></div>
-        {sourceOrigin!=="none"&&<div className="df-import-resume"><span><strong>Đang mở: {uploadedFileName||doc.documentType}</strong><small>{sourceOrigin==="uploaded_file"?"Tệp đã tải và nhận diện":"Văn bản tạo từ mẫu"}</small></span><button type="button" onClick={()=>{setFlow(sourceOrigin==="uploaded_file"?"upload":"create");setPhase(sourceOrigin==="uploaded_file"?(canContinue?"ready":"recognition"):"ready");}}>Tiếp tục tài liệu hiện tại <ArrowRight size={15}/></button></div>}
+        {sourceOrigin!=="none"&&<div className="df-import-resume"><span><strong>Đang mở: {uploadedFileName||doc.documentType}</strong><small>{sourceOrigin==="uploaded_file"?"Tệp đã tải và nhận diện":"Văn bản tạo từ mẫu"}</small></span><button type="button" onClick={()=>{onFlowChange(sourceOrigin==="uploaded_file"?"upload":"create");onPhaseChange(sourceOrigin==="uploaded_file"?(canContinue?"ready":"recognition"):"ready");}}>Tiếp tục tài liệu hiện tại <ArrowRight size={15}/></button></div>}
         <div className="df-import-entry-options">
           <button type="button" onClick={()=>selectFlow("upload")}><span className="df-import-entry-icon"><Upload/></span><strong>Tải tài liệu có sẵn</strong><small>Đọc DOCX/TXT, nhận diện nội dung và duyệt nguồn trước khi soạn.</small><span className="df-import-entry-link">Tải tài liệu <ArrowRight size={16}/></span></button>
           <button type="button" onClick={()=>selectFlow("create")}><span className="df-import-entry-icon"><Plus/></span><strong>Tạo văn bản mới</strong><small>Chọn hệ thể thức, loại văn bản và mẫu hoặc bắt đầu từ trang trắng.</small><span className="df-import-entry-link">Tạo mới <ArrowRight size={16}/></span></button>
@@ -1328,16 +1330,16 @@ export function ImportStepView({
       </section>}
 
       {flow&&phase!=="choice"&&<div className="df-wizard-actions df-import-actions">
-        <button type="button" className="df-import-back" onClick={()=>setPhase(phase==="upload"||phase==="regime"?"choice":phase==="recognition"?"upload":phase==="metadata"?"recognition":phase==="doctype"?"regime":phase==="template"?"doctype":flow==="upload"?"metadata":"template")}><ArrowLeft size={15}/> Quay lại</button>
+        <button type="button" className="df-import-back" onClick={()=>onPhaseChange(phase==="upload"||phase==="regime"?"choice":phase==="recognition"?"upload":phase==="metadata"?"recognition":phase==="doctype"?"regime":phase==="template"?"doctype":flow==="upload"?"metadata":"template")}><ArrowLeft size={15}/> Quay lại</button>
         <span className="df-import-action-hint">{phase==="regime"?`Đang chọn: ${draftRegime==="party"?"Văn bản Đảng · Hướng dẫn 05":"Văn bản hành chính · Nghị định 30"}`:phase==="doctype"?draftDocType?`Đã chọn: ${draftDocType}`:"Chọn một loại văn bản để tiếp tục":phase==="template"?`Thể thức ${draftRegime==="party"?"Đảng":"hành chính"} · ${draftDocType}`:phase==="upload"?"Tệp DOCX hoặc TXT · dữ liệu nguồn được giữ để đối chiếu":""}</span>
-        {phase==="upload"&&<button type="button" className="df-import-forward" disabled={!hasUploadedSource||isUploading} onClick={()=>setPhase("recognition")}>Xem kết quả nhận diện <ArrowRight size={16}/></button>}
-        {phase==="recognition"&&<button type="button" className="df-import-forward" onClick={()=>setPhase("metadata")}>Xác nhận thông tin <ArrowRight size={16}/></button>}
+        {phase==="upload"&&<button type="button" className="df-import-forward" disabled={!hasUploadedSource||isUploading} onClick={()=>onPhaseChange("recognition")}>Xem kết quả nhận diện <ArrowRight size={16}/></button>}
+        {phase==="recognition"&&<button type="button" className="df-import-forward" onClick={()=>onPhaseChange("metadata")}>Xác nhận thông tin <ArrowRight size={16}/></button>}
         {phase==="metadata"&&!doc.documentType&&<div id="doctype-required-reason" role="status" aria-live="polite" className="w-full rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
           Chưa thể xem tóm tắt: hãy xác nhận loại văn bản để chọn đúng quy tắc và mẫu.
         </div>}
-        {phase==="metadata"&&<button type="button" className="df-import-forward" disabled={!doc.documentType} aria-describedby={!doc.documentType?"doctype-required-reason":undefined} onClick={()=>setPhase("ready")}>Xem tóm tắt <ArrowRight size={16}/></button>}
-        {phase==="regime"&&<button type="button" className="df-import-forward" onClick={()=>setPhase("doctype")}>Chọn loại văn bản <ArrowRight size={16}/></button>}
-        {phase==="doctype"&&<button type="button" className="df-import-forward" disabled={!draftDocType} onClick={()=>setPhase("template")}>Chọn mẫu <ArrowRight size={16}/></button>}
+        {phase==="metadata"&&<button type="button" className="df-import-forward" disabled={!doc.documentType} aria-describedby={!doc.documentType?"doctype-required-reason":undefined} onClick={()=>onPhaseChange("ready")}>Xem tóm tắt <ArrowRight size={16}/></button>}
+        {phase==="regime"&&<button type="button" className="df-import-forward" onClick={()=>onPhaseChange("doctype")}>Chọn loại văn bản <ArrowRight size={16}/></button>}
+        {phase==="doctype"&&<button type="button" className="df-import-forward" disabled={!draftDocType} onClick={()=>onPhaseChange("template")}>Chọn mẫu <ArrowRight size={16}/></button>}
         {phase==="ready"&&<button type="button" data-action="wizard-next" className="df-import-forward" disabled={continueDisabled} onClick={handleContinue}>{canContinue&&flowSourceReady?"Tiếp tục đưa vào Studio soạn thảo":canOpenSourceReview&&flowSourceReady?"Rà soát phân vùng trước":"Chọn nguồn trước khi tiếp tục"} <ArrowRight size={16}/></button>}
       </div>}
 

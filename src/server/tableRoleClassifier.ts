@@ -244,7 +244,7 @@ export function classifyTable(
 
   if (embeddedRecipientsSignatureTable(block)) {
     return {
-      owner: "body",
+      owner: "signature",
       role: "layout",
       evidence: "Một bảng vật lý chứa Nơi nhận ở ô trái và người ký ở ô phải; giữ nguyên bảng, nhận diện theo ô",
       confidence: "high",

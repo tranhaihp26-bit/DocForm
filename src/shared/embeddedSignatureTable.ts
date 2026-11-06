@@ -12,7 +12,7 @@ function splitInlineSignatory(line: string): { title: string; name: string } | n
   return { title, name };
 }
 
-/** Semantic evidence inside one physical table. The table itself stays in Body. */
+/** Semantic evidence used to classify a physical footer table into separate fields. */
 export function embeddedRecipientsSignatureTable(block: SourceBlock) {
   if (block.kind !== "table" || block.tableShape?.rows !== 1 || block.tableShape.columns !== 2) return null;
   const left = block.tableData?.[0]?.[0]?.trim() ?? "";

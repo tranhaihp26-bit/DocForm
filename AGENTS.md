@@ -24,6 +24,14 @@ DocForm nhập DOCX/TXT, hỗ trợ rà soát/soạn thảo theo hai chế độ
 5. Sửa ở lớp nhỏ nhất chịu trách nhiệm cho hành vi; giữ source provenance, regime, revision, trạng thái và luồng xác nhận liên quan.
 6. Với thay đổi code, chạy `npm run lint` và test phù hợp từ `package.json`/Codebase Map. Với tài liệu thuần, kiểm tra diff, liên kết và đường dẫn được nhắc đến. Không gọi một test legacy là xác nhận luồng UI hiện hành.
 
+## Cách lựa chọn và thực hiện thay đổi
+
+- Trước khi sửa, xác định hành vi mong muốn, tiêu chí hoàn thành và cách kiểm chứng phù hợp. Với tác vụ nhiều bước, nêu kế hoạch ngắn gắn từng bước với cách kiểm tra.
+- Nêu giả định ảnh hưởng kết quả và đánh đổi đáng kể giữa các phương án. Tìm câu trả lời trong ngữ cảnh/source trước; chỉ hỏi khi thiếu quyết định thực sự làm thay đổi kết quả. Tự quyết các lựa chọn thường lệ trong phạm vi đã được giao.
+- Ưu tiên giải pháp nhỏ nhất đáp ứng đầy đủ yêu cầu và bất biến. Không thêm tính năng, cấu hình hoặc lớp trừu tượng chưa cần. Type/interface mới chưa chứng minh chức năng hoàn thành nếu chưa có producer, consumer và đường dữ liệu thực tế.
+- Giữ phong cách code hiện tại; không refactor/reformat phần lân cận ngoài phạm vi. Chỉ dọn import/hàm/biến do chính thay đổi này làm thừa. Rà diff cuối để mỗi thay đổi có lý do gắn yêu cầu; bảo toàn diff có trước.
+- Với sửa lỗi cần kiểm thử, tái hiện và xác nhận kiểm tra bắt đúng lỗi trước khi sửa, rồi chạy lại cùng ca và regression liên quan. Chọn mức kiểm tra theo rủi ro; không tạo test chỉ phản chiếu implementation hoặc buộc quy trình nặng cho sửa nhỏ. Không đơn giản hóa bằng cách bỏ gate, provenance hoặc bảo vệ dữ liệu cần thiết.
+
 ## Định tuyến theo phạm vi
 
 | Phạm vi | Hướng dẫn gần nhất | Bắt đầu trong Codebase Map |
@@ -48,6 +56,8 @@ DocForm nhập DOCX/TXT, hỗ trợ rà soát/soạn thảo theo hai chế độ
 
 - Nêu chính xác file đã tạo/sửa và lý do.
 - Báo command cùng kết quả thực tế; phân biệt `PASS`, `FAIL`, `BLOCKED`, `NOT_EVALUATED`, `NEEDS_REVIEW`, `NOT_APPLICABLE` theo đúng nghĩa. Không suy ra pass từ việc có code hoặc có tên test.
+- Chỉ ghi PASS sau khi lệnh đã kết thúc, có exit code/kết quả cuối và đáp ứng tiêu chí. Tiến trình đang chạy hoặc log trung gian không chứng minh đạt. Nếu sửa mã sau lần kiểm tra, chạy lại các kiểm tra bị ảnh hưởng trên bản mã cuối.
+- Ghi đúng phạm vi đã chạy; không báo “toàn bộ suite” khi chỉ chạy một số suite. Xác minh tiến trình con/cổng do mình tạo đã dừng khi không cần nữa; task list rỗng không tự chứng minh PID/cổng đã được dọn. Không dừng dịch vụ của người dùng ngoài phạm vi được giao.
 - Nêu điều chưa kiểm chứng (ví dụ layout cần xem trong Word, provider thật chưa thử, hoặc fixture thiếu). Kết quả cấu trúc/fixture không đồng nghĩa tuân thủ pháp lý hay sẵn sàng production.
 - Với sửa tài liệu: kiểm tra link nội bộ, đường dẫn test/script và diff whitespace; cập nhật Codebase Map khi route hoặc owner thay đổi.
 

@@ -26,6 +26,9 @@ const model: TableModel = { tableId: "block-table", rowsCount: 1, columnsCount: 
 const tableBlock = (role: SourceBlock["role"]): SourceBlock => ({ id: "block-table", index: 0, kind: "table", text: "0007 A B", role, tableModel: model, html: tableModelToHtmlView(model), rawXml: "<w:tbl><w:tr><w:tc><w:p><w:r><w:t>0007 A B</w:t></w:r></w:p></w:tc></w:tr></w:tbl>", unsupportedFeatures: [] });
 function approvedTable(role: SourceBlock["role"] = "body") {
   const block = tableBlock(role), d = doc(); d.bodyHtml = role === "body" ? block.html! : "<p>Nội dung.</p>";
+  if (role === "header") d.orgHeader1 = "0007 A B";
+  if (role === "signature") d.signName = "0007 A B";
+  if (role === "recipients") d.recipients = "0007 A B";
   const blocks: SourceBlock[] = role === "body" ? [block] : [block, { id: "body-source", index: 1, kind: "paragraph", text: "Nội dung.", html: d.bodyHtml, role: "body" }];
   const pending = createWorkspaceSnapshot({ doc: d, standardType: "state", reviewBlocks: blocks, structuredImport: null }, { blobHash: "synthetic-sha", generation: 1 });
   const result = approveWorkspacePartition(pending); assert.ok(result.ok); return result.snapshot;

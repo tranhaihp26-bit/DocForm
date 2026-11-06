@@ -179,14 +179,8 @@ export function prepareImportedFileBundle(
     orgHeader2: reconstructed.fields.orgHeader2 || "",
     draftNote: reconstructed.draftNote || "",
     includeDraftNoteInExport: Boolean(reconstructed.draftNote),
-    nationalHeader1:
-      reconstructed.fields.nationalHeader1 ||
-      (effectiveRegime === "party"
-        ? "ĐẢNG CỘNG SẢN VIỆT NAM"
-        : "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM"),
-    nationalHeader2:
-      reconstructed.fields.nationalHeader2 ??
-      (effectiveRegime === "party" ? "" : "Độc lập - Tự do - Hạnh phúc"),
+    nationalHeader1: reconstructed.fields.nationalHeader1 || "",
+    nationalHeader2: reconstructed.fields.nationalHeader2 ?? "",
     locationAndDate: reconstructed.fields.locationAndDate || "",
     documentType:
       reconstructed.fields.documentType ||

@@ -820,15 +820,20 @@ export function segmentSourceBlocks(
     (fields.documentType?.value || "").trim().toUpperCase() !== "CÔNG VĂN" && 
     Boolean(fields.subject?.value);
 
+  let partySubjectSeparatorMapped = false;
   while (nextStartIndex < total) {
     const b = blocks[nextStartIndex];
     if (b.kind === "paragraph" && isSeparatorParagraph(b.text)) {
-      if (exporterWillRenderSeparator) {
+      if (exporterWillRenderSeparator && !partySubjectSeparatorMapped) {
         b.role = "separator";
+        partySubjectSeparatorMapped = true;
+        nextStartIndex++;
+        break; // Only the first separator under subject is mapped to profile separator!
       } else {
-        b.role = "body";
+        // Administrative regime (NĐ30) or additional separator:
+        // Do NOT consume here; let Step 6 extract it as Body!
+        break;
       }
-      nextStartIndex++;
     } else {
       break;
     }
@@ -1191,15 +1196,17 @@ export function segmentSourceBlocks(
     }
   }
 
-  // A mixed recipients/signer table is one physical source object and must stay
-  // in Body. Extract its cell fields before looking for a paragraph footer so
-  // an adjacent recipients paragraph cannot cut the table out of the body.
+  // A confidently recognized mixed recipients/signer table is a footer source
+  // block. Extract its cell fields and assign it to the signature region so it
+  // is not included in Body; the original source block and cell references stay
+  // available for provenance and the footer fields are rendered separately.
   const embeddedFooterBlock = sigFoundIndex === -1
     ? blocks.slice(nextStartIndex, Math.min(bodyEndExclusive, appendixStartIndices[0] ?? total))
       .reverse().find(block => embeddedRecipientsSignatureTable(block))
     : undefined;
   const embeddedFooter = embeddedFooterBlock && embeddedRecipientsSignatureTable(embeddedFooterBlock);
   if (embeddedFooterBlock && embeddedFooter) {
+    embeddedFooterBlock.role = "signature";
     if (!fields.recipients.value) {
       fields.recipients = { value: embeddedFooter.recipients, confidence: "high", status: "extracted",
         sourceBlockIds: [embeddedFooterBlock.id], sourceCell: { rowIndex: 0, colIndex: 0 }, exactQuote: embeddedFooter.recipients };
@@ -1215,8 +1222,8 @@ export function segmentSourceBlocks(
   }
 
   // Search paragraph footer clusters even when an embedded physical table was
-  // found; the cluster may contain additional recipient lines. The table itself
-  // is skipped below and remains in the body source roundtrip.
+  // found; the cluster may contain additional recipient lines. The recognized
+  // table has already been assigned to the signature region above.
   if (sigFoundIndex === -1) {
     let footerStart = -1;
     for (let i = bodyEndExclusive - 1; i >= nextStartIndex; i--) {
@@ -1415,35 +1422,35 @@ export function segmentSourceBlocks(
   const bodyBlockIds: string[] = [];
   const bodyHtmlParts: string[] = [];
 
-  // S2-F02 (tái audit 20/10/2026): khi bộ xuất sẽ tự sinh lại dấu phân cách
-  // "-----" (thể thức Đảng, có trích yếu, không phải công văn), mọi dòng kẻ
-  // dạng dấu gạch trong thân bài phải được loại khỏi body để DOCX chỉ có
-  // **một** dấu phân cách đúng vị trí. Trước đây chỉ dấu nằm ngay sau trích
-  // yếu mới bị loại; dấu nằm ở vị trí khác vẫn nằm trong bodyHtml và bộ xuất
-  // sinh thêm một dấu → Word có hai dấu "-----".
-  if (exporterWillRenderSeparator) {
-    for (let i = nextStartIndex; i < bodyEndExclusive; i++) {
-      const b = blocks[i];
-      if (b.role !== "unclassified") continue;
-      if (b.kind === "paragraph" && isSeparatorParagraph(b.text)) {
-        b.role = "separator";
-      }
-    }
-  }
-
   for (let i = nextStartIndex; i < bodyEndExclusive; i++) {
     const b = blocks[i];
     if (b.role !== "unclassified") continue;
 
-    // Check if empty separator paragraph
+    // Check if empty separator paragraph (spacing only)
     if (b.kind === "paragraph" && !b.text.trim()) {
       b.role = "separator";
+      continue;
+    }
+
+    // If party exporter will render separator, and no separator under subject was mapped yet
+    // (e.g. a preamble paragraph appeared between subject and separator), map the FIRST separator only.
+    if (exporterWillRenderSeparator && !partySubjectSeparatorMapped && b.kind === "paragraph" && isSeparatorParagraph(b.text)) {
+      b.role = "separator";
+      partySubjectSeparatorMapped = true;
       continue;
     }
 
     b.role = "body";
     bodyBlockIds.push(b.id);
     bodyHtmlParts.push(b.html || `<p>${b.text}</p>`);
+  }
+
+  // BẢO ĐẢM NGUYÊN TẮC: Mọi khối có role === 'body' BẮT BUỘC phải nằm trong bodyBlockIds và bodyHtmlParts!
+  for (const b of blocks) {
+    if (b.role === "body" && !bodyBlockIds.includes(b.id)) {
+      bodyBlockIds.push(b.id);
+      bodyHtmlParts.push(b.html || `<p>${b.text}</p>`);
+    }
   }
 
   // Resilient fallback: Chỉ phục hồi các khối thực sự chưa được phân loại (unclassified),

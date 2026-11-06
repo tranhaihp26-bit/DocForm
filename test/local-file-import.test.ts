@@ -39,4 +39,33 @@ assert.equal(txt.structured.source.blockCount, 2);
 
 await assert.rejects(() => parseLocalFile(new File(["not a docx"], "bad.docx")), /DOCX|Word/i);
 await assert.rejects(() => parseLocalFile(new File(["data"], "bad.pdf")), /định dạng/i);
-console.log("[PASS] Local DOCX/TXT import works without an API route");
+
+// Task 3: Giới hạn kích thước tệp 25 MiB
+const hugeBlob = new Blob([new Uint8Array(26 * 1024 * 1024)]);
+await assert.rejects(
+  () => parseLocalFile(new File([hugeBlob], "too-large.docx")),
+  /25 MB/i,
+  "Tệp vượt quá 25 MB phải bị từ chối"
+);
+
+// Task 4: Nguồn thiếu quốc hiệu/tiêu ngữ không được tự ý điền mẫu mặc định
+const noNationalHeaderZip = new JSZip();
+noNationalHeaderZip.file("word/document.xml", `<?xml version="1.0" encoding="UTF-8"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+<w:p><w:r><w:t>VĂN PHÒNG ĐOÀN ĐẠI BIỂU QUỐC HỘI</w:t></w:r></w:p>
+<w:p><w:r><w:t>THÔNG BÁO</w:t></w:r></w:p>
+<w:p><w:r><w:t>Về việc triệu tập kỳ họp</w:t></w:r></w:p>
+<w:p><w:r><w:t>Kính gửi các vị đại biểu.</w:t></w:r></w:p>
+</w:body></w:document>`);
+const noNationalHeaderBytes = await noNationalHeaderZip.generateAsync({ type: "uint8array" });
+const noHeaderImport = await parseLocalFile(new File([Uint8Array.from(noNationalHeaderBytes)], "thong-bao-khong-quoc-hieu.docx"));
+
+const { prepareImportedFileBundle } = await import("../src/utils/importSessionLifecycle.ts");
+const bundleState = prepareImportedFileBundle(noHeaderImport, "state");
+assert.equal(bundleState.doc.nationalHeader1, "", "Nguồn không có quốc hiệu thì newDoc.nationalHeader1 phải rỗng, không được tự điền");
+assert.equal(bundleState.doc.nationalHeader2, "", "Nguồn không có tiêu ngữ thì newDoc.nationalHeader2 phải rỗng, không được tự điền");
+
+const bundleParty = prepareImportedFileBundle(noHeaderImport, "party");
+assert.equal(bundleParty.doc.nationalHeader1, "", "Nguồn Đảng thiếu tiêu đề thì newDoc.nationalHeader1 phải rỗng, không được tự điền");
+
+console.log("[PASS] Local DOCX/TXT import works without an API route and preserves missing source headers");

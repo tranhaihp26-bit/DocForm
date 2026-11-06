@@ -380,14 +380,15 @@ describe("Task 3 & 4: Final Section and Appendix Roundtrip Contract", () => {
     const segmented = segmentSourceBlocks(blocks, { filename: "synthetic-footer.docx", fileType: "docx", standardType: "administrative" });
     const footer = (segmented.blocks || []).find(block => block.id === "footer_table");
 
-    assert.equal(footer?.role, "body", "A mixed physical table stays intact in Body for source fidelity");
+    assert.equal(footer?.role, "signature", "The mixed footer table belongs to the final section, outside Body");
     assert.equal(segmented.fields.recipients?.value, "Nơi nhận:\n- Ban Giám đốc;\n- Lưu: VT.");
     assert.equal(segmented.fields.signTitle?.value, "GIÁM ĐỐC");
     assert.equal(segmented.fields.signName?.value, "Nguyễn Văn Mẫu");
     assert.deepEqual(segmented.fields.recipients?.sourceCell, { rowIndex: 0, colIndex: 0 });
     assert.deepEqual(segmented.fields.signTitle?.sourceCell, { rowIndex: 0, colIndex: 1 });
     assert.deepEqual(segmented.fields.signName?.sourceCell, { rowIndex: 0, colIndex: 1 });
-    assert.ok(segmented.body.html.includes("GIÁM ĐỐC"), "The exact physical source table remains in the body roundtrip");
+    assert.equal(segmented.body.sourceBlockIds.includes("footer_table"), false, "The footer table must not be part of Body");
+    assert.equal(segmented.body.html.includes("GIÁM ĐỐC"), false, "The footer table HTML must not be rendered in Body");
   });
 
   it("Task 4 regression: a multi-line signing formula with committee authority stays one mixed footer table", () => {
@@ -408,9 +409,10 @@ describe("Task 3 & 4: Final Section and Appendix Roundtrip Contract", () => {
     const segmented = segmentSourceBlocks(blocks, { filename: "synthetic-committee-footer.docx", fileType: "docx", standardType: "administrative" });
     const retained = segmented.blocks?.find(block => block.id === table.id);
 
-    assert.equal(classification.owner, "body", "The physical mixed footer table must not be detached as a signer-only table");
+    assert.equal(classification.owner, "signature", "The physical mixed footer table belongs to signature region, outside Body");
     assert.equal(embeddedRecipientsSignatureTable(table)?.signTitle, "TM. BAN CHẤP HÀNH\nCHỦ TỊCH");
-    assert.equal(retained?.role, "body");
+    assert.equal(retained?.role, "signature");
+    assert.equal(segmented.body.sourceBlockIds.includes(table.id), false, "The footer table must not be part of Body");
     assert.equal(segmented.fields.recipients?.value, "Nơi nhận:\n- Như trên;\n- Lưu: VT.");
     assert.equal(segmented.fields.signTitle?.value, "TM. BAN CHẤP HÀNH\nCHỦ TỊCH");
     assert.equal(segmented.fields.signName?.value, "Người Mẫu");
@@ -436,7 +438,9 @@ describe("Task 3 & 4: Final Section and Appendix Roundtrip Contract", () => {
 
     const segmented = segmentSourceBlocks(blocks, { filename: "synthetic-inline-footer.docx", fileType: "docx", standardType: "administrative" });
     const retained = segmented.blocks?.find(block => block.id === table.id);
-    assert.equal(retained?.role, "body", "The mixed physical table remains intact for source fidelity");
+    assert.equal(retained?.role, "signature", "The mixed footer table belongs to the final section, outside Body");
+    assert.equal(segmented.body.sourceBlockIds.includes(table.id), false, "The footer table must not be part of Body");
+    assert.equal(segmented.body.html.includes(table.html!), false, "The footer table HTML must not be rendered in Body");
     assert.equal(segmented.fields.recipients?.value, "Nơi nhận:\n- Lãnh đạo cơ quan");
     assert.equal(segmented.fields.signTitle?.value, "GIÁM ĐỐC");
     assert.equal(segmented.fields.signName?.value, "Nguyễn Văn Mẫu");
@@ -465,7 +469,8 @@ describe("Task 3 & 4: Final Section and Appendix Roundtrip Contract", () => {
     assert.ok(segmented.fields.recipients?.value?.includes("Nơi nhận:") && segmented.fields.recipients?.value?.includes("- Lưu: VT."));
     assert.equal(segmented.fields.signTitle?.value, "GIÁM ĐỐC", `Missing signer title should be filled from the physical footer cell: ${JSON.stringify(segmented.fields.signTitle)}`);
     assert.equal(segmented.fields.signName?.value, "Nguyễn Văn Mẫu", `Missing signer name should be filled from the same source cell: ${JSON.stringify(segmented.fields.signName)}`);
-    assert.equal(segmented.blocks?.find(block => block.id === footer.id)?.role, "body", "The physical footer table stays intact in Body");
+    assert.equal(segmented.blocks?.find(block => block.id === footer.id)?.role, "signature", "The physical footer table belongs to the final section");
+    assert.equal(segmented.body.sourceBlockIds.includes(footer.id), false, "The footer table must not be part of Body");
 
     const reviewedBlocks = (segmented.blocks || []).map(block => block.id === "recipients_partial"
       ? { ...block, role: "recipients" as const }
@@ -473,7 +478,7 @@ describe("Task 3 & 4: Final Section and Appendix Roundtrip Contract", () => {
     const reconstructed = reconstructFromReviewedBlocks(reviewedBlocks, "state", segmented);
     assert.equal(reconstructed.fields.recipients, "Nơi nhận:\n- Lãnh đạo cơ quan\n- Lưu: VT.");
     assert.equal(reconstructed.fields.signTitle, "GIÁM ĐỐC", "Reconstruction should fill the signer title when recipient paragraphs already supply a field");
-    assert.equal(reconstructed.fields.signName, "Nguyễn Văn Mẫu", "Reconstruction should fill the signer name from the preserved body table");
+    assert.equal(reconstructed.fields.signName, "Nguyễn Văn Mẫu", "Reconstruction should fill the signer name from the separate footer table");
   });
 
   it("Task 4: Multi-column signature table with Recipients + 2 signers keeps pairs synchronized with spacer column", () => {
