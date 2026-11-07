@@ -1,0 +1,34 @@
+name: DocForm draft signature and table header
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/df-c01-c03-draft-table-ci.yml"
+      - "src/utils/docxExport.ts"
+      - "src/utils/tableRoundtrip.ts"
+      - "test/draft-signature-and-true-table-header.test.ts"
+      - "test/imported-table-roundtrip.test.ts"
+      - "test/company-body-profile.test.ts"
+      - "test/table-and-body-format.test.ts"
+  workflow_dispatch:
+
+jobs:
+  focused-regressions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install using existing lockfile
+        run: npm ci --legacy-peer-deps
+      - name: Typecheck
+        run: npm run lint
+      - name: Focused OOXML and formatting regression tests
+        run: >
+          npx tsx --test
+          test/draft-signature-and-true-table-header.test.ts
+          test/imported-table-roundtrip.test.ts
+          test/company-body-profile.test.ts
+          test/table-and-body-format.test.ts
