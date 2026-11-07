@@ -1,14 +1,25 @@
 # DOCFORM — MASTER AUDIT & KẾ HOẠCH HOÀN THIỆN THEO KẾT QUẢ NGƯỜI DÙNG
 
-**Phiên bản:** `MASTER-AUDIT-PLAN-2026-11-07-v1.0`  
+**Phiên bản hiện hành:** MASTER-ROADMAP-v2.0 — 07/11/2026 (kế thừa v1.0 không xóa lịch sử)  
 **Repository:** `tranhaihp26-bit/DocForm` — nhánh `main`  
 **Snapshot mã nguồn được kiểm tra:** `87cf74c9b7508d69e9bbca25ff60cf0907341f82` (GitHub, 07/11/2026; tree `1a5c6fee8aee70c64412dae5bc3cb6dba8c174ee`, **463 mục, 417 tệp**, `truncated=false`)  
 **Tài liệu áp dụng:** `docs/DOCFORM_PRODUCT_FIRST_PROFILE_POLICY_V2_2.md`; registry OOXML HTHHMB V1.2 (07/11); Word Table Optimizer V6.9 (07/11); audit/đề xuất DocForm gần đây; dữ liệu profile và hợp đồng QA có liên quan trên Google Drive.  
-**Trạng thái:** **KẾ HOẠCH ĐƯỢC LẬP — CHƯA TRIỂN KHAI CÁC GÓI MỚI.** Không dùng tài liệu này làm bằng chứng các sửa đổi đã được viết, chạy test hay nghiệm thu.  
-**Mục đích:** tài liệu tham chiếu duy nhất cho agent coding khi thực hiện các gói tiếp theo, **không thay thế** profile/mẫu đã duyệt, mã nguồn hiện hành hay hồ sơ pháp lý.
+**Trạng thái hiện hành:** **ĐÃ CÓ PHẦN CODE ĐƯỢC TRIỂN KHAI VÀ CI KIỂM CHỨNG**, nhưng **CHƯA NGHIỆM THU SẢN PHẨM M1/M2**. Phần 0–11 là snapshot audit gốc; phần 12–14 là tiến độ đã ghi; phần 15–21 bên dưới là **kế hoạch tích hợp nghiệm thu sản phẩm có hiệu lực**. Không suy nội dung kế hoạch thành tính năng đã triển khai.  
+**Mục đích:** **một Master Roadmap duy nhất** gồm 29 gói kỹ thuật A–F và sáu trục nghiệm thu sản phẩm PA-01–PA-06 (không phải sáu module mới). Mục tiêu nghiệm thu cao nhất nằm tại [Product End State](../product/DOCFORM_MUC_TIEU_SAN_PHAM_CUOI_V1_0_2026-11-07.md); cập nhật sau mỗi phiên theo [Project Session Protocol](../PROJECT_SESSION_PROTOCOL.md). Không thay profile/mẫu đã duyệt, mã nguồn hiện hành hay hồ sơ pháp lý.
 
 > **Bảo vệ dữ liệu:** repository hiện **PUBLIC**. Tài liệu này cố ý chỉ lưu **tên/phiên bản và kết luận kỹ thuật** của nguồn Drive/ChatGPT; **không đưa URL/ID của các tài liệu Drive nội bộ, tên nhân sự, nội dung hồ sơ thật, tệp font, khóa API hay dữ liệu nhạy cảm** lên GitHub. Nếu cần kiểm chứng mẫu nội bộ, sử dụng môi trường riêng, lưu SHA-256 và bằng chứng được phép công bố thay vì tải nguyên nguồn vào repository public.
 
+## QUY TẮC ĐIỀU HÀNH HIỆN HÀNH — ĐỌC TRƯỚC KHI CHỌN TASK
+
+**Cặp tài liệu điều hành:** (1) [Mục tiêu sản phẩm cuối và cổng nghiệm thu](../product/DOCFORM_MUC_TIEU_SAN_PHAM_CUOI_V1_0_2026-11-07.md) xác định **làm xong việc gì cho người dùng**; (2) **Master Roadmap này** xác định **gói nào, khi nào, phụ thuộc và bằng chứng**. [Project Memory](../PROJECT_MEMORY.md) xác định những gói đã hoàn thành, tránh làm lại.
+
+**Thứ tự ưu tiên khi có xung đột nội dung:** mục tiêu đã chốt gần nhất của người dùng và chính sách profile-first → tài liệu Product End State cho tiêu chí nghiệm thu → tiến độ/phase ở phần 15–21 có hiệu lực → chi tiết kỹ thuật A–F ở phần 5 → snapshot audit 0–11 chỉ mang tính lịch sử. **Không xem lịch sử “OPEN” ở đầu báo cáo là trạng thái live** khi phần sau ghi đã DONE.
+
+**Đích release:** M1 = pilot nội bộ có giới hạn rõ; M2 = sản phẩm sử dụng thường xuyên trong phạm vi cam kết. **Không gọi hoàn thành dự án vì đã đóng 29 issue.** M2 đòi hỏi người dùng mục tiêu tự làm xong việc, DOCX sửa được trong Office đã cam kết, vận hành/khôi phục/hướng dẫn và cổng nghiệm thu có bằng chứng. Không có Word/WPS/Office thật → `NOT_VERIFIED_RENDER`.
+
+**Không mở rộng phạm vi vô cớ:** Profile Công ty có quyền ưu tiên **từng thuộc tính được thiết lập**, ND30/HD05 chỉ fallback đúng hệ khi thiếu; master conflict A02/A03 không tự sửa. Không viết Word clone, optimizer mặc định hay EXE trước khi cần. Những điều kiện kỹ thuật bắt buộc về bảo toàn nguồn, AI consent và stale candidate không được nới để tăng tỷ lệ hoàn thành giả.
+
+---
 ---
 
 ## 0. KẾT LUẬN KIỂM TOÁN ĐỘC LẬP
@@ -372,3 +383,155 @@ B/C/E xong và pilot đủ chứng cứ ──> F01/F02 ──> F03
 **Đã merge [PR #3](https://github.com/tranhaihp26-bit/DocForm/pull/3)**: commit `cf5fb6190a1bd06db9da846039ad6eebd75e027c`. Chi tiết thay đổi, bằng chứng typecheck, [CI 26/26](https://github.com/tranhaihp26-bit/DocForm/actions/runs/42336367558), [CI 31/31](https://github.com/tranhaihp26-bit/DocForm/actions/runs/42336367566), hạn chế và tiếp quản được ghi tại [session log 07/11/2026](../sessions/2026-11-07_DF-A04-B01_effective-profile-and-memory.md).
 
 **Cổng vận hành bắt buộc từ phiên này:** trước sửa đọc [Project Memory](../PROJECT_MEMORY.md), xác nhận ID/mục tiêu cuối của roadmap và SHA/test còn hiệu lực; sau sửa ghi nhật ký phiên, cập nhật index + trạng thái gói, commit lên GitHub, không chỉ báo trong chat. Xem [quy trình chính thức](../PROJECT_SESSION_PROTOCOL.md). **Chưa nghiệm thu** Word/WPS toàn diện, chưa phát hành production.
+
+---
+
+## 15. MỤC TIÊU CUỐI VÀ PHẠM VI BÀN GIAO — CẬP NHẬT V2.0
+
+### 15.1. Nguồn yêu cầu sản phẩm duy nhất
+
+[DOCFORM_MUC_TIEU_SAN_PHAM_CUOI_V1_0_2026-11-07.md](../product/DOCFORM_MUC_TIEU_SAN_PHAM_CUOI_V1_0_2026-11-07.md) là **Product Charter/Acceptance Contract**; đường phát triển các 29 gói A–F và sáu lớp PA trong tài liệu này chỉ là **phương tiện thực hiện**. Không sao chép charter thành nhiều bản mâu thuẫn; khi đổi mục tiêu phải ghi quyết định, sửa charter rồi mới sửa roadmap tương ứng.
+
+**Kết quả cuối cùng:** nhân viên văn phòng không biết công nghệ có thể tự tạo hoặc nhập DOCX/TXT, chọn/xác nhận ND30/HD05 và profile, sửa được các vùng đã công bố, chuẩn hóa, tải DOCX thật sự chỉnh sửa được, tiếp tục công việc sau khi gián đoạn, và biết phải làm gì nếu gặp tài liệu chưa hỗ trợ; không cần AI, không tự điền số/ngày/ký/dấu, không mất nội dung. Văn bản theo profile Công ty phải đúng **từng thuộc tính đã cấu hình** trên file hậu stamp; không đối chiếu/hậu kiểm bằng ND30/HD05 với field đã SET.
+
+### 15.2. Các mức bàn giao và ranh giới bắt buộc
+
+| Mức | Phạm vi sản phẩm | Điều kiện tối thiểu |
+|---|---|---|
+| M0 — TECHNICAL CANDIDATE | Có mã và test kỹ thuật; dùng để phát triển | CI/OOXML có bằng chứng; không hứa ứng dụng nhân viên văn phòng sẵn dùng |
+| M1 — CONTROLLED MVP/PILOT | Chỉ các loại và chức năng có dòng SUPPORTED_END_TO_END trong ma trận; review/blocked hiển thị đúng | S/T/U-pilot/R của Charter đạt trong scope; 4 tuyến pilot có kịch bản người dùng, DOCX có Word/WPS thật, profile master được chốt cho ca định dùng |
+| M2 — COMPLETE DAILY-USE PRODUCT | Sản phẩm phục vụ hàng ngày trong **phạm vi loại văn bản/công cụ Office đã công bố**, không phải clone Word | S/T/U/R/O/C đạt; 0 blocker P0 ở scope phát hành; cài mở, phục hồi, trợ giúp, offline và bảo trì có bằng chứng |
+
+**Không suy M2 nghĩa là hỗ trợ tất cả các mẫu trong kho HTHHMB hay mọi tính năng DOCX của Microsoft Word.** Muốn mở rộng type/role nào phải nâng Support Matrix và corpus có thử.
+
+### 15.3. Các cổng kết quả người dùng thay cho đếm issue
+
+| Cổng | Người dùng nhìn thấy | Bằng chứng |
+|---|---|---|
+| Gate S — Scope | Biết rõ loại văn bản và phần nào sửa được; không quảng bá quá năng lực | Support Matrix có regime/type/action/Office/version/status |
+| Gate T — Trust & fidelity | Không mất nội dung, đúng profile trên DOCX hậu stamp, file đúng revision | Source SHA, candidate SHA, role→expected→actual OOXML, fidelity report |
+| Gate U — Usability/task success | Tự làm xong ba bước, biết xử lý cảnh báo, không cần developer ở tác vụ thường | User pilot/UX-01–13, hành trình U-01–U-12, số bước/thời gian/lỗi |
+| Gate R — Office/render | DOCX thực sự mở và chỉnh trên công cụ Office đã chọn; pagination/shape/line đúng mẫu | Version Word/WPS/LO, trang đầu–giữa–cuối, hash, visual QA |
+| Gate O — Operation/recovery | Mở app thuận tiện, dùng manual offline, lưu/mở lại, xử lý lỗi PDF | Máy sạch + restart + lưu/khôi phục + network/renderer |
+| Gate C — Release/continuity | Có hướng dẫn, rollback, release notes, evidence, Project Memory | Bản bàn giao, log phiên/commit/CI, help & support checklist |
+
+**Quy tắc tuyệt đối:** Gate T không được lấy tỷ lệ trung bình để cho qua lỗi mất nội dung/profile. Gate U phải đo bằng người dùng mục tiêu; Gate R không được thay bằng mock hoặc render HTML; Gate O phải đo trên mô hình cài đặt được chọn.
+
+## 16. SÁU BỘ CÔNG VIỆC NGHIỆM THU SẢN PHẨM — PA-01 ĐẾN PA-06
+
+Đây là **sáu acceptance workstreams, không phải sáu gói refactor/tính năng tự động phát sinh**. Mỗi PA kế thừa các DF đã có, không tái xây test đã chạy; chỉ mở issue khi đầu ra thiếu.
+
+### PA-01 — Ma trận phạm vi release và năng lực thật (P0)
+
+**Liên kết:** DF-A01, DF-B05, DF-C04/C06, DF-F03; Product Charter §4.  
+**Đầu ra bắt buộc:** docs/product/PRODUCT_SUPPORT_MATRIX.md (tạo khi bắt đầu PA-01) với một dòng cho **mỗi regime × loại văn bản × hành động tạo/nhập/sửa/xuất × nhóm đối tượng/Office**, và nhãn SUPPORTED_END_TO_END / SUPPORTED_WITH_REVIEW / READ_ONLY_SOURCE / UNSUPPORTED / NOT_VERIFIED / BLOCKED_BY_MASTER. Ghi version/source/case ID, người xác nhận và đường xử lý nếu không hỗ trợ.
+
+**Làm ngay không chờ chủ sở hữu master:** điền trạng thái dự kiến và chưa xác minh cho bốn tuyến pilot (ND30 có tên loại, ND30 công văn, HD05 có tên loại, HD05 công văn). **Tuyệt đối không biến dự kiến thành SUPPORTED_END_TO_END** nếu thiếu Word/WPS/UAT/golden.
+
+**DoD:** 100% *loại và hành động định quảng bá ở M1/M2* đều có kết luận có bằng chứng; ca ngoài scope có giới hạn công khai. **Mốc:** khởi động trước/đồng thời DF-B02; khóa phát hành tại DF-F03.
+
+### PA-02 — Người dùng tự hoàn thành hành trình ba bước (P0)
+
+**Liên kết:** DF-E06, DF-E02, DF-F01/F03; dùng lại [UX-01–UX-13](../DAC_TA_NOI_DUNG_UX_3_BUOC_DOCFORM_2026-11-04.md) thay vì viết lại.  
+**Đầu ra:** baseline workflow hiện tại và bảng UAT gồm người dùng không phải developer, kịch bản, loại file, thời gian, thao tác, số lần hỏi giúp đỡ, số thao tác sai/tải nhầm, trạng thái kết quả; kèm ảnh/ghi chép có phép.
+
+**Thử sớm:** ít nhất 4 hành trình chuẩn (tạo ND30, tạo HD05, import-sửa-xuất, DOCX bảng); thêm trường hợp mâu thuẫn profile, nguồn/khối không hỗ trợ, candidate stale và mất PDF. Tập pilot tiết kiệm ban đầu **đề xuất** khoảng 5 người và 8–12 tệp; đó không phải số đã đo hay chuẩn thống kê. Chỉ định **ngưỡng hoàn thành/độ thuận tiện trước vòng UAT cuối** sau khi có baseline. Riêng sai phạm INV (mất dữ liệu, AI không consent, stale) luôn yêu cầu 0.
+
+**DoD:** người dùng đại diện **tự tìm thấy và thực hiện hành động cần thiết**, biết xem cảnh báo và làm xong DOCX trong scope; có số liệu và phản hồi thực; không thay bằng UI screenshots hoặc unit tests. **Mốc:** bắt đầu song song DF-B02, đánh giá lại tại DF-E06/F03.
+
+### PA-03 — Ma trận sửa được thực sự trong Editor (P0)
+
+**Liên kết:** DF-B02/B05, DF-C04/C06, DF-E06; Product Charter §7.  
+**Đầu ra:** bản đồ từng role (text, subject, V/v, Kính gửi, số/ngày, người ký, nơi nhận, bảng đơn giản, ô gộp, ảnh, field, textbox, header/footer, phụ lục) với EDITABLE / REVIEW_ONLY / READ_ONLY_SOURCE / UNSUPPORTED và bằng chứng **thao tác UI → lưu → xuất DOCX → mở Office kiểm thay đổi**. Tách giá trị profile bị khóa khỏi nội dung người dùng có thể điền.
+
+**DoD:** không có nút sửa giả; dữ liệu đã chấp nhận được ghi qua revision và xuất đúng; cảnh báo đúng cho vùng không hỗ trợ. Bảng đơn giản có ít nhất một ca nhập và một ca tạo mới trong scope. **Mốc:** trước nghiệm thu DF-C04/DF-E06 và PA-06.
+
+### PA-04 — Cài đặt, mở ứng dụng, làm việc không AI và sự cố môi trường (P1)
+
+**Liên kết:** DF-E03/E04/E05, DF-F01/F03.  
+**Đầu ra:** ghi ADR gọn chọn **mô hình phân phối thực tế** (local webapp + launcher/Windows wrapper/webapp nội bộ IT quản trị) theo nhu cầu người dùng, không mặc định Electron hay EXE. Danh sách OS/Office/renderer/version được cam kết, kịch bản máy sạch install/start/restart/update/rollback, trạng thái no-network/no-AI và lỗi WPS/PDF.
+
+**DoD M2:** một người văn phòng sử dụng cách mở công bố, không phải chạy lệnh npm hoặc chỉnh env để làm tác vụ thường; DOCX đủ điều kiện không bị chặn bởi PDF renderer tùy chọn; hoạt động offline đúng phạm vi đã cam kết. **Mốc:** quyết định trước DF-F01, nghiệm thu cuối DF-F03.
+
+### PA-05 — Duy trì công việc, phục hồi và trợ giúp (P1)
+
+**Liên kết:** DF-E02/E06, DF-F03, UX-10 và §16–19 UX spec.  
+**Đầu ra:** test nguồn/lưu nháp/reload/mất lưu trữ, lỗi import/export, thay nguồn/hủy, thay regime/profile/revision, bản ứng viên cũ, khả năng tải nguyên nguồn. Chọn cơ chế **backup/export draft vừa đủ** hoặc ghi hạn chế phục hồi rõ; không tự triển khai đồng bộ cloud. Có hướng dẫn ngắn ba bước, bảng lý do REVIEW/BLOCKED/NOT_EVALUATED, cách xử lý PDF/WPS lỗi.
+
+**DoD:** ứng dụng không báo đã lưu khi ghi thất bại; người dùng biết cách tiếp tục/khôi phục theo mô hình thực; không mất draft ở ca đã công bố hỗ trợ. **Mốc:** trước DF-F03, thực hành cùng PA-02 sớm.
+
+### PA-06 — Corpus nghiệp vụ, DOCX editable và nghiệm thu tương thích thật (P0 release gate)
+
+**Liên kết:** DF-C04/C06, DF-E03, DF-F02/F03.  
+**Đầu ra:** hai tập mẫu có quyền sử dụng, đã ẩn danh: (a) **common-supported** theo Support Matrix; (b) **complex/review** (merge/nested/multisection/image/field/unknown); kèm expected/actual, source/candidate SHA, Office/version và video/ảnh kiểm khi được phép. Đo tỷ lệ hoàn thành end-to-end, nguyên nhân review/blocked, số phần phải sửa lại, giữ bản gốc. Mẫu M1 phải có đủ bốn tuyến pilot nằm trong scope; mẫu M2 mở rộng theo từng loại được công bố.
+
+**DoD:** đầu ra **mở được, sửa tiếp được, không sai profile/không mất nội dung** trên bản Office đã cam kết; nếu unsupported thì chặn/đối chiếu đúng, không bỏ lặng lẽ. Thiếu Word/WPS thực → NOT_VERIFIED_RENDER và **không GO cho M1/M2 cần hình thức Word**. **Mốc:** DF-F02 và quyết định DF-F03.
+
+## 17. PHÂN BIỆT “ĐỦ CODE” VỚI “NGƯỜI DÙNG DÙNG ĐƯỢC”
+
+| Thành phần | Chỉ kiểm code/OOXML có đủ không? | Phải bổ sung gì trước M1/M2? |
+|---|---|---|
+| Chọn profile/nhập tài liệu | Không | Người dùng hiểu quyết định; profile không tự áp; nguồn còn nguyên; phân vùng có thể đối chiếu |
+| Editor thân/tiêu đề/bảng | Không | Sửa được dữ liệu đúng role; xuất thấy sửa; không có nút sửa giả (PA-03) |
+| Export DOCX | Không | Cùng revision, mở Word/WPS sửa được, không cần sửa lại hình thức profile (PA-06) |
+| QA rules/fidelity | Không | PASS chỉ tính trên thuộc tính có evidence; unsupported xử lý rõ; không nhầm pháp lý |
+| WPS/LibreOffice/PDF | Không | Kiểm Office/version thật; PDF tùy chọn, không hứa tương đồng tuyệt đối (PA-04/06) |
+| Lưu nháp | Không | Restart/reload, lỗi quota, phục hồi/cảnh báo đúng thực tế (PA-05) |
+| Tính năng AI | Không | Consent và ranh giới dữ liệu; không AI vẫn hoàn thành tác vụ (PA-02/04) |
+| Đóng gói/triển khai | Không | Máy sạch, user thường tự mở và hoàn thành (PA-04) |
+| Hướng dẫn/trợ giúp | Không | Nội dung ngắn, action-oriented theo lỗi thật (PA-05) |
+
+**Ưu tiên hiệu quả:** đầu tiên thực hiện phần thay đổi liên quan trực tiếp đến blocker người dùng; không đưa đủ mọi chức năng Word vào scope hoặc kéo DF-D01–D04/V6.9 vào đường mặc định. Optimizer chỉ opt-in khi pilot chứng minh có giá trị thực với bảng được phép.
+
+## 18. LỊCH TRIỂN KHAI TÍCH HỢP — THAY CHO HAI ROADMAP SONG SONG
+
+**Mỗi hàng là một checkpoint kết quả**, không phải sprint thời gian cố định; thứ tự có thể điều chỉnh theo dependency nhưng không bỏ gate sản phẩm.
+
+| Chặng | Ưu tiên thực hiện | Bằng chứng kết thúc chặng | Không làm |
+|---|---|---|---|
+| **0. Chốt phạm vi & baseline** | PA-01 dự thảo ma trận; PA-02 test baseline 3 bước; PA-03 khảo sát Editability; tiếp quản Project Memory | Support Matrix v0, danh sách hành trình, baseline thao tác, mọi điểm NOT_VERIFIED ghi rõ | Không chờ xong engine rồi mới gặp người dùng |
+| **1. DOCX đáng tin cậy** | DF-B02/B03; nhánh DF-B05/B06 không conflict; DF-E01 bảo vệ trusted profile; DF-E02 trạng thái ứng viên | DOCX 4 tuyến có OOXML hiệu lực và nguồn/byte đúng; test âm; không vi phạm INV | Không thay master A02/A03 khi chưa duyệt |
+| **2. Editor và bảng dùng được** | DF-C02/C04/C05/C06; PA-03 và PA-02 vòng 1; sửa đúng lỗi usability phát hiện | Ma trận editability có thực chứng, bảng đơn giản xuất được, vùng lạ có lối thoát | Không tối ưu mọi bảng phức tạp theo V6.9 vô điều kiện |
+| **3. Vận hành & phục hồi** | DF-E03/E04/E05/E06 + PA-04/PA-05; PA-06 corpus được phép | Cold start, offline/manual, draft recovery, lỗi PDF, UI người dùng và Office smoke | Không triển khai cloud/multiuser khi không có nhu cầu |
+| **4. M1 nghiệm thu pilot** | DF-F01/F02/F03 scope M1 + Gate S/T/U/R; chủ thể profile master tương ứng được duyệt | Biên bản nghiệm thu M1 kèm danh mục supported, nguồn, Office/version và UAT | Không công bố sản phẩm hoàn thiện toàn diện |
+| **5. M2 hoàn thiện có kiểm chứng** | Mở rộng scope theo PA-01 sau M1, PA-06 với các loại thêm, Gate O/C, các lỗi thực tế | Release M2 qua S/T/U/R/O/C, hướng dẫn/rollback/version/hỗ trợ | Không suy M2 = mọi loại DOCX có thể sửa |
+
+**Phụ thuộc quan trọng:** A02/A03 thiếu master → **chặn kết luận SUPPORTED_END_TO_END cho loại phải dùng giá trị đó**, không chặn PA-02 baseline, PA-03 ma trận, DF-B02 property khác, E01/E02, E04/E05, UX, backup. Thiếu Office thực → phát hành chỉ technical candidate, không “visual PASS”.
+
+## 19. HỒ SƠ BẰNG CHỨNG CHO TỪNG CỔNG
+
+Mỗi dòng nghiệm thu cần: ID ca/loại, source giả lập hoặc được phép, profile/regime và approval version, user task và bước, expected, actual, hash DOCX, sửa được hay không, vùng bị REVIEW, Word/WPS/LO/version và ảnh khi được phép, CI/commit, kết luận PASS/FAIL/NOT_VERIFIED, người thực hiện và ngày. Không đưa tài liệu nội bộ thật lên repo public.
+
+| Điều kiện release | M1 | M2 | Quy tắc FAIL |
+|---|---|---|---|
+| Profile-first đúng trong scope | Bắt buộc 100% field hiệu lực | Bắt buộc 100% field hiệu lực | Một field SET bị ép fallback hay khác OOXML cuối |
+| An toàn nội dung, dữ liệu, consent | 0 vi phạm INV-01–INV-08 | 0 vi phạm INV-01–INV-08 | Bất kỳ mất nội dung, nhầm candidate, gửi AI trái phép |
+| Bảng/khối được hỗ trợ | Có test đúng ca và coverage | Mở rộng theo phạm vi công bố | Tự bỏ object, làm sai merge, tạo repeat header giả |
+| Word/WPS thực | Kiểm mẫu M1 đúng Office/version | Kiểm corpus M2 | Chỉ có HTML, mock hoặc surrogate mà gọi đạt Word |
+| UX user journey | Có người dùng mục tiêu thực hiện được cả tuyến M1; ghi baseline | UAT theo scope, ngưỡng khóa trước test cuối | Người dùng thường không thể hoàn thành, hoặc tải nhầm |
+| Editor editability | Các trường M1 đã cam kết chỉnh được thật | Các trường M2 đã cam kết chỉnh được thật | UI cho sửa nhưng DOCX không mang thay đổi |
+| Lưu nháp và phục hồi | Không gian lận trạng thái lưu, có đường tải nguồn/khôi phục tối thiểu | Backup/recovery theo mô hình phát hành đã công bố | Nhầm “đã lưu” hoặc mất công việc ở ca cam kết |
+| Vận hành/nhận trợ giúp | Có lối truy cập trong pilot | Máy sạch, tự mở, offline/manual và help/rollback | Bắt người dùng văn thư sửa mã/chạy dev command |
+
+**Gợi ý đo ban đầu:** khoảng 5 người làm văn thư và 8–12 tài liệu đại diện để tìm vấn đề; **chưa đặt ngưỡng 90%/tối ưu thời gian như kết quả thực**. Ghi baseline rồi khóa target trước UAT cuối. 0 lỗi nghiêm trọng là điều kiện ngay lập tức, không cần chờ baseline.
+
+## 20. CHỈ DẪN CỤ THỂ CHO AGENT THỰC HIỆN
+
+**Trước mỗi PR:** đọc [Project Memory](../PROJECT_MEMORY.md) → Product End State → Master Roadmap (ưu tiên **phần 15–21 và trạng thái 12–14**, chi tiết gói tại phần 5) → [Profile Source Matrix](../profile/PROFILE_SOURCE_MATRIX.md) khi chạm định dạng → đúng AGENTS theo thư mục. Trong mô tả PR ghi: **DF-ID + PA-ID liên quan + kết quả người dùng + what is already done + smallest change + focused tests + stop rule**.
+
+**Trong PR:** chỉ thêm test từ hành trình người dùng mà thay đổi có ảnh hưởng; không chạy full canonical vì một sửa nhỏ, không làm lại các case đã PASS nếu code chưa đổi. Trạng thái phải tách DONE_CODE, VERIFIED_OOXML, VERIFIED_RENDER, UAT_VERIFIED, ACCEPTED; đổi thuật ngữ không biến nó thành PASS.
+
+**Sau PR/đợt docs:** [Project Session Protocol](../PROJECT_SESSION_PROTOCOL.md) yêu cầu append-only log tại docs/sessions, cập nhật [Project Memory](../PROJECT_MEMORY.md) và trạng thái đúng gói/PA, ghi SHA/CI/Word UAT/no-proof và bước ưu tiên tiếp theo; commit lên GitHub. Không đăng dữ liệu Drive private/hồ sơ thật lên repository public.
+
+**Quy tắc dừng:** khi một việc không gắn trực tiếp DF-ID còn thiếu, PA-ID hoặc nhu cầu mới đã chốt thì **dừng mở rộng**; khi field profile có conflict thì giữ hiện hành và chặn chỉ đúng phạm vi; khi sản phẩm đã đạt gate scope mục tiêu thì không tự đầu tư optimizer/rewrite chỉ để tăng độ phức tạp.
+
+## 21. DANH SÁCH ƯU TIÊN NGAY SAU TÀI LIỆU V2.0
+
+1. **PA-01 — tạo bản ma trận scope**, đánh dấu tất cả bốn tuyến pilot là NOT_VERIFIED hoặc BLOCKED nếu còn thiếu golden/UAT; không chờ code.
+2. **DF-B02 — nối resolver per-property** cho body/paragraph/table role đã được duyệt; mỗi consumer có expected→actual DOCX và một ca thao tác. Không làm lại DF-B01.
+3. **PA-02/PA-03 — baseline người dùng và khả năng sửa**, tận dụng UX-01–13, không mở dự án UI mới; ghi rõ nút nào hiện chỉ xem.
+4. **DF-E01/E02 — chống AI giả profile, candidate stale**, bảo đảm UX/cổng xuất đúng; tiếp nối P0 đã hoàn thành.
+5. **DF-C02/C04/C06 + A02/A03 nếu đã có mẫu**; những trường conflict không được tự quyết.
+6. **DF-E03/E04, PA-04/PA-05/PA-06**, rồi F01/F02/F03 theo scope M1→M2.
+
+**Trạng thái tại commit cập nhật kế hoạch:** đây là tài liệu đặc tả và lộ trình. Đã có DF-C01/C03/A04 DONE_CODE theo Project Memory và DF-B01 PARTIAL; **PA-01–PA-06 chưa có UAT/Office/end-user evidence**, không gọi M1/M2 PASS. Master Roadmap V2.0 vẫn giữ đầy đủ 29 gói kỹ thuật cũ và không thay đổi cấu hình profile thực tế.
