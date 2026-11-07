@@ -358,3 +358,8 @@ B/C/E xong và pilot đủ chứng cứ ──> F01/F02 ──> F03
 4. **DF-C02**, **DF-A02/A03** chỉ mở khi có golden/master đúng phiên bản; với WPS/Word thì báo `NOT_VERIFIED_RENDER` khi chưa kiểm.
 
 **Quy tắc tiếp tục:** không lặp test/QA đã PASS nếu code liên quan không đổi; không chuyển `DONE_CODE` thành `ACCEPTED` khi chưa nghiệm thu trên file và renderer thực.
+
+
+## 13. QUY TẮC ĐIỀU HÀNH XUYÊN PHIÊN (BẮT BUỘC)
+
+Đọc [Project Memory](../PROJECT_MEMORY.md) và [Project Session Protocol](../PROJECT_SESSION_PROTOCOL.md) **trước khi mở task**, so ID/status/bằng chứng đã hoàn thành với HEAD hiện hành; chỉ thực hiện việc còn phục vụ **mục tiêu cuối người dùng** và có tiêu chí dừng. Sau PR/đợt sửa, lưu nhật ký tại `docs/sessions/` với commit, file, test, kết quả thực, điều chưa xác minh và bước kế tiếp; cập nhật memory và đúng dòng trạng thái trong roadmap. Mọi kết luận về Word/WPS chưa kiểm phải ghi `NOT_VERIFIED_RENDER`. Không đặt việc ghi nhớ như lý do chạy full test hay mở rộng scope.

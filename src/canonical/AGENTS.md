@@ -17,3 +17,5 @@
 
 - Bắt đầu ở `ruleEngine.ts`, schema tài liệu và module regime tương ứng (`nd30/` hoặc `hd05/`); dùng đúng test của rule/header/profile trong Codebase Map.
 - Test cấu trúc xác nhận logic được kiểm tra; không tự nó chứng minh hiệu lực pháp lý, tư cách ban hành hay phê duyệt chuyên môn.
+
+- Trước thay đổi resolver/rule/profile, đối chiếu **DF-ID và nguồn đã duyệt** trong [Project Memory](../../docs/PROJECT_MEMORY.md), [Profile Source Matrix](../../docs/profile/PROFILE_SOURCE_MATRIX.md) và Master Roadmap; không đào sâu các giá trị đang `BLOCKED_BY_MASTER`. Sau sửa ghi session log/bằng chứng theo [quy trình](../../docs/PROJECT_SESSION_PROTOCOL.md).

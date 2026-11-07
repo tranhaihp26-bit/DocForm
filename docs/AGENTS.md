@@ -11,3 +11,5 @@
 - Giữ liên kết nội bộ tương đối hợp lệ; không sao chép cùng quy tắc vào nhiều tài liệu nếu có thể trỏ đến nguồn sở hữu duy nhất.
 - Báo cáo kiểm chứng ghi checkout/HEAD và trạng thái local, command, kết quả cuối cùng và phạm vi chứng minh theo quy tắc hoàn tất ở AGENTS.md gốc. Phân biệt phần đã có, phần mới sửa và phần còn thiếu; không lấy tên type/module hoặc vài test xanh làm bằng chứng hoàn thành toàn kế hoạch.
 - Mỗi mục tiêu được đánh dấu hoàn thành phải có bằng chứng tương ứng. Khi kết quả mới mâu thuẫn báo cáo cũ, nêu snapshot/phạm vi và cập nhật kết luận; giữ phần chưa triển khai/chưa kiểm chứng ở trạng thái thích hợp, không gọi báo cáo triển khai là biên bản nghiệm thu đã được người dùng chấp thuận.
+
+- **Bộ nhớ bắt buộc:** trước sửa đọc [Project Memory](PROJECT_MEMORY.md), [Master Roadmap](roadmap/DOCFORM_MASTER_AUDIT_IMPLEMENTATION_ROADMAP_2026-11-07.md); sau sửa ghi nhật ký phiên và cập nhật chỉ mục/roadmap theo [quy trình](PROJECT_SESSION_PROTOCOL.md). Giữ các session log append-only, tách DONE_CODE với VERIFIED; không viết lại báo cáo lịch sử.
