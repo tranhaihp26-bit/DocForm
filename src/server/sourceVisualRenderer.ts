@@ -8,6 +8,7 @@ import type {
   VisualEvidenceFailureCode,
   VisualEvidenceManifest,
 } from "../shared/fullDocumentAiProtocol.ts";
+import { inspectDocxRenderInput } from "./docxRenderInputSafety.ts";
 
 const MAX_SOURCE_BYTES = 100 * 1024 * 1024;
 const MAX_PDF_BYTES = 200 * 1024 * 1024;
@@ -66,6 +67,35 @@ class VisualRendererError extends Error {
   }
 }
 
+export type RendererTempCleanup = (directory: string) => Promise<void>;
+
+/** A cleanup failure must reject the rendering operation instead of returning a silent success. */
+export async function withRendererTempDirectory<T>(
+  prefix: string,
+  operation: (directory: string) => Promise<T>,
+  cleanup: RendererTempCleanup = directory => fs.rm(directory, { recursive: true, force: true }),
+): Promise<T> {
+  const directory = await fs.mkdtemp(prefix);
+  let operationFailed = false;
+  let operationError: unknown;
+  try {
+    return await operation(directory);
+  } catch (error) {
+    operationFailed = true;
+    operationError = error;
+    throw error;
+  } finally {
+    try {
+      await cleanup(directory);
+    } catch (cleanupError) {
+      if (operationFailed) {
+        throw new AggregateError([operationError, cleanupError], "Renderer operation and temporary-directory cleanup failed.");
+      }
+      throw new Error("Renderer temporary-directory cleanup failed.", { cause: cleanupError });
+    }
+  }
+}
+
 function sha256(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
@@ -75,7 +105,7 @@ function errorCode(error: unknown, fallback: VisualEvidenceFailureCode): VisualE
   if (error && typeof error === "object" && "code" in error) {
     const code = (error as { code?: unknown }).code;
     if (code === "cancelled" || code === "timeout" || code === "renderer_unavailable" || code === "renderer_busy" ||
-        code === "pdf_page_count_unavailable" || code === "page_render_failed") return code;
+        code === "pdf_page_count_unavailable" || code === "page_render_failed" || code === "unsafe_source_package" || code === "source_too_large") return code;
   }
   return fallback;
 }
@@ -245,40 +275,41 @@ export async function renderCandidatePdfWithWps(
   if (candidateBytes.byteLength === 0 || candidateBytes.byteLength > 25 * 1024 * 1024) {
     throw new VisualRendererError("render_failed");
   }
+  const inspection = inspectDocxRenderInput(candidateBytes, MAX_SOURCE_BYTES);
+  if (!inspection.safe) throw new VisualRendererError(inspection.failureCode);
   const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
   const powershellPath = path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
   const scriptPath = path.join(moduleDirectory, "candidatePdfRenderer.win.ps1");
-  const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "docform-candidate-pdf-"));
-  try {
-    const docxPath = path.join(tempDirectory, "candidate.docx");
-    const pdfPath = path.join(tempDirectory, "candidate.pdf");
-    const metadataPath = path.join(tempDirectory, "renderer.json");
-    await fs.writeFile(docxPath, Buffer.from(candidateBytes));
-    const result = await runProcess(powershellPath, [
-      "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", scriptPath,
-      "-InputDocxPath", docxPath, "-OutputPdfPath", pdfPath, "-MetadataPath", metadataPath,
-    ], signal, CANDIDATE_PDF_RENDER_TIMEOUT_MS);
-    if (result.exitCode === 42) throw new VisualRendererError("renderer_unavailable", 42);
-    if (result.exitCode === 44) throw new VisualRendererError("renderer_busy", 44);
-    if (result.exitCode !== 0) throw new VisualRendererError("render_failed", result.exitCode);
-    const pdfBytes = new Uint8Array(await fs.readFile(pdfPath));
-    if (pdfBytes.byteLength === 0 || pdfBytes.byteLength > MAX_PDF_BYTES ||
-        new TextDecoder().decode(pdfBytes.subarray(0, 5)) !== "%PDF-") {
+  return withRendererTempDirectory(path.join(os.tmpdir(), "docform-candidate-pdf-"), async tempDirectory => {
+    try {
+      const docxPath = path.join(tempDirectory, "candidate.docx");
+      const pdfPath = path.join(tempDirectory, "candidate.pdf");
+      const metadataPath = path.join(tempDirectory, "renderer.json");
+      await fs.writeFile(docxPath, Buffer.from(candidateBytes));
+      const result = await runProcess(powershellPath, [
+        "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", scriptPath,
+        "-InputDocxPath", docxPath, "-OutputPdfPath", pdfPath, "-MetadataPath", metadataPath,
+      ], signal, CANDIDATE_PDF_RENDER_TIMEOUT_MS);
+      if (result.exitCode === 42) throw new VisualRendererError("renderer_unavailable", 42);
+      if (result.exitCode === 44) throw new VisualRendererError("renderer_busy", 44);
+      if (result.exitCode !== 0) throw new VisualRendererError("render_failed", result.exitCode);
+      const pdfBytes = new Uint8Array(await fs.readFile(pdfPath));
+      if (pdfBytes.byteLength === 0 || pdfBytes.byteLength > MAX_PDF_BYTES ||
+          new TextDecoder().decode(pdfBytes.subarray(0, 5)) !== "%PDF-") {
+        throw new VisualRendererError("render_failed");
+      }
+      const metadata = JSON.parse(await fs.readFile(metadataPath, "utf8")) as { rendererVersion?: unknown };
+      return {
+        pdfBytes,
+        pdfSha256: sha256(pdfBytes),
+        rendererName: "WPS Office",
+        rendererVersion: typeof metadata.rendererVersion === "string" ? metadata.rendererVersion : "unknown",
+      };
+    } catch (error) {
+      if (error instanceof VisualRendererError) throw error;
       throw new VisualRendererError("render_failed");
     }
-    const metadata = JSON.parse(await fs.readFile(metadataPath, "utf8")) as { rendererVersion?: unknown };
-    return {
-      pdfBytes,
-      pdfSha256: sha256(pdfBytes),
-      rendererName: "WPS Office",
-      rendererVersion: typeof metadata.rendererVersion === "string" ? metadata.rendererVersion : "unknown",
-    };
-  } catch (error) {
-    if (error instanceof VisualRendererError) throw error;
-    throw new VisualRendererError("render_failed");
-  } finally {
-    await fs.rm(tempDirectory, { recursive: true, force: true }).catch(() => undefined);
-  }
+  });
 }
 
 function createWindowsSourceVisualRendererAdapter(): SourceVisualRendererAdapter {
@@ -290,8 +321,7 @@ function createWindowsSourceVisualRendererAdapter(): SourceVisualRendererAdapter
     rendererName: "Microsoft Word",
     async renderPdf(sourceBytes, signal) {
       if (process.platform !== "win32") throw new VisualRendererError("renderer_unavailable");
-      const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "docform-source-render-"));
-      try {
+      return withRendererTempDirectory(path.join(os.tmpdir(), "docform-source-render-"), async tempDirectory => {
         const sourcePath = path.join(tempDirectory, "source.docx");
         const pdfPath = path.join(tempDirectory, "source.pdf");
         const metadataPath = path.join(tempDirectory, "renderer.json");
@@ -313,16 +343,13 @@ function createWindowsSourceVisualRendererAdapter(): SourceVisualRendererAdapter
         const pdfBytes = await fs.readFile(pdfPath);
         if (pdfBytes.byteLength === 0) throw new VisualRendererError("render_failed");
         return { pdfBytes, rendererVersion: parseWordRendererVersion(metadata) };
-      } finally {
-        await fs.rm(tempDirectory, { recursive: true, force: true }).catch(() => undefined);
-      }
+      });
     },
     async renderPages(pdfBytes, signal) {
       if (process.platform !== "win32") throw new VisualRendererError("renderer_unavailable");
       const pdfinfoPath = await findWindowsExecutable("pdfinfo.exe");
       const pdftoppmPath = await findWindowsExecutable("pdftoppm.exe");
-      const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "docform-page-render-"));
-      try {
+      return withRendererTempDirectory(path.join(os.tmpdir(), "docform-page-render-"), async tempDirectory => {
         const pdfPath = path.join(tempDirectory, "source.pdf");
         const pagePrefix = path.join(tempDirectory, "page");
         await fs.writeFile(pdfPath, Buffer.from(pdfBytes));
@@ -380,9 +407,7 @@ function createWindowsSourceVisualRendererAdapter(): SourceVisualRendererAdapter
           rasterizerName: "Poppler pdftoppm",
           rasterizerVersion,
         };
-      } finally {
-        await fs.rm(tempDirectory, { recursive: true, force: true }).catch(() => undefined);
-      }
+      });
     },
   };
 }
@@ -400,6 +425,8 @@ export async function renderSourceDocx(
   if (sourceBytes.byteLength === 0) return makeResult(actualSourceSha, "empty_source", { rendererName });
   if (sourceBytes.byteLength > MAX_SOURCE_BYTES) return makeResult(actualSourceSha, "source_too_large", { rendererName });
   if (signal.aborted) return makeResult(actualSourceSha, "cancelled", { rendererName });
+  const inspection = inspectDocxRenderInput(sourceBytes, MAX_SOURCE_BYTES);
+  if (!inspection.safe) return makeResult(actualSourceSha, inspection.failureCode, { rendererName });
 
   const renderer = adapter ?? createWindowsSourceVisualRendererAdapter();
   let renderedPdf: { pdfBytes: Uint8Array; rendererVersion: string };
