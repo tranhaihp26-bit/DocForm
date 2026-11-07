@@ -75,3 +75,10 @@ Người dùng **tạo mới, nhập, chỉnh sửa, chuẩn hóa và xuất DOC
 **PR còn mở:** #37 (DF-B03, lịch sử diverged), #43 (DF-E03/PA06/F02), #45 (DF-B04), #47 (PA-05, 2 test failures đã biết), #48 (nhật ký/roadmap đang cập nhật); tại mốc tích hợp còn Draft. Kết quả Actions/kiểm thử focused được kế thừa đúng head và phạm vi; không chạy test local mới trong phiên merge. Word/WPS, DOCX pilot hậu stamp và UAT vẫn `NOT_VERIFIED`; release M1/M2 **NO-GO**.
 
 **Nhật ký chi tiết:** [GitHub integration follow-up 07/11](sessions/2026-11-07_github-integration-followup.md). **Ưu tiên tiếp:** đồng bộ nhánh #37 và kiểm post-stamp OOXML, sau đó #43 (renderer security), #45 (header/settings Word/WPS), xử lý hai lỗi test được nêu ở #47. Không lặp lại các kiểm thử có bằng chứng hợp lệ khi không thay phạm vi.
+
+### Bổ sung kiểm chứng CI — 07/11/2026
+
+- **PR #37** (DF-B03) vẫn OPEN/DRAFT, head `0a01b268`: [CI font auditor 42370010487](https://github.com/tranhaihp26-bit/DocForm/actions/runs/42370010487) **SUCCESS**, 3/3 PASS; ba workflows cũ trên head mới cũng SUCCESS. Branch vẫn diverged, chưa có DOCX post-stamp thật/Office.
+- **PR #43** (DF-E03/PA06/F02) vẫn OPEN/DRAFT, head `39045ba6`: [CI renderer security 42369791164](https://github.com/tranhaihp26-bit/DocForm/actions/runs/42369791164) **SUCCESS**, 22 PASS/0 FAIL/1 SKIP; test Windows-only bị SKIP, không có WPS/Word.
+- **PR #45** (DF-B04) vẫn OPEN/DRAFT, head `46cc013a`: [CI settings 42369870886](https://github.com/tranhaihp26-bit/DocForm/actions/runs/42369870886) **SUCCESS**, scoped suite cuối 11/11 PASS; Word/WPS/UAT vẫn chưa kiểm.
+- **PR #47** vẫn OPEN/DRAFT, hai test failures đã công bố chưa được sửa. Không merge thêm PR trong đợt CI; `M1/M2 NO-GO`. Chi tiết: [nhật ký tích hợp](sessions/2026-11-07_github-integration-followup.md).
