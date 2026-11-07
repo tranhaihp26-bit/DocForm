@@ -592,3 +592,17 @@ Mỗi dòng nghiệm thu cần: ID ca/loại, source giả lập hoặc được
 - DF-E03 / [PR #43](https://github.com/tranhaihp26-bit/DocForm/pull/43): [42369791164](https://github.com/tranhaihp26-bit/DocForm/actions/runs/42369791164) **SUCCESS** (22 PASS/1 SKIP, Windows-only), thực thi lockfile install + lint + scoped renderer/security suites. Chưa merge hoặc nghiệm thu WPS.
 - DF-B04 / [PR #45](https://github.com/tranhaihp26-bit/DocForm/pull/45): [42369870886](https://github.com/tranhaihp26-bit/DocForm/actions/runs/42369870886) **SUCCESS** (scoped settings/header tests). Chưa merge hoặc nghiệm thu Word/WPS.
 - Đây là **CI trên các nhánh PR**, không phải release Gate R/U/O. #47 vẫn lỗi test. Giữ toàn bộ các issue và các PR Draft chưa nghiệm thu ở trạng thái cần kiểm chứng thêm; không đổi kết luận **M1/M2 NO-GO**.
+
+### 22.3. Kết quả tích hợp và phục hồi test (07/11/2026)
+
+| Mã | Tích hợp thực tế (merge SHA) | Bằng chứng mới | Trạng thái nghiệm thu |
+|---|---|---|---|
+| DF-B03 #8 | PR #37 **MERGED** `bce0f733`; isolated auditor + CI | [42370611414](https://github.com/tranhaihp26-bit/DocForm/actions/runs/42370611414), [42370611419](https://github.com/tranhaihp26-bit/DocForm/actions/runs/42370611419) SUCCESS; lịch sử diverged được hòa bằng 2-parent merge non-force trước tích hợp | `INTEGRATED_CODE / CI_VERIFIED_FOCUSED`, chưa có manifest hậu stamp |
+| DF-E03/PA-06 #27/#35 | PR #43 **MERGED** `1efe5e34` | [42370734850](https://github.com/tranhaihp26-bit/DocForm/actions/runs/42370734850) SUCCESS Linux scoped; test Windows-only vẫn SKIP | `INTEGRATED_CODE`, `NOT_VERIFIED_RENDER` |
+| DF-B04 #16 | PR #45 **MERGED** `eed8f02e` | [42370737629](https://github.com/tranhaihp26-bit/DocForm/actions/runs/42370737629) SUCCESS | `INTEGRATED_CODE`, chưa có Word/WPS settings visual |
+| PA-05 #34 | PR #47 **MERGED** `12432b48`, guide only | Không sửa runtime; kiểm chứng legacy recovery bên dưới | `HELP_PUBLISHED / NOT_VERIFIED_UAT` |
+| Cross-cutting legacy QA | PR #49 **MERGED** `058b72f7` | [42371345394](https://github.com/tranhaihp26-bit/DocForm/actions/runs/42371345394) SUCCESS, 20/20 cases, gồm Test 9/13 IndexedDB/draft; test geometry HD05 đo 9980=5540+4440, hai rule generic ratio `NOT_APPLICABLE` theo profile-first | `CI_VERIFIED_FOCUSED`, không nâng M1/M2 |
+
+**Browser-test blocker rõ ràng:** `test/import-session-browser.test.ts` cũ cho rằng modal rà soát tự mở ngay khi upload; `src/App.tsx` hiện có chủ đích để modal đóng sau import và chuyển sang giai đoạn metadata. Cần cập nhật browser test theo UX mới và kiểm race guard source/draft trên Windows. Không hạ assertion bảo toàn nội dung để biến test xanh. Không thay runtime theo kỳ vọng test cũ.
+
+**Cổng tiếp theo:** DF-B03 nối auditor với candidate hậu stamp; PA-05 trình duyệt/restart thật; DF-E03/DF-B04 và PA-06 kiểm DOCX thật + Word/WPS + UAT. Profile conflicts A02/A03 vẫn giữ khóa. **Release M1/M2 NO-GO**. Chi tiết và các SHA: [follow-up 2](../sessions/2026-11-07_github-integration-followup-2.md).
