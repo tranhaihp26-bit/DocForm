@@ -6,10 +6,6 @@ on:
       - "src/canonical/effectiveProfileAttribute.ts"
       - "src/utils/documentComposer.ts"
       - "test/effective-profile-attribute-v22.test.ts"
-      - "AGENTS.md"
-      - "docs/PROJECT_MEMORY.md"
-      - "docs/PROJECT_SESSION_PROTOCOL.md"
-      - "docs/roadmap/DOCFORM_MASTER_AUDIT_IMPLEMENTATION_ROADMAP_2026-11-07.md"
   workflow_dispatch:
 
 jobs:
