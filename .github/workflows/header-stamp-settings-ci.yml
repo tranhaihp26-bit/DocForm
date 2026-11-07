@@ -1,0 +1,33 @@
+name: DocForm header stamp settings
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/header-stamp-settings-ci.yml"
+      - "package.json"
+      - "package-lock.json"
+      - "src/utils/hoaTieuHeaderStamp.ts"
+      - "src/utils/hoaTieuHeaderReferenceXml.ts"
+      - "test/hoa-tieu-header-settings-preservation.test.ts"
+      - "test/header-dual-regime.test.ts"
+  workflow_dispatch:
+
+jobs:
+  focused-header-settings:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install from lockfile
+        run: npm ci
+      - name: Typecheck
+        run: npm run lint
+      - name: Focused settings preservation and dual-regime header regressions
+        run: >
+          npx tsx --test
+          test/hoa-tieu-header-settings-preservation.test.ts
+          test/header-dual-regime.test.ts
