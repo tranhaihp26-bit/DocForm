@@ -22,3 +22,9 @@
 - **Sửa contract nguồn chưa quản lý:** Khi scope `untouched_source` bỏ `runIndex`, auditor giờ trả một `NOT_APPLICABLE` cho mỗi text-bearing run được chọn, với `runIndex` và evidence `part#p[n]/r[n]`. Run phi văn bản bị bỏ qua; `untouchedSourceRuns` đếm run được xác định, không đếm một scope như thể là một run.
 - **Fixture/test:** paragraph nguồn tổng hợp có hai run chữ cách nhau bằng run tab; xác nhận hai hàng `NOT_APPLICABLE` với locator `/r[0]` và `/r[2]`, counter bằng 2. Scope source đơn lẻ vẫn không tham gia đánh giá font profile.
 - **Kiểm tra cục bộ sau sửa:** `npm run lint` — PASS, exit 0; `npx tsx test/ooxml-font-size-audit.test.ts` — PASS, 2/2, 0 fail/skip. CI mới chờ sau khi cập nhật PR branch; chưa có thay đổi về việc thiếu tích hợp exporter hoặc Word/WPS/UAT.
+
+## CI sau review correction — 07/11/2026
+
+- **Code head đã kiểm:** `b9209aebbd8c6899d8e727e6e505fae182805026` (PR #37 tại thời điểm chạy). [GitHub Actions run 42350667718](https://github.com/tranhaihp26-bit/DocForm/actions/runs/42350667718) kết thúc `success`: `npm ci --legacy-peer-deps`, `npm run lint`, và 31/31 test thuộc năm suite V2.2 được workflow chọn, 0 fail/skip.
+- Workflow không chạy `test/ooxml-font-size-audit.test.ts`; focused test mới đã PASS cục bộ 2/2, cùng `npm run lint` PASS sau sửa. Run CI trên code head không chứng minh Word/WPS render hay DOCX hậu stamp.
+- Issue #8 vẫn `OPEN`; PR #37 vẫn draft. Auditor vẫn chưa nối exporter/candidate; không gắn `VERIFIED_OOXML`, `VERIFIED_RENDER`, UAT hay acceptance.
