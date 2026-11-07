@@ -465,6 +465,35 @@ export interface TableDecision {
   reason: string;
 }
 
+interface CandidateTableElement {
+  xml: string;
+  wrapped: boolean;
+  hasExplicitTableId: boolean;
+}
+
+function extractCandidateTablesFromBody(documentXml: string): CandidateTableElement[] {
+  const tables: CandidateTableElement[] = [];
+  const visit = (element: { tag: string; xml: string }, wrapped: boolean): void => {
+    if (element.tag === "w:tbl") {
+      tables.push({
+        xml: element.xml,
+        wrapped,
+        hasExplicitTableId: /<w:tblCaption\b[^>]*\bw:val\s*=\s*(?:"[^"]*"|'[^']*')/u.test(element.xml),
+      });
+      return;
+    }
+    if (!/<w:tbl\b/u.test(element.xml)) return;
+    for (const child of extractDirectChildren(element.xml, element.tag)) {
+      visit(child, true);
+    }
+  };
+
+  for (const child of extractDirectChildren(documentXml, "w:body")) {
+    visit(child, false);
+  }
+  return tables;
+}
+
 export interface CandidateExportVerificationResult {
   safe: boolean;
   diffs: TableDiff[];
@@ -650,15 +679,25 @@ export async function verifyCandidateExportFidelity(
   }
 
   // Trích xuất các bảng trong candidate OOXML
-  const candidateTblElements = extractDirectChildren(candidateXml, "w:body", new Set(["w:tbl"]));
+  const candidateTblElements = extractCandidateTablesFromBody(candidateXml);
   const candidateModels: TableModel[] = [];
   const candidateUnsupportedFeaturesById = new Map<string, ReturnType<typeof scanRawTableXmlFeatures>>();
+  const candidateWrappedTableIndices = new Set<number>();
 
   for (let idx = 0; idx < candidateTblElements.length; idx++) {
     const tblXml = candidateTblElements[idx].xml;
     const model = extractTableModelFromXml(tblXml, `candidate_table_${idx}`);
     candidateModels.push(model);
-    const unsupported = scanRawTableXmlFeatures(tblXml, model.tableId, model.tableId);
+    if (candidateTblElements[idx].wrapped) candidateWrappedTableIndices.add(idx);
+    const unsupported = [
+      ...scanRawTableXmlFeatures(tblXml, model.tableId, model.tableId),
+      ...(candidateTblElements[idx].wrapped ? [{
+        code: "unsupported_body_element" as const,
+        tableId: model.tableId,
+        blockId: model.tableId,
+        description: "Bảng nằm trong container OOXML ngoài trực tiếp w:body nên quan hệ container chưa được kiểm chứng",
+      }] : []),
+    ];
     if (unsupported.length > 0) candidateUnsupportedFeaturesById.set(model.tableId, unsupported);
   }
 
@@ -672,8 +711,10 @@ export async function verifyCandidateExportFidelity(
       uniqueSourceModels.set(id, model);
     }
     sourceIdByAlias.set(key, id);
-    sourceIdByAlias.set(id, id);
   }
+  // Canonical IDs must win over aliases that happen to have the same key.
+  // Otherwise a mixed alias/canonical object can rewrite manifest order.
+  for (const id of uniqueSourceModels.keys()) sourceIdByAlias.set(id, id);
   const approvedSet = new Set(options?.approvedNewTableIds || manifest?.approvedNewTableIds || []);
   const manifestTableIdsInOrder = (Array.isArray(manifest?.tableIds) ? manifest.tableIds : [])
     .map((id: string) => sourceIdByAlias.get(id) || id);
@@ -710,15 +751,17 @@ export async function verifyCandidateExportFidelity(
   const candidateIndicesById = new Map<string, number[]>();
   for (let idx = 0; idx < candidateModels.length; idx++) {
     const tableId = candidateModels[idx].tableId;
-    if (!tableId || tableId.startsWith("candidate_table_")) continue;
+    if (!tableId || !candidateTblElements[idx].hasExplicitTableId) continue;
     const indices = candidateIndicesById.get(tableId) || [];
     indices.push(idx);
     candidateIndicesById.set(tableId, indices);
   }
   const duplicateCandidateIds = new Set<string>();
+  const duplicateCandidateIndices = new Set<number>();
   for (const [tableId, indices] of candidateIndicesById) {
     if (indices.length < 2) continue;
     duplicateCandidateIds.add(tableId);
+    indices.forEach(idx => duplicateCandidateIndices.add(idx));
     diffs.push({
       type: "property_mismatch",
       tableId,
@@ -840,7 +883,7 @@ export async function verifyCandidateExportFidelity(
   if (uniqueSourceModels.size === 1 && candidateModels.length === 1 && matchedCandidateIndices.size === 0) {
     const [soleSourceId, soleSourceModel] = Array.from(uniqueSourceModels.entries())[0];
     const soleCandidate = candidateModels[0];
-    const candidateHasExplicitId = Boolean(soleCandidate.tableId && !soleCandidate.tableId.startsWith("candidate_table_"));
+    const candidateHasExplicitId = candidateTblElements[0].hasExplicitTableId;
     if (!candidateHasExplicitId && soleCandidate.rowsCount === soleSourceModel.rowsCount && soleCandidate.columnsCount === soleSourceModel.columnsCount) {
       matchedCandidateIndices.add(0);
       sourceToCandidateMap.set(soleSourceId, soleCandidate);
@@ -966,6 +1009,53 @@ export async function verifyCandidateExportFidelity(
     if (!matchedCandidateIndices.has(idx)) {
       const newTable = candidateModels[idx];
       const newId = newTable.tableId || `candidate_table_${idx}`;
+      if (candidateWrappedTableIndices.has(idx)) {
+        const lineage: TableInventoryLineage = uniqueSourceModels.has(newId)
+          ? "source_table_id"
+          : manifestTableIds.has(newId)
+            ? "source_manifest_id"
+            : approvedSet.has(newId)
+              ? "approved_new_table_id"
+              : "unprovenanced_candidate";
+        diffs.push({
+          type: "property_mismatch",
+          tableId: newId,
+          messageVi: "Bảng ứng viên nằm trong container OOXML ngoài trực tiếp w:body; cần đối chiếu nguồn trước khi xuất bản biến đổi.",
+        });
+        violations.push({
+          code: "candidate_table_requires_review",
+          tableId: newId,
+          messageVi: "Bảng ứng viên nằm trong một container OOXML chưa được kiểm chứng; cần đối chiếu nguồn.",
+          canDownloadOriginal: true,
+        });
+        tableDecisions.push({
+          tableId: newId,
+          region: "body",
+          role: "unknown",
+          lineage,
+          decision: "NEEDS_REVIEW",
+          reason: "Bảng được tìm thấy bên trong container thay vì là phần tử trực tiếp của w:body; không thể xác nhận quan hệ container bằng TableModel.",
+        });
+        continue;
+      }
+      if (duplicateCandidateIndices.has(idx)) {
+        const lineage: TableInventoryLineage = uniqueSourceModels.has(newId)
+          ? "source_table_id"
+          : manifestTableIds.has(newId)
+            ? "source_manifest_id"
+            : approvedSet.has(newId)
+              ? "approved_new_table_id"
+              : "unprovenanced_candidate";
+        tableDecisions.push({
+          tableId: newId,
+          region: "body",
+          role: "unknown",
+          lineage,
+          decision: "NEEDS_REVIEW",
+          reason: "ID bảng ứng viên xuất hiện nhiều lần; lineage không xác định được bảng nào tương ứng với quyết định nguồn/duyệt.",
+        });
+        continue;
+      }
       if (options?.approvedNewTableIds || isDocxImport) {
         if (!approvedSet.has(newId) || manifestTableIds.has(newId)) {
           unexplainedNewTables.push(newTable);

@@ -163,6 +163,54 @@ describe("DF-C06 table inventory and locked-region contract", () => {
     ]);
   });
 
+  it("rejects duplicate explicit IDs in the generated candidate namespace, even when approved", async () => {
+    const first = tableXml("candidate_table_custom", [["Bảng A"]]);
+    const second = tableXml("candidate_table_custom", [["Bảng B"]]);
+    const result = await verifyCandidateExportFidelity(await candidateBytes(documentXml(`${first}${second}`)), {}, {
+      sourceKind: "scratch",
+      sourceBlockIds: [],
+      tableIds: [],
+      unsupportedFeatures: [],
+    }, { approvedNewTableIds: ["candidate_table_custom"] });
+
+    assert.equal(result.safe, false, "duplicate explicit IDs must not both inherit an approved-new decision");
+    assert.ok(result.violations.some(violation => violation.code === "duplicate_table_id"));
+    assert.ok(result.tableDecisions?.every(decision => decision.decision === "NEEDS_REVIEW"));
+  });
+
+  it("keeps canonical manifest order when an alias collides with another canonical key", async () => {
+    const sourceA = extractTableModelFromXml(tableXml("table-a", [["A"]]), "table-a");
+    const sourceB = extractTableModelFromXml(tableXml("table-b", [["B"]]), "table-b");
+    const result = await verifyCandidateExportFidelity(await candidateBytes(documentXml(
+      `${tableXml("table-b", [["B"]])}${tableXml("table-a", [["A"]])}`,
+    )), {
+      "alias-for-a": sourceA,
+      "table-a": sourceB,
+    }, {
+      sourceKind: "uploaded_docx",
+      sourceBlockIds: ["alias-for-a", "table-a"],
+      tableIds: ["table-a", "table-b"],
+      unsupportedFeatures: [],
+    });
+
+    assert.equal(result.safe, false, "canonical ID lookup must preserve manifest order under alias collision");
+    assert.ok(result.violations.some(violation => violation.code === "table_order_mismatch"));
+  });
+
+  it("marks a table nested in a body content-control wrapper for review", async () => {
+    const wrappedTable = `<w:sdt><w:sdtPr/><w:sdtContent>${tableXml("wrapped-content", [["Nội dung"]])}</w:sdtContent></w:sdt>`;
+    const result = await verifyCandidateExportFidelity(await candidateBytes(documentXml(wrappedTable)), {}, {
+      sourceKind: "scratch",
+      sourceBlockIds: [],
+      tableIds: [],
+      unsupportedFeatures: [],
+    });
+
+    assert.equal(result.safe, false, "body tables in an unmodeled content-control wrapper must not be omitted from inventory");
+    assert.deepEqual(result.tableDecisions?.map(decision => [decision.role, decision.decision]), [["unknown", "NEEDS_REVIEW"]]);
+    assert.ok(result.violations.some(violation => violation.code === "candidate_table_requires_review"));
+  });
+
   it("keeps an explicitly approved new table in the content-table inventory", async () => {
     const newTable = tableXml("new-content-01", [["Hạng mục", "Đơn vị"], ["Kế hoạch", "Phòng A"]]);
     const result = await verifyCandidateExportFidelity(await candidateBytes(documentXml(newTable)), {}, {
