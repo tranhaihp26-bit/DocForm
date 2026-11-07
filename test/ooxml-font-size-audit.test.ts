@@ -48,6 +48,7 @@ const documentXml = `<?xml version="1.0" encoding="UTF-8"?>
     <w:p><w:r><w:t>document default</w:t></w:r></w:p>
     <w:p><w:r><w:rPr><w:sz w:val="29"/><w:szCs w:val="28"/></w:rPr><w:t>second odd half point</w:t></w:r></w:p>
     <w:p><w:r><w:rPr><w:sz w:val="28"/></w:rPr><w:t>one channel missing</w:t></w:r></w:p>
+    <w:p><w:r><w:t>untouched source A</w:t></w:r><w:r><w:tab/></w:r><w:r><w:t>untouched source B</w:t></w:r></w:p>
     <w:sectPr><w:headerReference w:type="default" r:id="rIdHeader"/><w:footerReference w:type="default" r:id="rIdFooter"/></w:sectPr>
   </w:body>
 </w:document>`;
@@ -88,7 +89,7 @@ test("audits direct and inherited OOXML font sizes only for caller-designated en
     managedScope("body.odd", "word/document.xml", 5, 14),
     managedScope("header.parent", "word/header1.xml", 0, 14),
     managedScope("footer.label", "word/footer1.xml", 0, 13),
-    { role: "source.untouched", partPath: "word/document.xml", paragraphIndex: 1, origin: "untouched_source" },
+    { role: "source.untouched", partPath: "word/document.xml", paragraphIndex: 7, origin: "untouched_source" },
     managedScope("body.missing-paragraph", "word/document.xml", 99, 14),
     managedScope("body.non-integer-expectation", "word/document.xml", 0, 14.5),
   ];
@@ -110,11 +111,18 @@ test("audits direct and inherited OOXML font sizes only for caller-designated en
   assert.equal(byRole.get("footer.label")?.status, "PASS", "footer parts inherit shared styles.xml values");
   assert.equal(byRole.get("source.untouched")?.status, "NOT_APPLICABLE", "untouched source is not a managed-font failure");
   assert.equal(byRole.get("source.untouched")?.origin, "untouched_source");
+  const untouchedRuns = report.results.filter((result) => result.role === "source.untouched");
+  assert.equal(untouchedRuns.length, 2, "an unindexed source paragraph yields one result per text-bearing run");
+  assert.deepEqual(untouchedRuns.map((result) => result.runIndex), [0, 2], "non-text runs are excluded while evidence keeps original run indexes");
+  assert.deepEqual(untouchedRuns.map((result) => result.evidence), [
+    "word/document.xml#p[7]/r[0]",
+    "word/document.xml#p[7]/r[2]",
+  ]);
   assert.equal(byRole.get("body.missing-paragraph")?.status, "NOT_EVALUATED");
   assert.equal(byRole.get("body.non-integer-expectation")?.status, "FAIL", "a 14.5pt expectation is rejected without rounding");
   assert.equal(report.failedManagedRuns, 3);
   assert.equal(report.notEvaluatedManagedRuns, 2);
-  assert.equal(report.untouchedSourceRuns, 1);
+  assert.equal(report.untouchedSourceRuns, 2);
 
   const withoutInheritedCs = await auditDocxFontSizes(
     await syntheticDocx(stylesXml.replaceAll('<w:szCs w:val="28"/>', "")),

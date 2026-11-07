@@ -34,6 +34,7 @@ export interface FontSizeAuditResult {
   expected: { fontSizePt: number } | null;
   actual: Record<FontSizeChannel, FontSizeChannelValue> | null;
   origin: FontSizeAuditOrigin;
+  runIndex?: number;
   status: FontSizeAuditStatus;
   evidence: string;
   reason?: string;
@@ -448,18 +449,7 @@ function evaluateScope(scope: FontSizeAuditScope, partXml: string | null, styles
   const origin = scope.origin;
   const expected = scope.expectedPt === undefined ? null : { fontSizePt: scope.expectedPt };
   const evidencePrefix = `${scope.partPath}#p[${scope.paragraphIndex}]`;
-  if (origin === "untouched_source") {
-    return [{
-      role: scope.role,
-      expected,
-      actual: null,
-      origin,
-      status: "NOT_APPLICABLE",
-      evidence: `${evidencePrefix}${scope.runIndex === undefined ? "" : `/r[${scope.runIndex}]`}`,
-      reason: "Untouched source is outside the engine-owned font policy; no font-size failure is attributed to it.",
-    }];
-  }
-  if (scope.expectedPt === undefined || !Number.isInteger(scope.expectedPt) || scope.expectedPt <= 0) {
+  if (origin === "engine_managed" && (scope.expectedPt === undefined || !Number.isInteger(scope.expectedPt) || scope.expectedPt <= 0)) {
     return [{
       role: scope.role,
       expected,
@@ -483,6 +473,22 @@ function evaluateScope(scope: FontSizeAuditScope, partXml: string | null, styles
     : allRuns[scope.runIndex] ? [allRuns[scope.runIndex]] : [];
   if (selectedRuns.length === 0) return [partParseFailure(scope, "No selected text-bearing run exists at the requested paragraph/run locator.")];
 
+  if (origin === "untouched_source") {
+    return selectedRuns.map((run) => {
+      const runIndex = allRuns.indexOf(run);
+      return {
+        role: scope.role,
+        expected: null,
+        actual: null,
+        origin,
+        runIndex,
+        status: "NOT_APPLICABLE",
+        evidence: `${evidencePrefix}/r[${runIndex}]`,
+        reason: "Untouched source is outside the engine-owned font policy; no font-size failure is attributed to it.",
+      };
+    });
+  }
+
   return selectedRuns.map((run) => {
     const runIndex = allRuns.indexOf(run);
     const evidence = `${evidencePrefix}/r[${runIndex}]`;
@@ -505,7 +511,7 @@ function evaluateScope(scope: FontSizeAuditScope, partXml: string | null, styles
         : unresolved
           ? [actual.sz.reason, actual.szCs.reason].filter(Boolean).join(" ")
           : undefined;
-    return { role: scope.role, expected, actual, origin, status, evidence, ...(reason ? { reason } : {}) };
+    return { role: scope.role, expected, actual, origin, runIndex, status, evidence, ...(reason ? { reason } : {}) };
   });
 }
 
@@ -515,7 +521,7 @@ function summarize(results: FontSizeAuditResult[]): FontSizeAuditReport {
     evaluatedManagedRuns: results.filter((result) => result.origin === "engine_managed" && (result.status === "PASS" || result.status === "FAIL")).length,
     failedManagedRuns: results.filter((result) => result.origin === "engine_managed" && result.status === "FAIL").length,
     notEvaluatedManagedRuns: results.filter((result) => result.origin === "engine_managed" && result.status === "NOT_EVALUATED").length,
-    untouchedSourceRuns: results.filter((result) => result.origin === "untouched_source").length,
+    untouchedSourceRuns: results.filter((result) => result.origin === "untouched_source" && result.runIndex !== undefined).length,
   };
 }
 
