@@ -240,6 +240,20 @@ export function compareTableFidelity(source: TableModel, output: TableModel): Ta
         });
       }
 
+      // Stable cell identity is derived from table ID + row/cell coordinate.
+      // Compare gridColumn explicitly as it can change while the cell count and
+      // text remain identical (for example after a malformed grid reconstruction).
+      if (sCell.gridColumn !== oCell.gridColumn) {
+        diffs.push({
+          type: "merge_mismatch",
+          tableId,
+          location: { row: rIdx, col: cIdx },
+          messageVi: `Vị trí ô trên lưới (gridColumn) tại hàng ${rIdx + 1}, ô ${cIdx + 1} bị thay đổi: nguồn ${sCell.gridColumn}, đầu ra ${oCell.gridColumn}.`,
+          sourceVal: sCell.gridColumn,
+          outputVal: oCell.gridColumn,
+        });
+      }
+
       // Gộp dọc vMerge
       if (sCell.vMerge !== oCell.vMerge) {
         diffs.push({
@@ -431,11 +445,53 @@ export function compareTableFidelity(source: TableModel, output: TableModel): Ta
   return diffs;
 }
 
+export type TableInventoryRole = "header_layout" | "signature_distribution" | "content_table" | "unknown";
+
+export type TableInventoryLineage =
+  | "system_table_id"
+  | "source_table_id"
+  | "approved_new_table_id"
+  | "unprovenanced_candidate"
+  | "new_document_table"
+  | "unique_single_table_fallback"
+  | "source_manifest_id";
+
 export interface TableDecision {
   tableId: string;
   region: string;
+  role: TableInventoryRole;
+  lineage: TableInventoryLineage;
   decision: "PASS" | "FAIL" | "NEEDS_REVIEW";
   reason: string;
+}
+
+interface CandidateTableElement {
+  xml: string;
+  wrapped: boolean;
+  hasExplicitTableId: boolean;
+}
+
+function extractCandidateTablesFromBody(documentXml: string): CandidateTableElement[] {
+  const tables: CandidateTableElement[] = [];
+  const visit = (element: { tag: string; xml: string }, wrapped: boolean): void => {
+    if (element.tag === "w:tbl") {
+      tables.push({
+        xml: element.xml,
+        wrapped,
+        hasExplicitTableId: /<w:tblCaption\b[^>]*\bw:val\s*=\s*(?:"[^"]*"|'[^']*')/u.test(element.xml),
+      });
+      return;
+    }
+    if (!/<w:tbl\b/u.test(element.xml)) return;
+    for (const child of extractDirectChildren(element.xml, element.tag)) {
+      visit(child, true);
+    }
+  };
+
+  for (const child of extractDirectChildren(documentXml, "w:body")) {
+    visit(child, false);
+  }
+  return tables;
 }
 
 export interface CandidateExportVerificationResult {
@@ -587,6 +643,8 @@ export async function verifyCandidateExportFidelity(
       tableDecisions: manifest.tableIds.map((id: string) => ({
         tableId: id,
         region: "body",
+        role: "content_table" as const,
+        lineage: "source_manifest_id" as const,
         decision: "FAIL" as const,
         reason: "Bảng có trong manifest nguồn nhưng không được đưa vào kiểm chứng.",
       })),
@@ -621,101 +679,153 @@ export async function verifyCandidateExportFidelity(
   }
 
   // Trích xuất các bảng trong candidate OOXML
-  const candidateTblElements = extractDirectChildren(candidateXml, "w:body", new Set(["w:tbl"]));
+  const candidateTblElements = extractCandidateTablesFromBody(candidateXml);
   const candidateModels: TableModel[] = [];
+  const candidateUnsupportedFeaturesById = new Map<string, ReturnType<typeof scanRawTableXmlFeatures>>();
+  const candidateWrappedTableIndices = new Set<number>();
 
   for (let idx = 0; idx < candidateTblElements.length; idx++) {
     const tblXml = candidateTblElements[idx].xml;
     const model = extractTableModelFromXml(tblXml, `candidate_table_${idx}`);
     candidateModels.push(model);
+    if (candidateTblElements[idx].wrapped) candidateWrappedTableIndices.add(idx);
+    const unsupported = [
+      ...scanRawTableXmlFeatures(tblXml, model.tableId, model.tableId),
+      ...(candidateTblElements[idx].wrapped ? [{
+        code: "unsupported_body_element" as const,
+        tableId: model.tableId,
+        blockId: model.tableId,
+        description: "Bảng nằm trong container OOXML ngoài trực tiếp w:body nên quan hệ container chưa được kiểm chứng",
+      }] : []),
+    ];
+    if (unsupported.length > 0) candidateUnsupportedFeaturesById.set(model.tableId, unsupported);
   }
 
-  // Phân loại bảng layout hệ thống (header/signature) để không nhầm thành bảng nội dung phát sinh ngoài ý muốn
-  const isLayoutTable = (cm: TableModel): { isLayout: boolean; region?: "header" | "signature" } => {
-    if (cm.tableId === "system_header_layout_table") return { isLayout: true, region: "header" };
-    if (cm.tableId === "system_signature_layout_table") return { isLayout: true, region: "signature" };
-
-    // Bảng có ID nghiệp vụ rõ ràng khác system_ không bao giờ là bảng layout hệ thống
-    const hasExplicitContentId = Boolean(cm.tableId && !cm.tableId.startsWith("candidate_table_") && !cm.tableId.startsWith("system_"));
-    if (hasExplicitContentId) {
-      return { isLayout: false };
-    }
-
-    if ((cm.rowsCount === 1 || cm.rowsCount === 2) && cm.columnsCount === 2) {
-      const cell0Text = cm.rows[0]?.cells?.[0]?.text || "";
-      const cell1Text = cm.rows[0]?.cells?.[1]?.text || "";
-
-      // Header thể thức NĐ 30 / HD 05: Cột phải (cell 1) là Quốc hiệu / Tiêu ngữ (Cộng hòa / Độc lập / Đảng cộng sản)
-      const hasNationalHeaderOnRight =
-        cell1Text.includes("CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM") ||
-        cell1Text.includes("ĐẢNG CỘNG SẢN VIỆT NAM") ||
-        cell1Text.includes("Độc lập - Tự do - Hạnh phúc");
-
-      if (hasNationalHeaderOnRight) {
-        return { isLayout: true, region: "header" };
-      }
-
-      // Bảng chữ ký ND30 không có viền và có nhãn Nơi nhận / Ký đóng dấu
-      const allText = `${cell0Text} ${cell1Text}`;
-      if (!cm.hasBorders && (allText.includes("Nơi nhận:") || allText.includes("Ký, đóng dấu") || allText.includes("Ký, ghi rõ họ tên"))) {
-        return { isLayout: true, region: "signature" };
-      }
-    }
-    return { isLayout: false };
-  };
-
-  const layoutCandidateIndices = new Set<number>();
-  for (let idx = 0; idx < candidateModels.length; idx++) {
-    const cm = candidateModels[idx];
-    const layout = isLayoutTable(cm);
-    if (layout.isLayout && layout.region) {
-      layoutCandidateIndices.add(idx);
-      tableDecisions.push({
-        tableId: cm.tableId && !cm.tableId.startsWith("candidate_table_") ? cm.tableId : `system_${layout.region}_table`,
-        region: layout.region,
-        decision: "PASS",
-        reason: `Bảng layout thể thức ${layout.region === "header" ? "phần đầu" : "khối chữ ký"}.`,
-      });
-    }
-  }
-
-  // 1. Kiểm tra ID trùng lặp giữa các bảng trong candidate OOXML (không tính bảng layout hệ thống)
-  const seenCandidateIds = new Map<string, number>();
-  for (let idx = 0; idx < candidateModels.length; idx++) {
-    if (layoutCandidateIndices.has(idx)) continue;
-    const cm = candidateModels[idx];
-    if (cm.tableId && !cm.tableId.startsWith("candidate_table_")) {
-      if (seenCandidateIds.has(cm.tableId)) {
-        diffs.push({
-          type: "property_mismatch",
-          tableId: cm.tableId,
-          messageVi: `Phát hiện ID bảng bị trùng lặp trong bản xuất Word: "${cm.tableId}" xuất hiện ít nhất 2 lần.`,
-        });
-        violations.push({
-          code: "duplicate_table_id",
-          messageVi: `Phát hiện ID bảng "${cm.tableId}" bị lặp lại trong tệp Word ứng viên.`,
-          canDownloadOriginal: true,
-        });
-      } else {
-        seenCandidateIds.set(cm.tableId, idx);
-      }
-    }
-  }
-
-  // Deduplicate source models in case both block.id and tableModel.tableId were indexed
+  // Source TableModels are the authoritative content-table inventory. Do not
+  // infer source identity or editability from a candidate table's position.
   const uniqueSourceModels = new Map<string, TableModel>();
+  const sourceIdByAlias = new Map<string, string>();
   for (const [key, model] of Object.entries(importedTables || {})) {
     const id = model.tableId || key;
     if (!uniqueSourceModels.has(id)) {
       uniqueSourceModels.set(id, model);
+    }
+    sourceIdByAlias.set(key, id);
+  }
+  // Canonical IDs must win over aliases that happen to have the same key.
+  // Otherwise a mixed alias/canonical object can rewrite manifest order.
+  for (const id of uniqueSourceModels.keys()) sourceIdByAlias.set(id, id);
+  const approvedSet = new Set(options?.approvedNewTableIds || manifest?.approvedNewTableIds || []);
+  const manifestTableIdsInOrder = (Array.isArray(manifest?.tableIds) ? manifest.tableIds : [])
+    .map((id: string) => sourceIdByAlias.get(id) || id);
+  const manifestTableIds = new Set<string>(manifestTableIdsInOrder);
+  const isDocxImport = manifest?.sourceKind === "uploaded_docx" ||
+    (manifest?.sourceKind == null && Boolean(manifest));
+  const unsupportedSourceFeaturesById = new Map<string, Array<{ code?: string; description?: string }>>();
+  for (const feature of manifest?.unsupportedFeatures || []) {
+    const aliases = [feature.tableId, feature.blockId].filter((value): value is string => typeof value === "string" && value.length > 0);
+    const sourceId = aliases.map(alias => sourceIdByAlias.get(alias) || (manifestTableIds.has(alias) ? alias : undefined)).find(Boolean);
+    if (!sourceId) continue;
+    const features = unsupportedSourceFeaturesById.get(sourceId) || [];
+    features.push(feature);
+    unsupportedSourceFeaturesById.set(sourceId, features);
+  }
+
+  // Only renderer-reserved IDs identify generated locked layout tables. Text,
+  // borders, dimensions, and document position are not sufficient provenance.
+  const getSystemLayoutRole = (cm: TableModel): { role: "header_layout" | "signature_distribution"; region: "header" | "signature" } | undefined => {
+    // Source lineage wins if an uploaded table happens to use a reserved ID.
+    if (uniqueSourceModels.has(cm.tableId) || manifestTableIds.has(cm.tableId) || approvedSet.has(cm.tableId)) return undefined;
+    // A caption is part of the candidate DOCX and is not proof that an
+    // uploaded source table was inventoried. Without source lineage, a
+    // reserved caption in an uploaded document must remain unexplained.
+    if (isDocxImport) return undefined;
+    if (cm.tableId === "system_header_layout_table") return { role: "header_layout", region: "header" };
+    if (cm.tableId === "system_signature_layout_table") return { role: "signature_distribution", region: "signature" };
+    return undefined;
+  };
+
+  // Table IDs must be unique across every candidate table, including locked
+  // layout tables. Otherwise duplicated reserved IDs could all be treated as
+  // PASS and evade the source-to-candidate uniqueness checks.
+  const candidateIndicesById = new Map<string, number[]>();
+  for (let idx = 0; idx < candidateModels.length; idx++) {
+    const tableId = candidateModels[idx].tableId;
+    if (!tableId || !candidateTblElements[idx].hasExplicitTableId) continue;
+    const indices = candidateIndicesById.get(tableId) || [];
+    indices.push(idx);
+    candidateIndicesById.set(tableId, indices);
+  }
+  const duplicateCandidateIds = new Set<string>();
+  const duplicateCandidateIndices = new Set<number>();
+  for (const [tableId, indices] of candidateIndicesById) {
+    if (indices.length < 2) continue;
+    duplicateCandidateIds.add(tableId);
+    indices.forEach(idx => duplicateCandidateIndices.add(idx));
+    diffs.push({
+      type: "property_mismatch",
+      tableId,
+      messageVi: `Phát hiện ID bảng bị trùng lặp trong bản xuất Word: "${tableId}" xuất hiện ít nhất 2 lần.`,
+    });
+    violations.push({
+      code: "duplicate_table_id",
+      tableId,
+      messageVi: `Phát hiện ID bảng "${tableId}" bị lặp lại trong tệp Word ứng viên.`,
+      canDownloadOriginal: true,
+    });
+  }
+
+  const layoutCandidateIndices = new Set<number>();
+  for (let idx = 0; idx < candidateModels.length; idx++) {
+    const cm = candidateModels[idx];
+    const layout = getSystemLayoutRole(cm);
+    if (layout) {
+      layoutCandidateIndices.add(idx);
+      if (duplicateCandidateIds.has(cm.tableId)) {
+        tableDecisions.push({
+          tableId: cm.tableId,
+          region: layout.region,
+          role: "unknown",
+          lineage: "system_table_id",
+          decision: "NEEDS_REVIEW",
+          reason: "ID layout hệ thống xuất hiện ở nhiều bảng ứng viên nên không thể xác nhận bảng nào được bảo vệ.",
+        });
+        continue;
+      }
+      const candidateUnsupported = candidateUnsupportedFeaturesById.get(cm.tableId) || [];
+      if (candidateUnsupported.length > 0) {
+        tableDecisions.push({
+          tableId: cm.tableId,
+          region: layout.region,
+          role: "unknown",
+          lineage: "system_table_id",
+          decision: "NEEDS_REVIEW",
+          reason: `Bảng có ID layout hệ thống nhưng chứa cấu trúc OOXML chưa hỗ trợ (${candidateUnsupported.map(feature => feature.code).join(", ")}); cần đối chiếu nguồn.`,
+        });
+        violations.push({
+          code: "locked_layout_requires_review",
+          tableId: cm.tableId,
+          messageVi: "Bảng layout đầu/cuối có cấu trúc OOXML chưa được kiểm chứng; không cho phép xuất bản biến đổi.",
+          canDownloadOriginal: true,
+        });
+        continue;
+      }
+      tableDecisions.push({
+        tableId: cm.tableId,
+        region: layout.region,
+        role: layout.role,
+        lineage: "system_table_id",
+        decision: "PASS",
+        reason: `Bảng layout được nhận diện bằng ID hệ thống đã dành riêng (${cm.tableId}); không phân loại từ vị trí hoặc nội dung ô.`,
+      });
     }
   }
 
   // Kiểm tra tính toàn vẹn của manifest nguồn: Mọi ID trong manifest nguồn phải có mặt trong candidate và uniqueSourceModels
   if (manifest?.tableIds && Array.isArray(manifest.tableIds) && manifest.tableIds.length > 0) {
     const candidateTableIds = new Set(candidateModels.map(cm => cm.tableId));
-    const missingManifestIds = manifest.tableIds.filter((id: string) => 
-      !candidateTableIds.has(id) || (!uniqueSourceModels.has(id) && !(options?.approvedNewTableIds || []).includes(id))
+    const missingManifestIds = manifestTableIdsInOrder.filter((id: string) =>
+      !candidateTableIds.has(id) || (!uniqueSourceModels.has(id) && !(approvedSet.has(id) && !manifestTableIds.has(id)))
     );
     if (missingManifestIds.length > 0) {
       diffs.push({
@@ -732,6 +842,8 @@ export async function verifyCandidateExportFidelity(
         tableDecisions.push({
           tableId: id,
           region: "body",
+          role: "content_table",
+          lineage: "source_manifest_id",
           decision: "FAIL",
           reason: "Bảng có trong manifest nguồn nhưng không được bảo toàn trong DOCX ứng viên.",
         });
@@ -771,7 +883,7 @@ export async function verifyCandidateExportFidelity(
   if (uniqueSourceModels.size === 1 && candidateModels.length === 1 && matchedCandidateIndices.size === 0) {
     const [soleSourceId, soleSourceModel] = Array.from(uniqueSourceModels.entries())[0];
     const soleCandidate = candidateModels[0];
-    const candidateHasExplicitId = Boolean(soleCandidate.tableId && !soleCandidate.tableId.startsWith("candidate_table_"));
+    const candidateHasExplicitId = candidateTblElements[0].hasExplicitTableId;
     if (!candidateHasExplicitId && soleCandidate.rowsCount === soleSourceModel.rowsCount && soleCandidate.columnsCount === soleSourceModel.columnsCount) {
       matchedCandidateIndices.add(0);
       sourceToCandidateMap.set(soleSourceId, soleCandidate);
@@ -781,8 +893,8 @@ export async function verifyCandidateExportFidelity(
 
   // 3. Kiểm tra thứ tự xuất hiện của các bảng nguồn trong bản xuất theo manifest được duyệt
   let isOrderValid = true;
-  const expectedOrderedTableIds = (manifest?.tableIds && Array.isArray(manifest.tableIds) && manifest.tableIds.length > 1)
-    ? manifest.tableIds
+  const expectedOrderedTableIds = manifestTableIdsInOrder.length > 1
+    ? manifestTableIdsInOrder
     : Array.from(uniqueSourceModels.keys());
 
   const orderedCandidateIndices: Array<{ tableId: string; candIdx: number }> = [];
@@ -833,6 +945,8 @@ export async function verifyCandidateExportFidelity(
       tableDecisions.push({
         tableId,
         region: "body",
+        role: "content_table",
+        lineage: "source_table_id",
         decision: "FAIL",
         reason: "Bảng nguồn bị thiếu trong DOCX ứng viên.",
       });
@@ -845,17 +959,40 @@ export async function verifyCandidateExportFidelity(
     const tableDiffs = compareTableFidelity(expectedModel, candidateModel);
     diffs.push(...tableDiffs);
 
-    if (tableDiffs.length === 0) {
+    const unsupportedFeatures = [
+      ...(unsupportedSourceFeaturesById.get(tableId) || []),
+      ...(candidateUnsupportedFeaturesById.get(candidateModel.tableId) || []),
+    ];
+    if (unsupportedFeatures.length > 0) {
       tableDecisions.push({
         tableId,
         region: "body",
+        role: "unknown",
+        lineage: candidateModel.tableId === tableId ? "source_table_id" : "unique_single_table_fallback",
+        decision: "NEEDS_REVIEW",
+        reason: `Bảng có cấu trúc/định dạng chưa được hỗ trợ (${unsupportedFeatures.map(feature => feature.code).filter(Boolean).join(", ") || "unknown"}); giữ nguyên và cần đối chiếu nguồn.`,
+      });
+      violations.push({
+        code: "source_table_requires_review",
+        tableId,
+        messageVi: "Bảng nguồn chứa thành phần OOXML chưa được bảo toàn/kiểm chứng; cần đối chiếu với tệp gốc trước khi xuất bản biến đổi.",
+        canDownloadOriginal: true,
+      });
+    } else if (tableDiffs.length === 0) {
+      tableDecisions.push({
+        tableId,
+        region: "body",
+        role: "content_table",
+        lineage: candidateModel.tableId === tableId ? "source_table_id" : "unique_single_table_fallback",
         decision: "PASS",
-        reason: "Bảo toàn 100% cấu trúc hàng, cột, ô gộp, căn lề và định dạng runs.",
+        reason: `Bảng nội dung được ghép theo ${candidateModel.tableId === tableId ? "tableId nguồn" : "bằng chứng duy nhất một bảng cùng cấu trúc"}; bảo toàn cấu trúc hàng, cột, ô gộp, căn lề và định dạng runs.`,
       });
     } else {
       tableDecisions.push({
         tableId,
         region: "body",
+        role: "content_table",
+        lineage: candidateModel.tableId === tableId ? "source_table_id" : "unique_single_table_fallback",
         decision: "FAIL",
         reason: `Có ${tableDiffs.length} điểm sai lệch cấu trúc/định dạng so với nguồn.`,
       });
@@ -865,8 +1002,6 @@ export async function verifyCandidateExportFidelity(
   // 5. Chính sách kiểm soát bảng mới (New Tables Policy):
   // Bảng mới do người dùng chủ ý thêm phải có trong danh sách approvedNewTableIds.
   // Mọi bảng phát sinh ngoài dự kiến (unexplained new table) đều khiến gate trả safe: false.
-  const isDocxImport = Boolean(manifest && (manifest.sourceKind === "uploaded_docx" || (manifest.tableIds && manifest.tableIds.length >= 0)));
-  const approvedSet = new Set(options?.approvedNewTableIds || manifest?.approvedNewTableIds || []);
   const unexplainedNewTables: TableModel[] = [];
 
   for (let idx = 0; idx < candidateModels.length; idx++) {
@@ -874,19 +1009,70 @@ export async function verifyCandidateExportFidelity(
     if (!matchedCandidateIndices.has(idx)) {
       const newTable = candidateModels[idx];
       const newId = newTable.tableId || `candidate_table_${idx}`;
+      if (candidateWrappedTableIndices.has(idx)) {
+        const lineage: TableInventoryLineage = uniqueSourceModels.has(newId)
+          ? "source_table_id"
+          : manifestTableIds.has(newId)
+            ? "source_manifest_id"
+            : approvedSet.has(newId)
+              ? "approved_new_table_id"
+              : "unprovenanced_candidate";
+        diffs.push({
+          type: "property_mismatch",
+          tableId: newId,
+          messageVi: "Bảng ứng viên nằm trong container OOXML ngoài trực tiếp w:body; cần đối chiếu nguồn trước khi xuất bản biến đổi.",
+        });
+        violations.push({
+          code: "candidate_table_requires_review",
+          tableId: newId,
+          messageVi: "Bảng ứng viên nằm trong một container OOXML chưa được kiểm chứng; cần đối chiếu nguồn.",
+          canDownloadOriginal: true,
+        });
+        tableDecisions.push({
+          tableId: newId,
+          region: "body",
+          role: "unknown",
+          lineage,
+          decision: "NEEDS_REVIEW",
+          reason: "Bảng được tìm thấy bên trong container thay vì là phần tử trực tiếp của w:body; không thể xác nhận quan hệ container bằng TableModel.",
+        });
+        continue;
+      }
+      if (duplicateCandidateIndices.has(idx)) {
+        const lineage: TableInventoryLineage = uniqueSourceModels.has(newId)
+          ? "source_table_id"
+          : manifestTableIds.has(newId)
+            ? "source_manifest_id"
+            : approvedSet.has(newId)
+              ? "approved_new_table_id"
+              : "unprovenanced_candidate";
+        tableDecisions.push({
+          tableId: newId,
+          region: "body",
+          role: "unknown",
+          lineage,
+          decision: "NEEDS_REVIEW",
+          reason: "ID bảng ứng viên xuất hiện nhiều lần; lineage không xác định được bảng nào tương ứng với quyết định nguồn/duyệt.",
+        });
+        continue;
+      }
       if (options?.approvedNewTableIds || isDocxImport) {
-        if (!approvedSet.has(newId)) {
+        if (!approvedSet.has(newId) || manifestTableIds.has(newId)) {
           unexplainedNewTables.push(newTable);
           tableDecisions.push({
             tableId: newId,
             region: "body",
+            role: "unknown",
+            lineage: "unprovenanced_candidate",
             decision: "NEEDS_REVIEW",
-            reason: "Bảng mới phát sinh không có nguồn gốc được duyệt (unprovenanced table).",
+            reason: "Bảng không có ID nguồn hoặc ID hệ thống được tin cậy; nội dung/kiểu dáng không đủ để xác định vai trò nên giữ nguyên và yêu cầu đối chiếu nguồn.",
           });
         } else {
           tableDecisions.push({
             tableId: newId,
             region: "body",
+            role: "content_table",
+            lineage: "approved_new_table_id",
             decision: "PASS",
             reason: "Bảng mới do người dùng tạo có nguồn gốc được duyệt.",
           });
@@ -895,6 +1081,8 @@ export async function verifyCandidateExportFidelity(
         tableDecisions.push({
           tableId: newId,
           region: "body",
+          role: "content_table",
+          lineage: "new_document_table",
           decision: "PASS",
           reason: "Bảng nội dung tài liệu mẫu hoặc tài liệu soạn mới.",
         });
