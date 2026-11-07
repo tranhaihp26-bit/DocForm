@@ -579,3 +579,9 @@ Mỗi dòng nghiệm thu cần: ID ca/loại, source giả lập hoặc được
 **Main sau tích hợp:** `3ca6a2761d238cb29e301c97e26f166653b2199e` (sau PR #46). **Không có test local, DOCX pilot thật hoặc Word/WPS/UAT mới** trong lượt merge này. Các kết quả CI/test trên là bằng chứng từ PR head trước merge; không nâng thành nghiệm thu toàn hệ thống. Giữ các issue mở nếu thiếu gate.
 
 **Log chi tiết và thứ tự tiếp:** [2026-11-07 GitHub integration follow-up](../sessions/2026-11-07_github-integration-followup.md). Tiếp theo đồng bộ #37 (branch diverged và diff lịch sử), rồi #43, #45, #47 theo điều kiện test/Office/UAT. Chỉ kiểm lại đúng scope sau khi đồng bộ; canonical full tại release gate.
+
+### 22.1. Chốt phiên GitHub integration sau merge #48
+
+- **PR #48 đã MERGED** tại `60c7990ae67c6089e12ef68109acbc4603e27c44` (sau các PR #38, #42, #44, #46). Vì vậy hàng “G00 / continuity — IN_PROGRESS cho đến khi merge #48” trong mục 22 là snapshot trước thời điểm merge; hiện trạng G00 của phiên này là **đã lưu nhật ký và chỉ mục lên main**.
+- Vẫn còn 4 PR Draft #37/#43/#45/#47; không PR nào trong bốn PR này được merge trong phiên. Issues liên quan chưa đóng do cổng thực tế chưa hoàn thành.
+- Không có bằng chứng mới cho M1/M2, Word/WPS/UAT; giữ `NO-GO`. Chi tiết căn cứ ở [nhật ký tích hợp](../sessions/2026-11-07_github-integration-followup.md).
