@@ -7,6 +7,13 @@
 **Đã tích hợp 5 PR:** #38, #42, #44, #46 và #48. PR #48 (Project Memory/Roadmap/nhật ký) đã merge tại `60c7990ae67c6089e12ef68109acbc4603e27c44`. **Vẫn mở, Draft:** #37, #43, #45 và #47. Các issue gốc vẫn mở nếu chưa đạt cổng nghiệm thu. **M1/M2: NO-GO** vì thiếu corpus DOCX hậu stamp, Word/WPS và UAT. [Nhật ký tích hợp](sessions/2026-11-07_github-integration-followup.md). Phần “publication” phía dưới là lịch sử tại thời điểm trước các merge.
 
 
+## Phiên tiếp tục: tích hợp kỹ thuật + phục hồi legacy tests (07/11/2026)
+
+- **Đã merge thêm #37, #43, #45, #47, #49** trên GitHub Primary. Merge SHAs lần lượt `bce0f733` (DF-B03 auditor), `1efe5e34` (DOCX preflight), `eed8f02e` (header settings), `12432b48` (PA-05 recovery guide), `058b72f7` (legacy test correction). Nhánh #37 trước đây diverged đã được merge lịch sử không force, file diff rút xuống 4 tệp đúng scope. Các PR này **MERGED**, không còn Draft.
+- **CI mới có bằng chứng:** #37 [42370611414](https://github.com/tranhaihp26-bit/DocForm/actions/runs/42370611414), #43 [42370734850](https://github.com/tranhaihp26-bit/DocForm/actions/runs/42370734850), #45 [42370737629](https://github.com/tranhaihp26-bit/DocForm/actions/runs/42370737629) đều SUCCESS theo head trước merge. #49 [42371345394](https://github.com/tranhaihp26-bit/DocForm/actions/runs/42371345394) SUCCESS đủ **20 legacy scenarios**, gồm khôi phục/lưu nháp Test 9 và 13.
+- **Phát hiện còn mở:** browser import-session test cũ kỳ vọng auto-open modal, nhưng App hiện có chủ đích mở review theo thao tác; cần viết lại test theo UX 3 bước trước khi kết luận session-race. DF-B03 chưa tích hợp auditor vào hậu stamp export/candidate. Real DOCX Word/WPS, UAT còn **NOT_VERIFIED**; DF-A02/A03 **BLOCKED_BY_MASTER**. Issues nghiệp vụ vẫn OPEN; **M1/M2 NO-GO**.
+- **Log phiên mới nhất:** [07/11 — GitHub integration follow-up 2](sessions/2026-11-07_github-integration-followup-2.md). **Bước ưu tiên:** test browser import/recovery đúng luồng mới, sau đó corpus DOCX hậu stamp + Office/WPS; không làm lại test đã có bằng chứng.
+
 ## Mục tiêu sản phẩm không được thay đổi
 
 Người dùng **tạo mới, nhập, chỉnh sửa, chuẩn hóa và xuất DOCX có thể tiếp tục chỉnh sửa**, ưu tiên **mọi thuộc tính có cấu hình trong profile Công ty đã xác nhận**. ND30/HD05 chỉ bổ sung từng thuộc tính profile thiếu, không dùng để đối chiếu lại giá trị đã có. Giữ nguyên nội dung không được duyệt sửa và nguồn, không tự điền số/ngày/người ký/chữ ký/dấu; preview/PDF và trạng thái kiểm tra phải trung thực. Giữ workflow Import → Editor → Export, không mặc định viết lại kiến trúc.
