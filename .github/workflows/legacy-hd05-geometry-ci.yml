@@ -1,0 +1,28 @@
+name: DocForm legacy HD05 geometry regression
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/legacy-hd05-geometry-ci.yml"
+      - "test/office-worker-redesign.test.ts"
+      - "src/canonical/hd05/companyHeaderHD05.ts"
+      - "package.json"
+      - "package-lock.json"
+  workflow_dispatch:
+
+jobs:
+  legacy-hd05-geometry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Typecheck
+        run: npm run lint
+      - name: Run legacy worker workflow and recovery regressions
+        run: npx tsx test/office-worker-redesign.test.ts
