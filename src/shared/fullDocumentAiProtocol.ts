@@ -65,6 +65,7 @@ export type VisualEvidenceFailureCode =
   | "invalid_source_sha"
   | "empty_source"
   | "source_too_large"
+  | "unsafe_source_package"
   | "renderer_unavailable"
   | "renderer_busy"
   | "render_failed"
