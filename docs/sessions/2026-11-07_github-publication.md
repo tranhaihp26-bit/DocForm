@@ -24,3 +24,8 @@
 ## Publication record
 
 This multi-branch publication and shared status index are tracked in [draft PR #48](https://github.com/tranhaihp26-bit/DocForm/pull/48). PR #48 is open and unmerged.
+
+
+## Issue update — 07/11/2026
+
+- Appended publication status to the existing descriptions of issues #8, #12, #16, #4, #5, #6, and #34. Each issue remains OPEN; no scope or acceptance requirement was replaced. Their linked PRs remain drafts and unmerged.
