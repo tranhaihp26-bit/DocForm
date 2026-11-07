@@ -334,3 +334,27 @@ B/C/E xong và pilot đủ chứng cứ ──> F01/F02 ──> F03
 - `01_PROFILE_CONG_TY.md`; `02_PROFILE_DANG_UY.md`; `HTHHMB-PROFILE.md`; `05_QA_HANDOFF_VA_RANH_GIOI_BANG_v1.0.0`; `11_CTY-CV-01_HO_SO_HOAN_THIEN_NHOM_CONG_VAN_v1.0.0`; `00_MUC_LUC_VA_QUY_TAC_QUAN_LY_PHIEN_BAN_HTHHMB`.
 
 **Giới hạn chủ động:** không phân tích đầy đủ từng byte ảnh/PDF/DOCX của Drive riêng tư, không chạy WPS/Word trên máy người dùng, không thực hiện tấn công bảo mật thực tế, không chấm luật pháp ở ngoài phạm vi cấu hình sản phẩm. Các mục như vậy được ghi minh bạch là cần evidence, **không suy thành PASS**.
+---
+
+## 12. TIẾN ĐỘ TRIỂN KHAI SAU AUDIT — 07/11/2026
+
+> Phần 0–11 là **snapshot gốc** tại commit `87cf74c9`. Các thay đổi dưới đây là nhật ký tiến độ, không sửa lại kết luận lịch sử. GitHub `main` đã tiến lên sau đó.
+
+| Gói | Trạng thái | Kết quả thực hiện | Bằng chứng |
+|---|---|---|---|
+| **DF-C01** | **DONE_CODE + VERIFIED_OOXML_FOCUSED** | Bỏ việc tự thêm dòng `(Ký, đóng dấu)` khi chỉ có `signTitle`; nếu dòng ghi chú đã được đưa vào `signTitle`, xuất đúng **một** lần, giữ chữ, in nghiêng; không thay bảng chữ ký/layout phần cuối | [PR #2](https://github.com/tranhaihp26-bit/DocForm/pull/2), [commit `b8d825bf`](https://github.com/tranhaihp26-bit/DocForm/commit/b8d825bfe63ac733286535bcef2197058b52520f) |
+| **DF-C03** | **DONE_CODE + VERIFIED_OOXML_FOCUSED** | `buildDocxTableFromModel` chỉ set `w:tblHeader` khi `row.isHeader===true`; nhánh comparator không tự sửa `rowIndex=0`. Đã có negative test chèn `tblHeader` giả và kiểm roundtrip từ chối | Cùng PR #2/commit |
+| **DF-A01** | **PARTIAL_SOURCE_MAPPED** | Đã tạo [ma trận nguồn, role, property, xung đột và trạng thái phê duyệt](../profile/PROFILE_SOURCE_MATRIX.md) cho bốn đường pilot. Không đổi JSON/master profile. Chưa hoàn tất 100% roles sau stamp và chưa Word/WPS sign-off | [Tệp `docs/profile/PROFILE_SOURCE_MATRIX.md`](../profile/PROFILE_SOURCE_MATRIX.md), commit `6fbe26a6` |
+| **DF-A02/DF-A03** | **BLOCKED_BY_MASTER** | ND30 header.date right/center và issuer.line 15/16; biến thể tên đơn vị HD05 | Không tự giải bằng fallback; cần golden có SHA/approval |
+| **DF-C02/C04 và B01–B06** | **OPEN** | Chưa triển khai trong sprint này | Chỉ tiến hành phần không bị A02/A03 chặn |
+
+**CI scope của PR #2:** GitHub Actions Ubuntu/Node 22 chạy `npm run lint` **PASS**, 15/15 tests **PASS**, 0 skipped/failed: [run 42332869724](https://github.com/tranhaihp26-bit/DocForm/actions/runs/42332869724). Đây là test OOXML/code, **không** chứng minh Word/WPS trực quan đã PASS; workflow vẫn dùng `npm ci --legacy-peer-deps` vì DF-E04 còn OPEN.
+
+**Kế hoạch thực hiện tiếp, không lặp lại DF-C01/DF-C03:**
+
+1. Hoàn thiện **DF-B01** với resolver per-property và trace `source`, `valueState`, `profileId`, `scope`; bắt buộc ca âm `0/false/""/null/UNSPECIFIED/INVALID_PROFILE_FONT_SIZE`. Không dùng master đang conflict.
+2. Kết nối resolver vào các consumer thực (**DF-B02/B03**) theo từng role đã được ánh xạ. Test hai chế độ và trường hợp profile chưa xác nhận; không refactor exporter toàn phần.
+3. Xử lý phần độc lập **DF-E01/E02** sau khi đánh giá source-trust/candidate states. Cấu hình chưa duyệt giữ `REQUIRES_REVIEW`.
+4. **DF-C02**, **DF-A02/A03** chỉ mở khi có golden/master đúng phiên bản; với WPS/Word thì báo `NOT_VERIFIED_RENDER` khi chưa kiểm.
+
+**Quy tắc tiếp tục:** không lặp test/QA đã PASS nếu code liên quan không đổi; không chuyển `DONE_CODE` thành `ACCEPTED` khi chưa nghiệm thu trên file và renderer thực.
