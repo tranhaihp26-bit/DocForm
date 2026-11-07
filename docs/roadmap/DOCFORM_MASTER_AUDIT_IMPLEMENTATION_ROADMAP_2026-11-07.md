@@ -559,3 +559,23 @@ Mỗi dòng nghiệm thu cần: ID ca/loại, source giả lập hoặc được
 **W0 triển khai độc lập:** #7 B02, #8 B03, #9 E01, #10 E02, #11 E04, #22 C06; các lane chứng cứ #4/#5/#6/#12/#16/#33/#34/#35 song song. Tránh chỉnh trùng `docxExport.ts`, `App.tsx`, `server.ts`, `package-lock.json`. **Đang BLOCKED_BY_MASTER:** #13 A02 và #14 A03; không tự suy đoán. **D01–D04 tùy chọn** theo GO/NO-GO, F01–F03 chỉ ở release gate.
 
 **Sau mỗi phiên:** lưu thay đổi/kiểm thử vào issue comment + `docs/sessions/` + [Project Memory](../PROJECT_MEMORY.md); ghi trạng thái thực và việc còn lại, không tính issue “OPEN” là test FAIL hay “CLOSED” là UAT PASS nếu bằng chứng chưa đủ.
+
+## 22. CẬP NHẬT SAU TÍCH HỢP GITHUB — 07/11/2026
+
+> Mục này **cập nhật trạng thái hiện hành** sau bản ghi publication của phần trước; những dòng “Draft/unmerged” trong snapshot lịch sử vẫn đúng **tại thời điểm publication**, không dùng làm trạng thái hiện hành.
+
+| Gói/trục | Bằng chứng tích hợp | Trạng thái sau lượt này | Cổng vẫn thiếu |
+|---|---|---|---|
+| DF-E05 (#28) | [PR #38](https://github.com/tranhaihp26-bit/DocForm/pull/38) **MERGED** `463561a`; local focused 41/41 PASS | `INTEGRATED_CODE / PARTIAL` | CI riêng cho upload security chưa có, chưa có Office/UAT; DF-E01 (#9) vẫn deferred |
+| DF-C06 (#22) | [PR #42](https://github.com/tranhaihp26-bit/DocForm/pull/42) **MERGED** `9373b803`; focused 48/48 và workflow `42362321800` PASS | `INTEGRATED_CODE / FOCUSED_VERIFIED` | DOCX thực, Word/WPS/UAT, source-preservation gate |
+| DF-A01 (#12) | [PR #44](https://github.com/tranhaihp26-bit/DocForm/pull/44) **MERGED** `373ce2b7` | `INTEGRATED_DOCS / PARTIAL_SOURCE_MAPPED` | A02/A03 profile conflicts & approval còn blocker |
+| PA-01/02/03 (#4/#5/#6) | [PR #46](https://github.com/tranhaihp26-bit/DocForm/pull/46) **MERGED** `3ca6a276` | `INTEGRATED_DOCS / NOT_VERIFIED_UAT` | Hành trình thật, editable Office, hỗ trợ end-to-end |
+| DF-B03 (#8) | [PR #37](https://github.com/tranhaihp26-bit/DocForm/pull/37) **OPEN / DRAFT**, diverged, 3 Actions head cũ PASS | `NOT_INTEGRATED` | Đồng bộ branch, kiểm post-stamp role/font, Office/UAT |
+| DF-E03 + PA-06 (#27/#35) | [PR #43](https://github.com/tranhaihp26-bit/DocForm/pull/43) **OPEN / DRAFT**, synthetic local 16/16 | `NOT_INTEGRATED` | CI trên branch mới, render pipeline và Office/visual/UAT |
+| DF-B04 (#16) | [PR #45](https://github.com/tranhaihp26-bit/DocForm/pull/45) **OPEN / DRAFT** | `NOT_INTEGRATED` | Word/WPS settings fidelity, UAT |
+| PA-05 (#34) | [PR #47](https://github.com/tranhaihp26-bit/DocForm/pull/47) **OPEN / DRAFT** | `GUIDE_DRAFT / NOT_VERIFIED_UAT` | Hai test failures cũ; manual/browser-process recovery |
+| G00 / continuity | [PR #48](https://github.com/tranhaihp26-bit/DocForm/pull/48) đang cập nhật Project Memory, Roadmap và log | `IN_PROGRESS` cho đến khi merge #48 | Không suy từ merge docs sang release M1/M2 |
+
+**Main sau tích hợp:** `3ca6a2761d238cb29e301c97e26f166653b2199e` (sau PR #46). **Không có test local, DOCX pilot thật hoặc Word/WPS/UAT mới** trong lượt merge này. Các kết quả CI/test trên là bằng chứng từ PR head trước merge; không nâng thành nghiệm thu toàn hệ thống. Giữ các issue mở nếu thiếu gate.
+
+**Log chi tiết và thứ tự tiếp:** [2026-11-07 GitHub integration follow-up](../sessions/2026-11-07_github-integration-followup.md). Tiếp theo đồng bộ #37 (branch diverged và diff lịch sử), rồi #43, #45, #47 theo điều kiện test/Office/UAT. Chỉ kiểm lại đúng scope sau khi đồng bộ; canonical full tại release gate.
