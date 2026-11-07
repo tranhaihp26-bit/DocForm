@@ -13,6 +13,8 @@ Mọi đường dẫn trong tài liệu này đều là đường dẫn tương 
 
 ## Định hướng và tuyến cấu hình hiệu lực V2.2
 
+**Ma trận nguồn profile đang áp dụng:** [DF-A01 — Profile Source Matrix](profile/PROFILE_SOURCE_MATRIX.md) (`PARTIAL_SOURCE_MAPPED`; xung đột ND30 header date/line và HD05 issuer chưa được phê duyệt). Không copy workbook Drive dự thảo thành giá trị runtime; đối chiếu từng role.
+
 **Kế hoạch triển khai hiện hành (snapshot 07/11/2026):** [Master audit liên nguồn & roadmap hoàn thiện DocForm — issue-ready](roadmap/DOCFORM_MASTER_AUDIT_IMPLEMENTATION_ROADMAP_2026-11-07.md). Đọc kế hoạch này **cùng** [chính sách V2.2](DOCFORM_PRODUCT_FIRST_PROFILE_POLICY_V2_2.md) trước khi lập PR mới; chỉ thực hiện các gói chưa có bằng chứng hoàn tất trên HEAD và không tự dùng nguồn Drive chưa duyệt để ghi đè profile.
 
 
