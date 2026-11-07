@@ -18,3 +18,9 @@
 - Reload evidence: the candidate browser test seeds synthetic source/draft in real Chromium IndexedDB, calls `c.reload()`, resumes the draft, and later downloads the original bytes with the same SHA. This is an automated same-profile page reload, not a manual user test or browser-process restart.
 - Not evaluated: actual quota/storage eviction, browser profile/data clearing, WPS/Word, and UAT. The synthetic tests do not prove recovery across browser profiles or devices.
 - G00 delta: keep #34 open until manual close/reopen and user recovery expectations are observed in the release environment. Consider linking the guide from the user-facing help surface after UI ownership is scheduled; no `App.tsx` or `WorkspaceExport.tsx` edit was made.
+
+## Publication update — 2026-11-07
+
+- Publication was authorized through GitHub Primary. Branch `codex/g13-pa05-20261107` now points to commit `3e0e0a8e9f6b4cbe6f3dea0dbcb33907a9879092`; its tree `8293a9c67ebbd76a35b55fc38e32943d9d483a20` matches the reviewed local tree.
+- [Draft PR #47](https://github.com/tranhaihp26-bit/DocForm/pull/47) is open and unmerged; issue #34 remains open. Actions had no workflow run for this docs-only head when checked.
+- Previously recorded storage/preview checks and the two test failures above are local evidence, not rerun for publication. Word/WPS, browser-process restart, and UAT remain unverified.
