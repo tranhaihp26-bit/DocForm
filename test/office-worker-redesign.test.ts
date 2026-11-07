@@ -289,9 +289,16 @@ console.log("\n--- TEST 6: Bảo toàn mẫu Header Hoa Tiêu Miền Bắc ---")
   assert.equal(hd05ProfileDoc.orgHeader2, "ĐẢNG ỦY CÔNG TY\nHOA TIÊU HÀNG HẢI MIỀN BẮC");
   assert.equal(hd05ProfileDoc.nationalHeader1, "ĐẢNG CỘNG SẢN VIỆT NAM");
   assert.equal(hd05ProfileDoc.nationalHeader2, "");
-  assert.equal(COMPANY_HEADER_HD05_TABLE_TWIPS.width, 10170);
-  assert.equal(COMPANY_HEADER_HD05_TABLE_TWIPS.left, 5580);
-  assert.equal(COMPANY_HEADER_HD05_TABLE_TWIPS.right, 4590);
+  // Wide Header V3 source (HD05): 5540 + 4440 = 9980 twips.
+  // Assert the measured master geometry rather than the pre-V3 draft values.
+  assert.equal(COMPANY_HEADER_HD05_TABLE_TWIPS.width, 9980);
+  assert.equal(COMPANY_HEADER_HD05_TABLE_TWIPS.left, 5540);
+  assert.equal(COMPANY_HEADER_HD05_TABLE_TWIPS.right, 4440);
+  assert.equal(
+    COMPANY_HEADER_HD05_TABLE_TWIPS.left + COMPANY_HEADER_HD05_TABLE_TWIPS.right,
+    COMPANY_HEADER_HD05_TABLE_TWIPS.width,
+    "HD05 header table grid must sum to the measured table width",
+  );
 
   console.log("[PASS] TEST 6: Mẫu Header Hoa Tiêu Miền Bắc NĐ 30 & HD 05 bảo toàn nguyên vẹn");
 }
