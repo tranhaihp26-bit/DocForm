@@ -1,8 +1,14 @@
 # DocForm — Ma trận nguồn cấu hình và trạng thái phê duyệt (DF-A01)
 
-**Ngày kiểm kê:** 07/11/2026  
-**Áp dụng:** 4 tuyến pilot (ND30 có tên loại; ND30 công văn; HD05 có tên loại; HD05 công văn).  
-**Phiên bản mã tham chiếu:** `b8d825bfe63ac733286535bcef2197058b52520f` (đã merge DF-C01/C03).  
+**Ngày lập baseline:** 07/11/2026
+
+**Ngày rà nguồn hiện tại:** 07/11/2026
+
+**Áp dụng:** 4 tuyến pilot (ND30 có tên loại; ND30 công văn; HD05 có tên loại; HD05 công văn).
+
+**Commit baseline của ma trận:** `b8d825bfe63ac733286535bcef2197058b52520f` (DF-C01/C03).
+
+**Source scan mới nhất:** `deffe60c91a00041765530e3192259735c36defe` (`main`, sau PR #39 B02, #40 E02 và #41 E04). Mốc mới xác nhận các tệp nguồn tại checkout này; không tự chứng minh output DOCX/Word.
 **Trạng thái DF-A01:** `PARTIAL_SOURCE_MAPPED`, chưa đạt `ACCEPTED` hoặc xác nhận 100% registry; những trường chưa được ánh xạ vẫn là `UNSPECIFIED/REQUIRES_REVIEW`. Không tự dùng workbook bản chưa duyệt làm master.
 
 ## A. Thứ tự áp dụng và bảo đảm không lẫn trạng thái
@@ -26,6 +32,19 @@
 | `F` | `src/canonical/nd30/rules.generated.json`, `src/canonical/hd05/rules.2026.json` | Fallback đúng hệ **chỉ khi thiếu property profile** |
 | `D` | Registry OOXML V1.2 (tài liệu đã cung cấp), workbook/bản nháp trên Drive | Đối chiếu/đề xuất; không thay master chưa có xác nhận |
 | `?` | Chưa có OOXML hậu stamp/Word/WPS theo đúng sample và revision | Không tuyên bố PASS |
+| `U` | Nội dung do người dùng nhập hoặc có trong DOCX nguồn | Nội dung theo từng tài liệu/phiên; không phải giá trị profile, không tự suy ra/điền khi thiếu |
+
+### Snapshot nguồn và phạm vi phê duyệt tại `deffe60c`
+
+| Nguồn | Định danh và hash đang có | Phê duyệt được ghi nhận | Scope được chứng minh |
+|---|---|---|---|
+| `P-N` | Profile ID `hoa-tieu-mien-bac-administrative-v1`; `profile.json` blob `a3e48c2247d862494a625cd69cd81d60b903b254`; SHA-256 mẫu `header-reference.docx` `7944900a0ce2c67f67018ef14695cce0ce33814a558395b7df6a9ddf463b1cb3` (đã tính lại, khớp metadata) | `user_approved_visual_reference` | Chỉ `first_page_header`; không mở rộng phê duyệt sang body, footer, subject, appendix hoặc mọi loại văn bản |
+| `P-D` | Profile ID `HOA-TIEU-MIEN-BAC-PARTY-HD05-HEADER-2026`; `profile.json` blob `825c13acd0610295406266c2042b5312c3bb23a1`; SHA-256 mẫu `header-reference.docx` `99282614cdce4920d52d229dae936327b227d44d1441d07ee18e2846dfa55430` (đã tính lại, khớp metadata) | `user_tuned_visual_reference`; repo không ghi trạng thái `user_approved` riêng | `first_page_header`; **không suy** profile HD05 đã được phê duyệt cho mọi issuer/loại hoặc body/footer |
+| `P-B` ND30/HD05 | `src/canonical/nd30/companyBodyProfile.ts` blob `cfb8be1fcdbf07476781c84616bb8aa452e15ffe`; hai profile ID được gắn theo regime | Mã định nghĩa company body profile. `documentComposer.ts` chuyển `approval: "approved"` vào resolver riêng cho `body.fontSizePt`; các thuộc tính body khác không đi qua lời gọi resolver này | Bằng chứng hiện có là giá trị cấu hình và đường tiêu thụ trong code; không có mẫu body riêng kèm version/SHA hoặc approval artifact trong repo |
+| `R-N/R-D` | `src/utils/hoaTieuHeaderReferenceXml.ts` blob `a7ada107b6a1aed896f43eadda9b43efb0fdd045`; HD05 table XML có chuỗi issuer hiện hành | ND30 có khác biệt builder/reference đã ghi ở mục D; HD05 reference chứa “ĐẢNG ỦY CÔNG TY” nhưng tự nó không chứng minh issuer này đúng cho mọi loại tổ chức/phiên bản | Dùng để ghi nhận giá trị/drift nguồn; không lấy XML hiện hành làm phê duyệt mới |
+| `F` | `src/canonical/nd30/rules.generated.json` blob `d8f997f5db4667812f331ff0261c55f56cb89664`; `src/canonical/hd05/rules.2026.json` blob `ef324ec65535be57ddefafd24fe5be46a9cc6de1` | Nguồn fallback theo regime, chỉ được dùng khi consumer áp rule cho property còn thiếu | Có mặt trong catalog không chứng minh mọi exporter path đã consume. `documentComposer.ts` generic fallback riêng cho `body.fontSizePt` hiện là `C` (13 ND30/14 HD05), không phải bằng chứng fallback catalog `F` |
+
+`P-N`, `P-D` là trạng thái hồ sơ header; `P-B` là mã profile body/table. Không gộp các trạng thái này thành một phê duyệt toàn tài liệu. `companyHeader.ts`, `companyHeaderHD05.ts`, `docxExport.ts` và `ruleEngine.ts` có thể đang tiêu thụ/hardcode một giá trị nhưng sự tồn tại của code không tự nâng nguồn `C` thành profile `P` đã duyệt.
 
 ## B. Thuộc tính chung của bốn pilot
 
@@ -70,6 +89,23 @@ Trạng thái `ACTIVE`: đã có giá trị cấu hình trong nguồn được n
 | `footer.signature.tableGrid` | 4878/4476 dxa =165mm (single signer) — C | dùng chung — C | REVIEW; **không tự thay** vì chưa có Word/WPS repro |
 | `page.numbering.sizePt` | 13 theo registry/code — C | 14 theo registry/code — C | C/?; cần verify trên section header part |
 | `source.signature/number/date/recipients` | Chỉ dữ liệu được nhập/duyệt | Chỉ dữ liệu được nhập/duyệt | Nội dung được bảo vệ; thiếu không tự điền |
+
+### B1. Role/path theo bốn tuyến pilot tại source scan hiện tại
+
+Bảng này gắn nguồn cho phạm vi M1 dự kiến; `ACTIVE` chỉ nói thuộc tính có giá trị trong nguồn code/profile nêu bên cạnh, không có nghĩa đã kiểm DOCX hậu stamp, Word/WPS hoặc được hỗ trợ end-to-end. Thuộc tính không có quyết định riêng được đánh dấu `C`, `D`, `?` hoặc `UNSPECIFIED`, không nâng thành `P`.
+
+| Role/property của hành trình | ND30 có tên loại | ND30 công văn | HD05 có tên loại | HD05 công văn | Nguồn và trạng thái chung |
+|---|---|---|---|---|---|
+| Regime/profile header | `administrative` + `hoa-tieu-mien-bac-administrative-v1`, chỉ sau khi người dùng chọn/xác nhận | Như tuyến ND30 có tên loại | `party` + `HOA-TIEU-MIEN-BAC-PARTY-HD05-HEADER-2026`, chỉ sau khi người dùng chọn/xác nhận | Như tuyến HD05 có tên loại | `C`: `documentComposer.ts` chỉ áp profile khi ID khớp regime; tên cơ quan trong nguồn không tự kích hoạt profile. Activation là trạng thái của phiên, không phải approval mới cho master |
+| Trang/header đầu | P-N: A4, margins 20/20/30/15 mm; table 10432 twips, grid 5187/5245, indent −874; P-N header values trong bảng B | Như tuyến ND30 có tên loại | P-D: A4, margins 20/20/30/15 mm; table 9980 twips, grid 5540/4440, indent −593; P-D header values trong bảng B | Như tuyến HD05 có tên loại | P-N được ghi `user_approved_visual_reference` chỉ cho header; P-D là `user_tuned_visual_reference`, không có trạng thái user-approved riêng. ND30 date alignment và issuer line spacing giữ `PROFILE_CONFLICT`; HD05 issuer identity vẫn `BLOCKED_BY_MASTER`/`REVIEW DF-A03` vì thiếu quyết định/golden được duyệt, không kết luận hai profile đã duyệt đang xung đột |
+| Body paragraph `fontFamily/fontSizePt/alignment/lineSpacingPt/after/firstLineIndent` | TNR/14/both/exact 19/6/720 dxa | Như tuyến ND30 có tên loại | TNR/14/both/exact 19/6/567 dxa | Như tuyến HD05 có tên loại | P-B tại `companyBodyProfile.ts`; `body.fontSizePt` có consumer resolver và `approval:"approved"` ở `documentComposer.ts`; các thuộc tính còn lại là giá trị profile trong code, chưa có sample body/hash riêng hay evidence hậu stamp |
+| Body table `fontFamily/fontSizePt/headerRow/repeat/bold/center` | TNR/13; row 0 chỉ header khi được xác nhận | Như tuyến ND30 có tên loại | TNR/13; row 0 chỉ header khi được xác nhận | Như tuyến HD05 có tên loại | P-B values; `C`/conditional consumer ở `docxExport.ts`; DF-C03 chỉ set `w:tblHeader` khi `row.isHeader===true`. Padding/spacing/width/grid của bảng content vẫn `REVIEW DF-C04`; không áp table profile cho mọi bảng/unknown table |
+| Document type / subject | Nội dung loại văn bản và trích yếu do người dùng nhập/chọn (`U`); cỡ tên loại 14pt do `getStyleProfile` (`C`) | `CÔNG VĂN`, `V/v`/trích yếu và `Kính gửi` là nội dung (`U`); exporter special-case suppress heading công văn (`C`) | Document type/trích yếu do người dùng nhập/chọn (`U`); cỡ tên loại 15pt do `getStyleProfile` (`C`); `-----` chỉ áp khi đúng điều kiện (`D/C`) | `CÔNG VĂN`, `V/v`/trích yếu và nơi nhận là nội dung (`U`); exporter special-case công văn, không coi `-----` là mặc định (`C`) | Không có profile header JSON nào thiết lập text của document type/subject. Giá trị từ registry V1.2 là `D`, không phải approval master. Subject/V-v placement, underline/separator và spacing chưa có đủ role-specific OOXML/Office evidence |
+| Number/date/recipients/signatory/body text | Dữ liệu của tài liệu/phiên (`U`); number/date placeholder trong profile không phải số/ngày thực | Dữ liệu tài liệu (`U`); thiếu `V/v`/recipient không được tự tạo | Dữ liệu tài liệu (`U`); HD05 reference date là chuỗi mẫu, không phải ngày hiện hành | Dữ liệu tài liệu (`U`); thiếu V/v/recipient/người ký không được tự tạo | Composer/export nhận field từ tài liệu; P-N/P-D chỉ cung cấp khung/placeholder header. Giá trị thiếu không được suy từ profile hoặc tên tổ chức |
+| Footer/signature/nơi nhận formatting | Signer 13pt, recipient items 11pt hiện là `C` trong `getStyleProfile`/exporter; nội dung là `U` | Như tuyến ND30 có tên loại | Signer 14pt và recipient styling hiện là `C` trong `getStyleProfile`/exporter; nội dung là `U` | Như tuyến HD05 có tên loại | Không có profile footer riêng trong hai `profile.json`; footer signature grid/spacing và distribution fallback còn `REVIEW`/`UNSPECIFIED`. DF-C01 không tự chèn `(Ký, đóng dấu)`; chỉ ghi chú có trong nguồn được render |
+| Section/appendix/page number/imported structure | Appendix page start 1 (`P-B` code); section/shape/source tables theo tài liệu (`U`/`?`) | Như tuyến ND30 có tên loại | Appendix page start 1 (`P-B` code); section/shape/source tables theo tài liệu (`U`/`?`) | Như tuyến HD05 có tên loại | Page-number font 13/14 là `C`; section breaks, inherited styles, field, textbox và layout/unknown table cần evidence theo tài liệu. Source preservation/QA không đồng nghĩa đã render/đối chiếu |
+
+**Tóm tắt nguồn theo pilot:** 4/4 tuyến có regime/profile ID và nguồn body/table code được chỉ ra; 2/4 dùng P-N header với `user_approved_visual_reference` trong scope header; 2/4 dùng P-D header `user_tuned_visual_reference`, chưa có approval marker riêng. Cả 4 tuyến đều có input content `U`, code-style roles `C`, và trường chưa xác định `?`/`UNSPECIFIED`. Còn 3 quyết định nguồn chưa mở khóa: 2 trường A02 (right/center và 15/16) cùng một khoảng trống A03 về issuer đúng theo golden/phiên bản được duyệt. **0/4 tuyến có Word/WPS/UAT end-to-end evidence tại HEAD này.**
 
 ## C. Overlay theo loại pilot (không trộn cùng một vai trò)
 
