@@ -375,21 +375,31 @@ console.log("\n--- TEST 7: Kiểm toán ruleEngine (Hợp lệ / Sai / Thiếu O
     has_nd30_shape_lines: false,
   };
   const invalidNd30Eval = evaluateDocumentRules(companyNd30Doc, "administrative", invalidNd30Ev);
-  assert.ok(invalidNd30Eval.canonicalStats.counts.FAIL >= 5, `Bằng chứng OOXML sai phải báo FAIL >= 5 rules, thực tế FAIL=${invalidNd30Eval.canonicalStats.counts.FAIL}; failedRules=${JSON.stringify(invalidNd30Eval.results.filter(r => r.status === "FAIL").map(r => r.ruleId))}; targetProfiles=${JSON.stringify(invalidNd30Eval.results.filter(r => r.ruleId.includes("PROFILE.ND30") || r.ruleId.includes("MOTTO") || r.ruleId.includes("MARGIN") || r.ruleId.includes("ISSUER_UNDERLINE")).map(r => ({ id: r.ruleId, status: r.status, reason: r.reason })))}`);
+  // Current profile-first policy: system underline ratios are NOT_APPLICABLE
+  // when the company profile owns those shape lines. This is not a pass.
+  const failedRuleIds = new Set(invalidNd30Eval.results.filter(r => r.status === "FAIL").map(r => r.ruleId));
+  for (const id of [
+    "ND30.PL1.I.GENERAL.MARGIN_LEFT",
+    "ND30.PL1.I.GENERAL.PAGE_SIZE_A4",
+    "PROFILE.ND30.HOA_TIEU_MB.TABLE_WIDTH",
+    "PROFILE.ND30.HOA_TIEU_MB.SHAPE_LINES",
+  ]) {
+    assert.ok(failedRuleIds.has(id), `Invalid profile/page evidence must fail rule ${id}`);
+  }
   assert.equal(
     invalidNd30Eval.results.find(r => r.ruleId === "ND30.PL1.I.II.1B.MOTTO_UNDERLINE_LENGTH")?.status,
-    "FAIL",
-    "Đường kẻ tiêu ngữ sai lệch phải báo FAIL"
+    "NOT_APPLICABLE",
+    "Company profile's approved line configuration must not be compared against generic ND30 ratio",
   );
   assert.equal(
     invalidNd30Eval.results.find(r => r.ruleId === "ND30.PL1.I.II.2B.ISSUER_UNDERLINE_RANGE")?.status,
-    "FAIL",
-    "Đường kẻ cơ quan ngoài khoảng 1/3-1/2 phải báo FAIL"
+    "NOT_APPLICABLE",
+    "Company profile issuer line must not be rejected using the generic ND30 ratio",
   );
   assert.equal(
     invalidNd30Eval.results.find(r => r.ruleId === "PROFILE.ND30.HOA_TIEU_MB.TABLE_WIDTH")?.status,
     "FAIL",
-    "Bảng profile công ty sai độ rộng phải báo FAIL"
+    "Company header table width differing from profile must still fail",
   );
 
   // 7.4: Bằng chứng OOXML hợp lệ và sai trên HD05 (Văn bản Đảng)
