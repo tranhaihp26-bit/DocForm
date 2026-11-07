@@ -1,0 +1,39 @@
+name: DocForm DOCX render and upload safety
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/docx-render-safety-ci.yml"
+      - "package.json"
+      - "package-lock.json"
+      - "server.ts"
+      - "src/server/docxRenderInputSafety.ts"
+      - "src/server/sourceVisualRenderer.ts"
+      - "src/shared/fullDocumentAiProtocol.ts"
+      - "test/source-visual-renderer.test.ts"
+      - "test/source-visual-endpoint.test.ts"
+      - "test/server-network-security.test.ts"
+      - "test/candidate-pdf-export-endpoint.test.ts"
+  workflow_dispatch:
+
+jobs:
+  docx-render-safety:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install from lockfile
+        run: npm ci
+      - name: Typecheck
+        run: npm run lint
+      - name: Scoped source DOCX and candidate render security regressions
+        run: >
+          npx tsx --test
+          test/source-visual-renderer.test.ts
+          test/source-visual-endpoint.test.ts
+          test/server-network-security.test.ts
+          test/candidate-pdf-export-endpoint.test.ts
