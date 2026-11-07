@@ -13,6 +13,10 @@ Mọi đường dẫn trong tài liệu này đều là đường dẫn tương 
 
 ## Định hướng và tuyến cấu hình hiệu lực V2.2
 
+**Kế hoạch triển khai hiện hành (snapshot 07/11/2026):** [Master audit liên nguồn & roadmap hoàn thiện DocForm — issue-ready](roadmap/DOCFORM_MASTER_AUDIT_IMPLEMENTATION_ROADMAP_2026-11-07.md). Đọc kế hoạch này **cùng** [chính sách V2.2](DOCFORM_PRODUCT_FIRST_PROFILE_POLICY_V2_2.md) trước khi lập PR mới; chỉ thực hiện các gói chưa có bằng chứng hoàn tất trên HEAD và không tự dùng nguồn Drive chưa duyệt để ghi đè profile.
+
+
+
 [**Product First — Profile override, ND30/HD05 fallback theo từng thuộc tính**](DOCFORM_PRODUCT_FIRST_PROFILE_POLICY_V2_2.md) là nguồn yêu cầu trung tâm: profile đã thiết lập thuộc tính → dùng/QA giá trị profile và **không đối chiếu/hậu kiểm** với ND30/HD05 cho thuộc tính đó; chỉ thiếu ở mọi cấp profile mới fallback đúng regime; thiếu cả hai → `UNSPECIFIED`. `0`, `false`, `""` có chủ ý là có cấu hình.
 
 **Audit bao phủ V2.2 (06/11/2026):** [Kiểm kê toàn bộ repository và các module còn phải triển khai](DOCFORM_V22_AUDIT_TOAN_BO_REPO_2026-11-06.md). Đây là **báo cáo tĩnh theo snapshot**, không phải xác nhận đã sửa runtime hoặc nghiệm thu Word/WPS.
