@@ -58,7 +58,7 @@ describe("DF-C06 table inventory and locked-region contract", () => {
     const result = await verifyCandidateExportFidelity(await candidateBytes(after), {
       "content-block-01": editedModel,
     }, {
-      sourceKind: "uploaded_docx",
+      sourceKind: "system_template",
       sourceBlockIds: ["header", "content-block-01", "signature"],
       tableIds: ["content-block-01"],
       unsupportedFeatures: [],
@@ -127,6 +127,40 @@ describe("DF-C06 table inventory and locked-region contract", () => {
 
     assert.equal(result.safe, true, result.summaryVi);
     assert.deepEqual(result.tableDecisions?.map(decision => [decision.role, decision.lineage]), [["content_table", "source_table_id"]]);
+  });
+
+  it("does not trust a reserved layout caption when an uploaded source has no matching lineage", async () => {
+    const header = tableXml("system_header_layout_table", [["CƠ QUAN", "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM"]]);
+    const result = await verifyCandidateExportFidelity(await candidateBytes(documentXml(header)), {}, {
+      sourceKind: "uploaded_docx",
+      sourceBlockIds: [],
+      tableIds: [],
+      unsupportedFeatures: [],
+    });
+
+    assert.equal(result.safe, false, "a candidate caption cannot prove that the uploaded source table was inventoried");
+    assert.deepEqual(result.tableDecisions?.map(decision => [decision.role, decision.lineage, decision.decision]), [
+      ["unknown", "unprovenanced_candidate", "NEEDS_REVIEW"],
+    ]);
+    assert.ok(result.violations.some(violation => violation.code === "unexplained_new_table"));
+  });
+
+  it("rejects duplicate reserved system IDs instead of passing every layout table", async () => {
+    const firstHeader = tableXml("system_header_layout_table", [["CƠ QUAN", "DÒNG 1"]]);
+    const secondHeader = tableXml("system_header_layout_table", [["CƠ QUAN", "DÒNG 2"]]);
+    const result = await verifyCandidateExportFidelity(await candidateBytes(documentXml(`${firstHeader}${secondHeader}`)), {}, {
+      sourceKind: "system_template",
+      sourceBlockIds: [],
+      tableIds: [],
+      unsupportedFeatures: [],
+    });
+
+    assert.equal(result.safe, false);
+    assert.equal(result.violations.filter(violation => violation.code === "duplicate_table_id").length, 1);
+    assert.deepEqual(result.tableDecisions?.map(decision => [decision.role, decision.lineage, decision.decision]), [
+      ["unknown", "system_table_id", "NEEDS_REVIEW"],
+      ["unknown", "system_table_id", "NEEDS_REVIEW"],
+    ]);
   });
 
   it("keeps an explicitly approved new table in the content-table inventory", async () => {

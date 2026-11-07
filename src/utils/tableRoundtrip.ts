@@ -695,10 +695,42 @@ export async function verifyCandidateExportFidelity(
   const getSystemLayoutRole = (cm: TableModel): { role: "header_layout" | "signature_distribution"; region: "header" | "signature" } | undefined => {
     // Source lineage wins if an uploaded table happens to use a reserved ID.
     if (uniqueSourceModels.has(cm.tableId) || manifestTableIds.has(cm.tableId) || approvedSet.has(cm.tableId)) return undefined;
+    // A caption is part of the candidate DOCX and is not proof that an
+    // uploaded source table was inventoried. Without source lineage, a
+    // reserved caption in an uploaded document must remain unexplained.
+    if (isDocxImport) return undefined;
     if (cm.tableId === "system_header_layout_table") return { role: "header_layout", region: "header" };
     if (cm.tableId === "system_signature_layout_table") return { role: "signature_distribution", region: "signature" };
     return undefined;
   };
+
+  // Table IDs must be unique across every candidate table, including locked
+  // layout tables. Otherwise duplicated reserved IDs could all be treated as
+  // PASS and evade the source-to-candidate uniqueness checks.
+  const candidateIndicesById = new Map<string, number[]>();
+  for (let idx = 0; idx < candidateModels.length; idx++) {
+    const tableId = candidateModels[idx].tableId;
+    if (!tableId || tableId.startsWith("candidate_table_")) continue;
+    const indices = candidateIndicesById.get(tableId) || [];
+    indices.push(idx);
+    candidateIndicesById.set(tableId, indices);
+  }
+  const duplicateCandidateIds = new Set<string>();
+  for (const [tableId, indices] of candidateIndicesById) {
+    if (indices.length < 2) continue;
+    duplicateCandidateIds.add(tableId);
+    diffs.push({
+      type: "property_mismatch",
+      tableId,
+      messageVi: `Phát hiện ID bảng bị trùng lặp trong bản xuất Word: "${tableId}" xuất hiện ít nhất 2 lần.`,
+    });
+    violations.push({
+      code: "duplicate_table_id",
+      tableId,
+      messageVi: `Phát hiện ID bảng "${tableId}" bị lặp lại trong tệp Word ứng viên.`,
+      canDownloadOriginal: true,
+    });
+  }
 
   const layoutCandidateIndices = new Set<number>();
   for (let idx = 0; idx < candidateModels.length; idx++) {
@@ -706,6 +738,17 @@ export async function verifyCandidateExportFidelity(
     const layout = getSystemLayoutRole(cm);
     if (layout) {
       layoutCandidateIndices.add(idx);
+      if (duplicateCandidateIds.has(cm.tableId)) {
+        tableDecisions.push({
+          tableId: cm.tableId,
+          region: layout.region,
+          role: "unknown",
+          lineage: "system_table_id",
+          decision: "NEEDS_REVIEW",
+          reason: "ID layout hệ thống xuất hiện ở nhiều bảng ứng viên nên không thể xác nhận bảng nào được bảo vệ.",
+        });
+        continue;
+      }
       const candidateUnsupported = candidateUnsupportedFeaturesById.get(cm.tableId) || [];
       if (candidateUnsupported.length > 0) {
         tableDecisions.push({
@@ -732,29 +775,6 @@ export async function verifyCandidateExportFidelity(
         decision: "PASS",
         reason: `Bảng layout được nhận diện bằng ID hệ thống đã dành riêng (${cm.tableId}); không phân loại từ vị trí hoặc nội dung ô.`,
       });
-    }
-  }
-
-  // 1. Kiểm tra ID trùng lặp giữa các bảng trong candidate OOXML (không tính bảng layout hệ thống)
-  const seenCandidateIds = new Map<string, number>();
-  for (let idx = 0; idx < candidateModels.length; idx++) {
-    if (layoutCandidateIndices.has(idx)) continue;
-    const cm = candidateModels[idx];
-    if (cm.tableId && !cm.tableId.startsWith("candidate_table_")) {
-      if (seenCandidateIds.has(cm.tableId)) {
-        diffs.push({
-          type: "property_mismatch",
-          tableId: cm.tableId,
-          messageVi: `Phát hiện ID bảng bị trùng lặp trong bản xuất Word: "${cm.tableId}" xuất hiện ít nhất 2 lần.`,
-        });
-        violations.push({
-          code: "duplicate_table_id",
-          messageVi: `Phát hiện ID bảng "${cm.tableId}" bị lặp lại trong tệp Word ứng viên.`,
-          canDownloadOriginal: true,
-        });
-      } else {
-        seenCandidateIds.set(cm.tableId, idx);
-      }
     }
   }
 
