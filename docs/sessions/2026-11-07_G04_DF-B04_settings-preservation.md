@@ -36,3 +36,9 @@
 - Thêm hai regression tổng hợp trong `test/hoa-tieu-header-settings-preservation.test.ts`: foreign `x:node` mang tên shape không khiến bảng nội dung bị thay; thay namespace `w` ở body hoặc table khiến candidate gate từ chối và stamp giữ nguyên input.
 - Kiểm thử trên mã cuối: settings preservation PASS 10/10; header dual-regime PASS 5/5; export-candidate PASS 6/6; `npm run lint` PASS (`tsc --noEmit`); `git diff --check` PASS. Word/WPS render và UAT chưa chạy (`NOT_VERIFIED_RENDER`).
 - Base follow-up là commit `1fc0d520ad8f708d96280864d57c9fb79020d499`; commit chỉ cục bộ trên branch G04, không có GitHub write/PR.
+
+## Cập nhật sau khi publish — 07/11/2026
+
+- Người dùng đã cho phép publish qua GitHub Primary. Branch `codex/g04-b04-20261107` đã được tạo; GitHub commit `84f36121c72c9b3c64cc240f4e00e6e3d209b1f2` có tree `7f2dd523c1db039f539287c8857b370e38ef44b9`, khớp cây local đã rà.
+- [PR #45](https://github.com/tranhaihp26-bit/DocForm/pull/45) đang mở ở trạng thái draft, chưa merge; issue #16 vẫn mở. Tại lúc kiểm tra, Actions chưa tạo workflow run cho head này.
+- Test/lint tổng hợp được ghi ở trên là kết quả local trước khi publish; không chạy lại trong bước publish. Word/WPS render và UAT vẫn NOT_VERIFIED.
