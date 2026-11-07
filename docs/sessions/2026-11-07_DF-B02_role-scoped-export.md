@@ -3,7 +3,7 @@
 - **Kết quả người dùng / roadmap:** DOCX của profile ND30/HD05 giữ thông số body-normal đã duyệt; tiêu đề dùng fallback theo regime khi chưa có thuộc tính heading được duyệt. Phạm vi nhỏ của DF-B02; không chứng minh M1/M2 hoặc hỗ trợ end-to-end.
 - **Base HEAD:** `5f8b00fab7f3fe87f1165aa3ca645c370c4cef5c`.
 - **Branch:** `codex/g02-df-b02-20261107`.
-- **Issue/PR:** DF-B02 #7 còn OPEN; DF-B01 #15 còn OPEN và không thay đổi trong phiên. PR #3 đã merge, chỉ nối `body.fontSizePt` vào composer. PR cho phiên này chưa tạo tại thời điểm ghi log; khi mở PR sẽ liên kết file này trong phần mô tả.
+- **Issue/PR:** DF-B02 #7 còn OPEN; DF-B01 #15 còn OPEN và không thay đổi trong phiên. PR #3 đã merge, chỉ nối `body.fontSizePt` vào composer. PR #39: https://github.com/tranhaihp26-bit/DocForm/pull/39 (OPEN, unmerged). Local commit ban đầu: c2ac0c295adac8ddffe1f009ff16112be290091e; remote code head khi mở PR: 546ac135607dd1c3781032118a22b9ed80f51a6f; tree SHA hai phía khớp.
 - **Bằng chứng kế thừa:** `docs/profile/PROFILE_SOURCE_MATRIX.md` đánh dấu `body.normal.fontFace/sizePt`, line rule, first-line indent và body table TNR/13 là thuộc tính đã duyệt; headings/list/appendix/caption/field/pageNumber còn PARTIAL. Không sửa profile/master hoặc giá trị đang conflict.
 
 ## Thay đổi
@@ -19,11 +19,11 @@
 - `npm run lint` — **PASS**, `tsc --noEmit`.
 - `npx tsx --test test/df-b02-profile-export-ooxml.test.ts test/company-body-profile.test.ts test/effective-profile-attribute-v22.test.ts test/profile-first-v22.test.ts test/semantic-rule-formatting.test.ts test/body-ooxml-audit.test.ts` — **PASS**, 30 test / 0 fail / 0 skipped trên checkout này.
 - Test mới tái hiện lỗi trước sửa: profile ND30 áp 14pt body sang H2/H3 thay fallback 13pt; sau khi xuất/stamp, các rule cỡ chữ, first-line indent và line spacing body đều PASS cho cả hai regime.
-- CI GitHub: **PENDING**; sẽ ghi trạng thái thật trong PR/comment sau khi tạo PR. `git diff --cached --check` — **PASS**, không có whitespace error trong staged diff.
+- CI GitHub trên code head `546ac135607dd1c3781032118a22b9ed80f51a6f`: **PASS** — “DocForm draft signature and table header” run 2 (42350712081) và “DocForm V2.2 focused profile checks” run 10 (42350712089). `git diff --cached --check` — **PASS**, không có whitespace error trong staged diff.
 
 ## Trạng thái và giới hạn
 
-- **Trạng thái:** `DONE_CODE + VERIFIED_OOXML_FOCUSED` cục bộ cho thay đổi role-scoped; DF-B02 tổng thể vẫn **PARTIAL/OPEN**. Chưa đủ căn cứ đóng #7.
+- **Trạng thái:** `DONE_CODE + VERIFIED_OOXML_FOCUSED` cho thay đổi role-scoped; PR #39 đang OPEN, DF-B02 tổng thể vẫn **PARTIAL/OPEN**. Chưa đủ căn cứ đóng #7.
 - Word/WPS render: `NOT_VERIFIED_RENDER`. UAT: `NOT_VERIFIED`. Chưa chạy toàn bộ canonical suite.
 - Audit hiện chỉ loại trừ heading khi bộ nhận diện cấu trúc hiện có nhận diện được (ví dụ heading đánh số La Mã/Ả Rập). Không mở rộng claim cho tiêu đề không đánh số hoặc mọi cấu trúc Word.
 
