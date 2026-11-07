@@ -62,3 +62,11 @@ Người dùng **tạo mới, nhập, chỉnh sửa, chuẩn hóa và xuất DOC
 - At the final check, Actions had no runs for PR #44, #45, #46 or #47 heads. PR #37's three configured workflows succeeded; details and test limits are in the session log. No Word/WPS, UAT, or end-to-end acceptance is claimed. Issues #8, #12, #16, #4–#6, and #34 remain open.
 - Previously published lanes remain as-is: PR #38 (G09), #42 (G07), and #43 (G14) were already on GitHub with matching local trees; PRs #39–#41 were already merged before this publication task. No change was made to main in this publication.
 - Next action: review the open draft PRs and complete the missing evidence gates; preserve NOT_VERIFIED_RENDER and NOT_VERIFIED_UAT until actual Office/user checks exist.
+
+## Integration update — 07/11/2026 (sau publication)
+
+**Main sau 4 PR merge:** `3ca6a2761d238cb29e301c97e26f166653b2199e`. Các PR đã **merge** qua GitHub Primary: [#38](https://github.com/tranhaihp26-bit/DocForm/pull/38) DF-E05 bảo vệ upload (`463561a`), [#42](https://github.com/tranhaihp26-bit/DocForm/pull/42) DF-C06 kiểm bảng fail-closed (`9373b803`), [#44](https://github.com/tranhaihp26-bit/DocForm/pull/44) DF-A01 ma trận nguồn (`373ce2b7`), [#46](https://github.com/tranhaihp26-bit/DocForm/pull/46) PA01–PA03 baseline UAT (`3ca6a276`). Các issue #28, #22, #12, #4–#6 vẫn **OPEN** do còn điều kiện chưa nghiệm thu. `INTEGRATED_CODE` / `INTEGRATED_DOCS` **không** bằng `ACCEPTED`.
+
+**PR còn mở:** #37 (DF-B03, lịch sử diverged), #43 (DF-E03/PA06/F02), #45 (DF-B04), #47 (PA-05, 2 test failures đã biết), #48 (nhật ký/roadmap đang cập nhật); tại mốc tích hợp còn Draft. Kết quả Actions/kiểm thử focused được kế thừa đúng head và phạm vi; không chạy test local mới trong phiên merge. Word/WPS, DOCX pilot hậu stamp và UAT vẫn `NOT_VERIFIED`; release M1/M2 **NO-GO**.
+
+**Nhật ký chi tiết:** [GitHub integration follow-up 07/11](sessions/2026-11-07_github-integration-followup.md). **Ưu tiên tiếp:** đồng bộ nhánh #37 và kiểm post-stamp OOXML, sau đó #43 (renderer security), #45 (header/settings Word/WPS), xử lý hai lỗi test được nêu ở #47. Không lặp lại các kiểm thử có bằng chứng hợp lệ khi không thay phạm vi.
