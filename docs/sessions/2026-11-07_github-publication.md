@@ -19,3 +19,8 @@
 - No workflow run was returned for the current heads of PRs #44, #45, #46 or #47 at check time. Issues #12, #8, #16, #4, #5, #6 and #34 remain open. No Office rendering, Word/WPS review, or UAT was done in this publication step.
 - No new push was needed for G07/PR #42, G09/PR #38, or G14/PR #43 because their local trees already matched their existing remote PR trees. PRs #39, #40 and #41 were already merged before this publication request.
 - Status: publication is persisted in GitHub draft branches/PRs, not integrated into main. Review, any required CI, and Word/WPS/UAT gates remain outstanding.
+
+
+## Publication record
+
+This multi-branch publication and shared status index are tracked in [draft PR #48](https://github.com/tranhaihp26-bit/DocForm/pull/48). PR #48 is open and unmerged.
