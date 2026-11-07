@@ -47,3 +47,17 @@ Tiếp tục từ publication PR #48; kiểm tra trạng thái các PR mở, ưu
 - [PR #48](https://github.com/tranhaihp26-bit/DocForm/pull/48) đã merge ở `60c7990ae67c6089e12ef68109acbc4603e27c44`, đưa nhật ký này và Project Memory/Roadmap lên `main`. Bốn PR #37/#43/#45/#47 vẫn Draft và chưa được merge.
 - Comments cập nhật tiến độ đã được ghi vào các issues #28, #22, #12, #4, #5, #6; vẫn giữ các issue mở do thiếu bằng chứng nghiệm thu.
 - Đánh giá trạng thái này là kết quả tích hợp có thể truy xuất GitHub, **không phải** một lần full regression, Office visual QA hay nghiệm thu M1/M2.
+
+## Bổ sung CI cho các PR chưa merge — 07/11/2026
+
+Đã thêm 3 workflow giới hạn phạm vi, mỗi workflow chỉ nằm trên đúng nhánh PR tương ứng; **chưa merge các PR này**:
+
+| PR | Head khi chạy | Workflow mới | Kết quả Actions | Phần chưa chứng minh |
+|---|---|---|---|---|
+| [#37](https://github.com/tranhaihp26-bit/DocForm/pull/37) DF-B03 | `0a01b268b6dc6aa4e5d9a706ea05542377d0793f` | `.github/workflows/ooxml-font-size-audit-ci.yml` | [42370010487](https://github.com/tranhaihp26-bit/DocForm/actions/runs/42370010487) PASS: npm ci, lint, 3/3 test; 3 workflow cũ cùng head cũng SUCCESS | Branch diverged; DOCX post-stamp thật, Word/WPS/UAT |
+| [#43](https://github.com/tranhaihp26-bit/DocForm/pull/43) DF-E03 | `39045ba639f3d532dda6efa3cf50afbc6d187c1f` | `.github/workflows/docx-render-safety-ci.yml` | [42369791164](https://github.com/tranhaihp26-bit/DocForm/actions/runs/42369791164) PASS: npm ci, lint, 22 PASS / 0 FAIL / 1 SKIP | Test Windows-only bị SKIP trên Ubuntu; WPS/Word và UAT |
+| [#45](https://github.com/tranhaihp26-bit/DocForm/pull/45) DF-B04 | `46cc013aa9f10663299b60d9e803e9c92254a4bb` | `.github/workflows/header-stamp-settings-ci.yml` | [42369870886](https://github.com/tranhaihp26-bit/DocForm/actions/runs/42369870886) PASS: npm ci, lint; suite cuối 11/11 PASS | Word/WPS xem XML settings/post-stamp, UAT |
+
+**Phân biệt:** `CI_VERIFIED_FOCUSED` trên PR head ≠ `VERIFIED_RENDER` / `ACCEPTED`. Không có render thực, corpus có quyền hoặc người dùng UAT trong lượt CI. PR #47 vẫn Draft và 2 lỗi test chưa giải quyết. Những thay đổi mới chỉ là YAML CI, không sửa source; không gọi là đã xử lý các lỗi runtime hoặc profile master.
+
+Bổ sung được lưu trên main sau merge #48; các workflow mới vẫn ở nhánh PR và chỉ hiện diện trên main nếu/đến khi PR tương ứng được tích hợp.
