@@ -144,13 +144,15 @@ test("local synthetic connection probe rejects remote origins and document paylo
   const priorKey = process.env.OPENAI_API_KEY;
   process.env.OPENAI_API_KEY = "synthetic-openai-key";
   t.after(() => { process.env.OPENAI_API_KEY = priorKey; });
-  const { client } = fakeOpenAiClient();
-  const baseUrl = await startLocalServer(t, { openAiResponsesClient: client });
+  const fake = fakeOpenAiClient();
+  const baseUrl = await startLocalServer(t, { openAiResponsesClient: fake.client });
 
   const remoteOrigin = await post(baseUrl, "/api/ai/test-connection", { provider: "openai_api" }, "https://attacker.example");
   assert.equal(remoteOrigin.status, 403);
+  assert.equal(fake.calls.length, 0, "A credential-backed probe must reject the foreign Origin before invoking its provider");
   const documentPayload = await post(baseUrl, "/api/ai/test-connection", { provider: "openai_api", text: "DOCUMENT_SENTINEL" });
   assert.equal(documentPayload.status, 400);
+  assert.equal(fake.calls.length, 0, "The credential probe must not accept or send caller-supplied document text");
 });
 
 test("OpenAI connection probe uses only the fixed synthetic prompt", async t => {

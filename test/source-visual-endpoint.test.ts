@@ -156,4 +156,14 @@ test("local endpoint rehashes bytes and returns only the complete page manifest"
   });
   assert.equal(badOrigin.status, 403);
   assert.equal(rendererCalls, 1);
+
+  const oversizedSource = new Uint8Array(25 * 1024 * 1024 + 1);
+  const oversized = await fetch(`${baseUrl}/api/ai/render-source-docx`, {
+    method: "POST",
+    headers,
+    body: oversizedSource,
+  });
+  assert.equal(oversized.status, 413, "The local endpoint must reject a DOCX upload larger than 25 MiB");
+  assert.deepEqual(await oversized.json(), { error: "payload_too_large" });
+  assert.equal(rendererCalls, 1, "An oversized source must never reach the renderer");
 });

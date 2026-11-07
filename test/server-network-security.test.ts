@@ -106,3 +106,53 @@ test('Server Network Security: default loopback binding and transport-level reje
     });
   }
 });
+
+test('DOCX processing endpoints reject foreign origins before consuming streamed upload bodies', async () => {
+  const server = await startServer({ port: 0 });
+  const address = server.address() as AddressInfo;
+  assert.ok(address, 'Server address must be populated upon startServer resolution');
+
+  try {
+    const paths = ['/api/ai/render-source-docx', '/api/export/candidate-pdf'];
+    for (const path of paths) {
+      const status = await new Promise<number | null>(resolve => {
+        let settled = false;
+        let timer: NodeJS.Timeout | undefined;
+        const finish = (value: number | null) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          resolve(value);
+        };
+        const request = http.request({
+          hostname: '127.0.0.1',
+          port: address.port,
+          path,
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            Origin: 'https://attacker.invalid',
+          },
+        }, response => {
+          response.resume();
+          response.once('end', () => finish(response.statusCode ?? 0));
+          request.end();
+        });
+        request.once('error', () => finish(null));
+        timer = setTimeout(() => {
+          request.destroy();
+          finish(null);
+        }, 1_000);
+        // Keep the request body open. A rejected Origin should be answered before
+        // express.raw buffers the rest of an untrusted DOCX upload.
+        request.write(Buffer.from('synthetic untrusted upload prefix'));
+      });
+
+      assert.equal(status, 403, `${path} must reject a foreign Origin before reading the full body`);
+    }
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      server.close((err) => (err ? reject(err) : resolve()));
+    });
+  }
+});

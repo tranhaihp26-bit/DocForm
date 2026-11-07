@@ -328,6 +328,8 @@ export async function startServer(options: ServerOptions = {}): Promise<Server> 
 
   const isLocalLoopbackRequest = (req: express.Request) =>
     !cloudRun && isLocalHostRequest(req) && isLoopbackAddress(req.socket.remoteAddress);
+  const isTrustedLocalDocxRequest = (req: express.Request) =>
+    isLocalLoopbackRequest(req) && isLocalAuthRequest(req);
   const isTrustedVisualRead = (req: express.Request) => {
     if (!isLocalLoopbackRequest(req)) return false;
     const origin = req.get("origin");
@@ -402,9 +404,15 @@ export async function startServer(options: ServerOptions = {}): Promise<Server> 
 
   app.post(
     "/api/ai/render-source-docx",
+    (req, res, next) => {
+      if (!isTrustedLocalDocxRequest(req)) {
+        return res.status(403).json({ error: "Chỉ ứng dụng DocForm local mới xử lý tệp nguồn." });
+      }
+      next();
+    },
     express.raw({ type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", limit: "25mb" }),
     async (req, res) => {
-      if (!isLocalLoopbackRequest(req)) {
+      if (!isTrustedLocalDocxRequest(req)) {
         return res.status(403).json({ error: "Chỉ ứng dụng DocForm local mới xử lý tệp nguồn." });
       }
       const sourceBytes = req.body instanceof Uint8Array ? req.body : undefined;
@@ -469,9 +477,15 @@ export async function startServer(options: ServerOptions = {}): Promise<Server> 
 
   app.post(
     "/api/export/candidate-pdf",
+    (req, res, next) => {
+      if (!isTrustedLocalDocxRequest(req)) {
+        return res.status(403).json({ error: "Chỉ ứng dụng DocForm local mới xuất PDF ứng viên." });
+      }
+      next();
+    },
     express.raw({ type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", limit: "25mb" }),
     async (req, res) => {
-      if (!isLocalLoopbackRequest(req)) {
+      if (!isTrustedLocalDocxRequest(req)) {
         return res.status(403).json({ error: "Chỉ ứng dụng DocForm local mới xuất PDF ứng viên." });
       }
       const instanceId = req.get("x-candidate-instance") ?? "";
@@ -690,6 +704,9 @@ export async function startServer(options: ServerOptions = {}): Promise<Server> 
   });
 
   app.use((err: unknown, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (err && typeof err === "object" && "type" in err && err.type === "entity.too.large") {
+      return res.status(413).json({ error: "payload_too_large" });
+    }
     if (err instanceof multer.MulterError) {
       if (err.code === "LIMIT_FILE_SIZE") {
         return res.status(413).json({ error: "Tệp tin quá lớn. Kích thước tối đa cho phép là 25 MB." });
