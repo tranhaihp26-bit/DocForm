@@ -399,8 +399,10 @@ export function buildDocxTableFromModel(model: TableModel, headerProfile?: strin
     };
   };
 
-  const tableRows = model.rows.map((row, rowIndex) => {
-    const isHeaderRow = Boolean(row.isHeader || (useCompanyTableFormat && rowIndex === (companyProfile?.table.headerRowIndex ?? 0)));
+  const tableRows = model.rows.map((row) => {
+    // A profile may require repeating genuine headers, but cannot manufacture a
+    // header from the first data row of an imported TableModel.
+    const isHeaderRow = row.isHeader === true;
     return new TableRow({
       cantSplit: row.cantSplit ? true : undefined,
       tableHeader: isHeaderRow ? true : undefined,
@@ -452,7 +454,7 @@ export function buildDocxTableFromModel(model: TableModel, headerProfile?: strin
                   }));
 
               return new Paragraph({
-                alignment: useCompanyTableFormat && rowIndex === COMPANY_ND30_BODY_PROFILE.table.headerRowIndex
+                alignment: useCompanyTableFormat && isHeaderRow
                   ? AlignmentType.CENTER
                   : p.alignment === "center"
                   ? AlignmentType.CENTER 
@@ -2527,37 +2529,26 @@ export function generateND30DocxDocument(data: DocumentFormatType): Document {
                               .split("\n")
                               .map(line => line.trim())
                               .filter(Boolean)
-                              .map(line =>
-                                new Paragraph({
+                              .map(line => {
+                                // Only notes explicitly supplied in signTitle may be rendered.
+                                const isSignNote = /^\\s*[\\(\\[](?:k[ýí]|ghi rõ|đóng dấu|chữ ký).*?[\\)\\]]\\s*$/i.test(line);
+                                return new Paragraph({
                                   alignment: AlignmentType.CENTER,
                                   keepNext: true,
                                   spacing: { line: 240, after: 20 },
                                   children: [
                                     new TextRun({
-                                      text: line.toUpperCase(),
+                                      text: isSignNote ? line : line.toUpperCase(),
                                       font: "Times New Roman",
-                                      size: profile.signTitleFontSize * 2,
-                                      bold: true,
+                                      size: isSignNote ? 20 : profile.signTitleFontSize * 2,
+                                      bold: !isSignNote,
+                                      italics: isSignNote,
                                     }),
                                   ],
-                                })
-                              ) : []),
-                            // Lời ghi chú "(Ký, đóng dấu)"
-                            ...(data.signTitle ? [
-                              new Paragraph({
-                                alignment: AlignmentType.CENTER,
-                                keepNext: true,
-                                spacing: { line: 240, after: 40 },
-                                children: [
-                                  new TextRun({
-                                    text: "(Ký, đóng dấu)",
-                                    font: "Times New Roman",
-                                    size: 20, // 10pt
-                                    italics: true,
-                                  }),
-                                ],
-                              }),
-                            ] : []),
+                                });
+                              })                              ) : []),
+                            // Drafts do not invent "(Ký, đóng dấu)".
+                            // A note supplied as an explicit signTitle line is handled above.
                             // Khoảng trống ký tên
                             new Paragraph({ text: "", keepNext: true, spacing: { before: 180, after: 240 } }),
                             // Họ và tên người ký (chữ thường, đứng, đậm, cỡ 13-14pt)
