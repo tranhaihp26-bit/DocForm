@@ -2332,7 +2332,7 @@ export function generateND30DocxDocument(data: DocumentFormatType): Document {
                   new TextRun({
                     text: data.documentType.toUpperCase(),
                     font: "Times New Roman",
-                    size: 31, // 15.5pt (HD05 quy định 15-16pt)
+                    size: 30, // 15pt nguyên theo profile; HD05 cho phép 15-16pt, không sử dụng 15.5pt
                     bold: true,
                   }),
                 ],
