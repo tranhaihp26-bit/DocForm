@@ -10,6 +10,9 @@
 
 ## Mục tiêu người dùng và chính sách profile V2.2
 
+**Mục tiêu cuối đã đặc tả:** [DocForm — Product End State & Acceptance](docs/product/DOCFORM_MUC_TIEU_SAN_PHAM_CUOI_V1_0_2026-11-07.md). **Kế hoạch duy nhất:** [Master Roadmap V2.0](docs/roadmap/DOCFORM_MASTER_AUDIT_IMPLEMENTATION_ROADMAP_2026-11-07.md), giữ 29 gói kỹ thuật và sáu cổng nghiệm thu PA-01–PA-06, phân biệt M1 pilot và M2 sử dụng thường xuyên. [Ma trận phạm vi hỗ trợ](docs/product/PRODUCT_SUPPORT_MATRIX.md) ghi những năng lực **chưa có bằng chứng** là NOT_VERIFIED/BLOCKED, không quảng bá hỗ trợ tràn lan. Hiện chưa công bố M1/M2 đạt nghiệm thu.
+
+
 **Quản lý dự án xuyên phiên:** coding agent phải đọc [bộ nhớ trạng thái](docs/PROJECT_MEMORY.md) và [Master Roadmap](docs/roadmap/DOCFORM_MASTER_AUDIT_IMPLEMENTATION_ROADMAP_2026-11-07.md) trước khi sửa, rồi [ghi nhật ký thay đổi/kiểm chứng lên GitHub](docs/PROJECT_SESSION_PROTOCOL.md) sau khi thực hiện. Không đánh dấu hoàn thành nếu chưa có commit và bằng chứng phù hợp.
 
 DocForm phải giúp người dùng **tạo, nhập, chỉnh sửa và chuẩn hóa văn bản**, xuất DOCX có thể tiếp tục chỉnh sửa. Khi người dùng chọn profile riêng của Công ty Hoa tiêu Hàng hải Miền Bắc, **mọi thuộc tính có cấu hình profile được áp đúng profile, không so/hậu kiểm hoặc cảnh báo xung đột với ND30/HD05**. Chỉ thuộc tính profile chưa có mới dùng ND30 hoặc HD05 cùng hệ làm fallback. `0`, `false`, `""` có chủ ý là đã thiết lập; không có cả hai nguồn thì `UNSPECIFIED`.

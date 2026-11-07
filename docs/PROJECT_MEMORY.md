@@ -8,7 +8,9 @@ Người dùng **tạo mới, nhập, chỉnh sửa, chuẩn hóa và xuất DOC
 
 ## Nguồn điều hành
 
-- [Master Roadmap & trạng thái các gói DF-A–F](roadmap/DOCFORM_MASTER_AUDIT_IMPLEMENTATION_ROADMAP_2026-11-07.md)
+- [**Product End State — đích M2 và cổng nghiệm thu**](product/DOCFORM_MUC_TIEU_SAN_PHAM_CUOI_V1_0_2026-11-07.md)
+- [**Product Support Matrix — phạm vi được chứng minh**](product/PRODUCT_SUPPORT_MATRIX.md)
+- [Master Roadmap V2.0 & trạng thái các gói DF-A–F/PA-01–PA-06](roadmap/DOCFORM_MASTER_AUDIT_IMPLEMENTATION_ROADMAP_2026-11-07.md)
 - [Chính sách V2.2](DOCFORM_PRODUCT_FIRST_PROFILE_POLICY_V2_2.md)
 - [Profile Source Matrix DF-A01](profile/PROFILE_SOURCE_MATRIX.md) — `PARTIAL_SOURCE_MAPPED`, không tự sửa A02/A03 đang conflict
 - [Codebase Map](CODEBASE_MAP.md)
@@ -26,6 +28,14 @@ Người dùng **tạo mới, nhập, chỉnh sửa, chuẩn hóa và xuất DOC
 | DF-B01 | PARTIAL_IMPLEMENTED + CI_VERIFIED_FOCUSED — mới nối body.fontSizePt | [Nhật ký phiên](sessions/2026-11-07_DF-A04-B01_effective-profile-and-memory.md); còn DF-B02 cho các consumer khác |
 | DF-B02/B03 | OPEN | Nối các thuộc tính còn lại vào exporter/QA sau khi B01 ổn định |
 | DF-E03/F02 | NOT_VERIFIED_RENDER | Chưa có bằng chứng Word/WPS thực |
+| PA-01 | BASELINE_DOCUMENTED / NOT_VERIFIED_UAT | [Support Matrix](product/PRODUCT_SUPPORT_MATRIX.md) — bốn tuyến pilot có trạng thái BLOCKED_BY_MASTER/NOT_VERIFIED, **chưa được công bố hỗ trợ end-to-end** |
+| PA-02–PA-06 | PLANNED / NOT_VERIFIED | [Product End State](product/DOCFORM_MUC_TIEU_SAN_PHAM_CUOI_V1_0_2026-11-07.md) + Master Roadmap V2.0; chưa có UAT, Word/WPS hoặc evidence vận hành máy sạch |
+
+## Phiên lập mục tiêu cuối và cập nhật roadmap (07/11/2026)
+
+- **Trạng thái:** Product End State v1.0 + Master Roadmap v2.0 đã lưu; PA-01 có ma trận baseline, **chưa có UAT/Word/WPS nghiệm thu**.
+- **Session log:** [PA-01–PA-06 — Product End State và Master Roadmap V2.0](sessions/2026-11-07_PA01-PA06_product-endstate-master-v2.md).
+- **Công việc ưu tiên kế tiếp:** PA-01 khóa phạm vi M1 có dữ liệu chứng minh, DF-B02 per-property; PA-02/PA-03 baseline usability/editability sớm. Chỉ sửa những field có profile approved.
 
 ## Phiên làm việc gần nhất
 

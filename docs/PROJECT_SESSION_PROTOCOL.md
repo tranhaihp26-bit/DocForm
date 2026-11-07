@@ -8,11 +8,12 @@
 Trước **mỗi phiên/task/PR**, đọc theo thứ tự tối thiểu (đúng phần liên quan, không nạp cả repository):
 
 1. [Project Memory](PROJECT_MEMORY.md) — phiên/commit đã làm, blocker, kết quả test và nhiệm vụ còn mở.
-2. [Master Roadmap](roadmap/DOCFORM_MASTER_AUDIT_IMPLEMENTATION_ROADMAP_2026-11-07.md) — ID gói và *kết quả người dùng cần đạt*, điều kiện phụ thuộc/dừng; đọc bổ sung tiến độ sau audit.
-3. [Chính sách V2.2](DOCFORM_PRODUCT_FIRST_PROFILE_POLICY_V2_2.md) và [Profile Source Matrix](profile/PROFILE_SOURCE_MATRIX.md) nếu sửa profile, rule, DOCX hoặc bảng.
-4. [Codebase Map](CODEBASE_MAP.md) và `AGENTS.md` của vùng thay đổi; đọc HEAD, diff chưa merge, PR/test liên quan (không mặc định báo cáo cũ là hiện trạng).
+2. [Product End State](product/DOCFORM_MUC_TIEU_SAN_PHAM_CUOI_V1_0_2026-11-07.md) — người dùng cuối thực sự phải làm được gì; M1 và M2, Gates S/T/U/R/O/C; đối chiếu [Support Matrix](product/PRODUCT_SUPPORT_MATRIX.md) nếu mở rộng loại/chức năng.
+3. [Master Roadmap V2.0](roadmap/DOCFORM_MASTER_AUDIT_IMPLEMENTATION_ROADMAP_2026-11-07.md) — **DF-ID kỹ thuật + PA-ID nghiệm thu liên quan**, kết quả, điều kiện phụ thuộc/dừng và bằng chứng còn thiếu (đọc phần 12–21 trước khi dùng snapshot lịch sử).
+4. [Chính sách V2.2](DOCFORM_PRODUCT_FIRST_PROFILE_POLICY_V2_2.md) và [Profile Source Matrix](profile/PROFILE_SOURCE_MATRIX.md) nếu sửa profile, rule, DOCX hoặc bảng.
+5. [Codebase Map](CODEBASE_MAP.md) và `AGENTS.md` của vùng thay đổi; đọc HEAD, diff chưa merge, PR/test liên quan (không mặc định báo cáo cũ là hiện trạng).
 
-Viết **intent ngắn** trong mô tả PR/ghi chú phiên trước khi làm: `Task ID → người dùng cần gì → đã có bằng chứng gì → sửa tối thiểu chỗ nào → test nào cần chạy → điều kiện dừng → ngoài phạm vi`.
+Viết **intent ngắn** trong mô tả PR/ghi chú phiên trước khi làm: `DF-ID + PA-ID → kết quả người dùng cuối/M1/M2 → đã có bằng chứng gì → sửa tối thiểu chỗ nào → test/Office/UAT nào cần chạy → điều kiện dừng → ngoài phạm vi`. Không coi PASS CI là Gate U hoặc Gate R đã đạt.
 
 **Cổng định hướng:** nếu việc định làm không giải quyết trực tiếp một tiêu chí đầu ra của Master Roadmap hoặc nhu cầu mới rõ ràng, **không mở rộng**. Trường hợp repo chưa có gói tương ứng, ghi quyết định bổ sung và giải thích kết quả người dùng; không tự xây lại kiến trúc, nghiên cứu lại tiêu chuẩn đã chốt, hoặc tái kiểm thử toàn bộ vì một diff nhỏ.
 

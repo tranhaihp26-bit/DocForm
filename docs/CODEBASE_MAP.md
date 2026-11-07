@@ -13,11 +13,11 @@ Mọi đường dẫn trong tài liệu này đều là đường dẫn tương 
 
 ## Định hướng và tuyến cấu hình hiệu lực V2.2
 
-**Bắt đầu phiên mới tại [Project Memory](PROJECT_MEMORY.md)** → [Master Roadmap](roadmap/DOCFORM_MASTER_AUDIT_IMPLEMENTATION_ROADMAP_2026-11-07.md) → đọc đúng file theo task → **kết thúc phiên theo [protocol](PROJECT_SESSION_PROTOCOL.md)**. Sau mỗi PR, thêm nhật ký tại `sessions/`, cập nhật chỉ mục + trạng thái gói, không chỉ ghi trong ChatGPT.
+**Bắt đầu phiên mới tại [Project Memory](PROJECT_MEMORY.md)** → [Product End State và nghiệm thu M1/M2](product/DOCFORM_MUC_TIEU_SAN_PHAM_CUOI_V1_0_2026-11-07.md) → [Support Matrix](product/PRODUCT_SUPPORT_MATRIX.md) khi chạm loại văn bản/Editor → [Master Roadmap](roadmap/DOCFORM_MASTER_AUDIT_IMPLEMENTATION_ROADMAP_2026-11-07.md) → đọc đúng file theo task → **kết thúc phiên theo [protocol](PROJECT_SESSION_PROTOCOL.md)**. Sau mỗi PR, thêm nhật ký tại `sessions/`, cập nhật chỉ mục + trạng thái gói, không chỉ ghi trong ChatGPT.
 
 **Ma trận nguồn profile đang áp dụng:** [DF-A01 — Profile Source Matrix](profile/PROFILE_SOURCE_MATRIX.md) (`PARTIAL_SOURCE_MAPPED`; xung đột ND30 header date/line và HD05 issuer chưa được phê duyệt). Không copy workbook Drive dự thảo thành giá trị runtime; đối chiếu từng role.
 
-**Kế hoạch triển khai hiện hành (snapshot 07/11/2026):** [Master audit liên nguồn & roadmap hoàn thiện DocForm — issue-ready](roadmap/DOCFORM_MASTER_AUDIT_IMPLEMENTATION_ROADMAP_2026-11-07.md). Đọc kế hoạch này **cùng** [chính sách V2.2](DOCFORM_PRODUCT_FIRST_PROFILE_POLICY_V2_2.md) trước khi lập PR mới; chỉ thực hiện các gói chưa có bằng chứng hoàn tất trên HEAD và không tự dùng nguồn Drive chưa duyệt để ghi đè profile.
+**Kế hoạch triển khai hiện hành (Master Roadmap V2.0, cập nhật 07/11/2026):** [Master audit liên nguồn & roadmap hoàn thiện DocForm — issue-ready](roadmap/DOCFORM_MASTER_AUDIT_IMPLEMENTATION_ROADMAP_2026-11-07.md). Đọc kế hoạch này **cùng** [chính sách V2.2](DOCFORM_PRODUCT_FIRST_PROFILE_POLICY_V2_2.md) trước khi lập PR mới; chỉ thực hiện các gói chưa có bằng chứng hoàn tất trên HEAD và không tự dùng nguồn Drive chưa duyệt để ghi đè profile.
 
 
 
