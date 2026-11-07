@@ -41,3 +41,9 @@ Tiếp tục từ publication PR #48; kiểm tra trạng thái các PR mở, ưu
 3. Giải quyết hai lỗi thực tế của #47 tại test/UI/geometry đúng owner; không tự tuyên bố unrelated.
 4. Kiểm #45 bằng DOCX hậu stamp + Office/WPS/visual, rồi đánh giá hợp nhất.
 5. Chỉ nâng status Product Support Matrix hoặc đóng issue khi có bằng chứng đúng gate.
+
+## Chốt trạng thái lưu trữ
+
+- [PR #48](https://github.com/tranhaihp26-bit/DocForm/pull/48) đã merge ở `60c7990ae67c6089e12ef68109acbc4603e27c44`, đưa nhật ký này và Project Memory/Roadmap lên `main`. Bốn PR #37/#43/#45/#47 vẫn Draft và chưa được merge.
+- Comments cập nhật tiến độ đã được ghi vào các issues #28, #22, #12, #4, #5, #6; vẫn giữ các issue mở do thiếu bằng chứng nghiệm thu.
+- Đánh giá trạng thái này là kết quả tích hợp có thể truy xuất GitHub, **không phải** một lần full regression, Office visual QA hay nghiệm thu M1/M2.
