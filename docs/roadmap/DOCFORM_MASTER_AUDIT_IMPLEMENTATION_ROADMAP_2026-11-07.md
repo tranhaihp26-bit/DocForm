@@ -535,3 +535,12 @@ Mỗi dòng nghiệm thu cần: ID ca/loại, source giả lập hoặc được
 6. **DF-E03/E04, PA-04/PA-05/PA-06**, rồi F01/F02/F03 theo scope M1→M2.
 
 **Trạng thái tại commit cập nhật kế hoạch:** đây là tài liệu đặc tả và lộ trình. Đã có DF-C01/C03/A04 DONE_CODE theo Project Memory và DF-B01 PARTIAL; **PA-01–PA-06 chưa có UAT/Office/end-user evidence**, không gọi M1/M2 PASS. Master Roadmap V2.0 vẫn giữ đầy đủ 29 gói kỹ thuật cũ và không thay đổi cấu hình profile thực tế.
+
+
+## 22. ISSUE BACKLOG TRÊN GITHUB — ĐÃ TRIỂN KHAI DANH SÁCH CÔNG VIỆC (07/11/2026)
+
+**[Bảng điều phối 32 issue song song](DOCFORM_ISSUE_EXECUTION_BOARD_2026-11-07.md)** là mapping chính thức từ mỗi DF-ID/PA-ID đến GitHub issue #4–#35 và EPIC [#36](https://github.com/tranhaihp26-bit/DocForm/issues/36). **29 gói DF cũ:** DF-A04, C01, C03 đã có code/test nên không tạo issue mới; **26 gói còn lại + sáu luồng PA** đã được tạo issue với DoD/ràng buộc. Không đồng nghĩa code đã hoàn thành.
+
+**W0 triển khai độc lập:** #7 B02, #8 B03, #9 E01, #10 E02, #11 E04, #22 C06; các lane chứng cứ #4/#5/#6/#12/#16/#33/#34/#35 song song. Tránh chỉnh trùng `docxExport.ts`, `App.tsx`, `server.ts`, `package-lock.json`. **Đang BLOCKED_BY_MASTER:** #13 A02 và #14 A03; không tự suy đoán. **D01–D04 tùy chọn** theo GO/NO-GO, F01–F03 chỉ ở release gate.
+
+**Sau mỗi phiên:** lưu thay đổi/kiểm thử vào issue comment + `docs/sessions/` + [Project Memory](../PROJECT_MEMORY.md); ghi trạng thái thực và việc còn lại, không tính issue “OPEN” là test FAIL hay “CLOSED” là UAT PASS nếu bằng chứng chưa đủ.

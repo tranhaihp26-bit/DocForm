@@ -13,6 +13,8 @@ Mọi đường dẫn trong tài liệu này đều là đường dẫn tương 
 
 ## Định hướng và tuyến cấu hình hiệu lực V2.2
 
+**Điều phối issue:** [Issue Execution Board — 32 gói, dependencies, lanes](roadmap/DOCFORM_ISSUE_EXECUTION_BOARD_2026-11-07.md) và [EPIC GitHub #36](https://github.com/tranhaihp26-bit/DocForm/issues/36). Không tạo issue trùng cho DF-A04/C01/C03 đã nghiệm thu code; mỗi issue mới cần gắn kết quả người dùng, DoD và nhật ký phiên.
+
 **Bắt đầu phiên mới tại [Project Memory](PROJECT_MEMORY.md)** → [Product End State và nghiệm thu M1/M2](product/DOCFORM_MUC_TIEU_SAN_PHAM_CUOI_V1_0_2026-11-07.md) → [Support Matrix](product/PRODUCT_SUPPORT_MATRIX.md) khi chạm loại văn bản/Editor → [Master Roadmap](roadmap/DOCFORM_MASTER_AUDIT_IMPLEMENTATION_ROADMAP_2026-11-07.md) → đọc đúng file theo task → **kết thúc phiên theo [protocol](PROJECT_SESSION_PROTOCOL.md)**. Sau mỗi PR, thêm nhật ký tại `sessions/`, cập nhật chỉ mục + trạng thái gói, không chỉ ghi trong ChatGPT.
 
 **Ma trận nguồn profile đang áp dụng:** [DF-A01 — Profile Source Matrix](profile/PROFILE_SOURCE_MATRIX.md) (`PARTIAL_SOURCE_MAPPED`; xung đột ND30 header date/line và HD05 issuer chưa được phê duyệt). Không copy workbook Drive dự thảo thành giá trị runtime; đối chiếu từng role.

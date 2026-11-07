@@ -1,5 +1,6 @@
 ## Mục tiêu & căn cứ
 - [ ] Đã đọc [Project Memory](../docs/PROJECT_MEMORY.md), [Product End State](../docs/product/DOCFORM_MUC_TIEU_SAN_PHAM_CUOI_V1_0_2026-11-07.md), [Master Roadmap V2.0](../docs/roadmap/DOCFORM_MASTER_AUDIT_IMPLEMENTATION_ROADMAP_2026-11-07.md) và chính sách V2.2 theo phạm vi
+- GitHub issue số #... theo [Execution Board](../docs/roadmap/DOCFORM_ISSUE_EXECUTION_BOARD_2026-11-07.md) (đường dẫn/ID và trạng thái phụ thuộc):
 - DF-ID kỹ thuật + PA-ID nghiệm thu (nếu có):
 - Người dùng cuối sẽ làm tốt hơn việc gì; nằm trong phạm vi M1/M2 nào:
 - [ ] Nếu hứa hỗ trợ type/role mới, đã cập nhật [Support Matrix](../docs/product/PRODUCT_SUPPORT_MATRIX.md) với evidence đúng và trạng thái hợp lệ

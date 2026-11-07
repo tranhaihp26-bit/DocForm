@@ -11,6 +11,7 @@ Người dùng **tạo mới, nhập, chỉnh sửa, chuẩn hóa và xuất DOC
 - [**Product End State — đích M2 và cổng nghiệm thu**](product/DOCFORM_MUC_TIEU_SAN_PHAM_CUOI_V1_0_2026-11-07.md)
 - [**Product Support Matrix — phạm vi được chứng minh**](product/PRODUCT_SUPPORT_MATRIX.md)
 - [Master Roadmap V2.0 & trạng thái các gói DF-A–F/PA-01–PA-06](roadmap/DOCFORM_MASTER_AUDIT_IMPLEMENTATION_ROADMAP_2026-11-07.md)
+- [**Issue Execution Board — 32 issue, lane song song và phụ thuộc**](roadmap/DOCFORM_ISSUE_EXECUTION_BOARD_2026-11-07.md) · [EPIC #36](https://github.com/tranhaihp26-bit/DocForm/issues/36)
 - [Chính sách V2.2](DOCFORM_PRODUCT_FIRST_PROFILE_POLICY_V2_2.md)
 - [Profile Source Matrix DF-A01](profile/PROFILE_SOURCE_MATRIX.md) — `PARTIAL_SOURCE_MAPPED`, không tự sửa A02/A03 đang conflict
 - [Codebase Map](CODEBASE_MAP.md)
@@ -36,6 +37,13 @@ Người dùng **tạo mới, nhập, chỉnh sửa, chuẩn hóa và xuất DOC
 - **Trạng thái:** Product End State v1.0 + Master Roadmap v2.0 đã lưu; PA-01 có ma trận baseline, **chưa có UAT/Word/WPS nghiệm thu**.
 - **Session log:** [PA-01–PA-06 — Product End State và Master Roadmap V2.0](sessions/2026-11-07_PA01-PA06_product-endstate-master-v2.md).
 - **Công việc ưu tiên kế tiếp:** PA-01 khóa phạm vi M1 có dữ liệu chứng minh, DF-B02 per-property; PA-02/PA-03 baseline usability/editability sớm. Chỉ sửa những field có profile approved.
+
+## Phiên tạo issue theo Master Roadmap V2.0 (07/11/2026)
+
+- **Đã tạo và kiểm tra trên GitHub:** 32 issue triển khai [#4–#35](https://github.com/tranhaihp26-bit/DocForm/issues), mỗi DF/PA-ID duy nhất, không tạo lại ba gói DONE_CODE. [EPIC #36](https://github.com/tranhaihp26-bit/DocForm/issues/36) có checklist đầy đủ. Đây chỉ là backlog/DoD, **không phải runtime được sửa hoặc UAT đã PASS**.
+- **Điều phối song song:** [Issue Board](roadmap/DOCFORM_ISSUE_EXECUTION_BOARD_2026-11-07.md): W0 #7 B02, #8 B03, #9 E01, #10 E02, #11 E04, #22 C06; PA-01/02/03 và source/infrastructure/recovery song song. #13/#14 BLOCKED_BY_MASTER.
+- **Log phiên:** [2026-11-07 — Tạo và điều phối issue M2](sessions/2026-11-07_DF-M2_issue-backlog-parallel-lanes.md).
+- **Bước ưu tiên tiếp:** thực hiện từng lane W0 bằng PR nhỏ, không chồng file; baseline PA01/02/03 ngay. Sau merge cập nhật issue/comment, memory và trạng thái đúng; không tự triển khai D01–04 trước gate.
 
 ## Phiên làm việc gần nhất
 
