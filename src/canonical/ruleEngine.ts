@@ -1197,15 +1197,15 @@ export function evaluateDocumentRules(
               actual = `${min} - ${max} dxa`;
               if (isUsingNd30CompanyProfile) {
                 const bodyParagraphs = bEv.directParagraphs.filter((p: any) =>
-                  p.text.trim().length > 0 && (p.isEligibleBody || p.role === "heading")
+                  p.text.trim().length > 0 && p.isEligibleBody
                 );
                 const exactCompanySpacing = bodyParagraphs.length > 0 && bodyParagraphs.every((p: any) =>
                   p.lineRule === "exact" && p.lineSpacingDxa === companyBodyProfile!.body.lineSpacingPt * 20
                 );
                 status = exactCompanySpacing ? "PASS" : "FAIL";
                 reason = exactCompanySpacing
-                  ? "Các đoạn và đề mục thân bài của profile Hoa Tiêu MB dùng Exactly 19pt (380 twips)."
-                  : "Profile Hoa Tiêu MB yêu cầu các đoạn và đề mục thân bài dùng Exactly 19pt (380 twips).";
+                  ? "Các đoạn thân bài thường của profile Hoa Tiêu MB dùng Exactly 19pt (380 twips)."
+                  : "Profile Hoa Tiêu MB yêu cầu các đoạn thân bài thường dùng Exactly 19pt (380 twips).";
               } else {
                 const ok = min >= 240 && max <= 360;
                 status = ok ? "PASS" : "FAIL";
