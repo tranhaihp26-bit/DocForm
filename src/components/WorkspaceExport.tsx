@@ -235,7 +235,7 @@ export function WorkspaceExport({
     <main
       data-wizard-step="3"
       className="df-workspace-export"
-      data-candidate-state={!candidate ? 'missing' : validatedExportAvailable ? 'downloadable' : reviewDownloadAvailable ? 'review-only' : 'blocked'}
+      data-candidate-state={isStale ? 'stale' : !candidate ? 'missing' : validatedExportAvailable ? 'downloadable' : reviewDownloadAvailable ? 'review-only' : 'blocked'}
       data-candidate-safe={candidate ? String(candidate.safe) : undefined}
       data-candidate-review-downloadable={candidate ? String(candidate.reviewDownloadable) : undefined}
       data-candidate-instance={candidate?.instanceId}
