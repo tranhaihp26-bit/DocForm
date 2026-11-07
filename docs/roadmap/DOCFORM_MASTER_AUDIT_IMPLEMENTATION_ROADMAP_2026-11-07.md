@@ -373,6 +373,21 @@ B/C/E xong và pilot đủ chứng cứ ──> F01/F02 ──> F03
 **Quy tắc tiếp tục:** không lặp test/QA đã PASS nếu code liên quan không đổi; không chuyển `DONE_CODE` thành `ACCEPTED` khi chưa nghiệm thu trên file và renderer thực.
 
 
+### Cập nhật trạng thái GitHub — 07/11/2026
+
+Các PR dưới đây vẫn là bản nháp mở; chưa merge. Trạng thái phản ánh bằng chứng code/tài liệu, không phải nghiệm thu sản phẩm.
+
+| Gói | Trạng thái hiện tại | Bằng chứng publication và giới hạn |
+|---|---|---|
+| **DF-A01** | **PARTIAL_SOURCE_MAPPED** | [PR #44](https://github.com/tranhaihp26-bit/DocForm/pull/44), nhánh `codex/g01-a01-sources-20261107`; A02/A03 vẫn BLOCKED_BY_MASTER; không có Word/WPS/UAT. |
+| **DF-B03** | **DONE_CODE + CI_VERIFIED_FOCUSED** | [PR #37](https://github.com/tranhaihp26-bit/DocForm/pull/37); focused audit local 2/2; current-head GitHub Actions 42367294809, 42367294801, 42367294808 thành công. Chưa nối vào DOCX hậu stamp và chưa Word/WPS/UAT. |
+| **DF-B04** | **DONE_CODE; render NOT_VERIFIED** | [PR #45](https://github.com/tranhaihp26-bit/DocForm/pull/45); local settings 10/10, header 5/5, export-candidate 6/6, lint PASS. Không có workflow run trên head tại lúc kiểm; Word/WPS/UAT chưa chạy. |
+| **PA-01** | **BASELINE_DOCUMENTED / NOT_VERIFIED_UAT** | [PR #46](https://github.com/tranhaihp26-bit/DocForm/pull/46); bổ sung phạm vi/bằng chứng, không thay Support Matrix hoặc xác nhận hỗ trợ end-to-end. |
+| **PA-02/PA-03** | **BASELINE_TEMPLATE_DOCUMENTED / NOT_VERIFIED_UAT** | [PR #46](https://github.com/tranhaihp26-bit/DocForm/pull/46); chưa chạy UI, Office hoặc người dùng thật. |
+| **PA-05** | **GUIDE_DRAFT / NOT_VERIFIED_UAT** | [PR #47](https://github.com/tranhaihp26-bit/DocForm/pull/47); storage 6/6 và synthetic preview/print 1/1 local; hai test failure đã được nêu trong PR; browser recovery thực, Word/WPS và UAT chưa xác minh. |
+
+Session index: [GitHub publication log](../sessions/2026-11-07_github-publication.md) · [PR #48](https://github.com/tranhaihp26-bit/DocForm/pull/48). No release, M1/M2, rendering, or acceptance gate is marked complete by these draft PRs.
+
 ## 13. QUY TẮC ĐIỀU HÀNH XUYÊN PHIÊN (BẮT BUỘC)
 
 Đọc [Project Memory](../PROJECT_MEMORY.md) và [Project Session Protocol](../PROJECT_SESSION_PROTOCOL.md) **trước khi mở task**, so ID/status/bằng chứng đã hoàn thành với HEAD hiện hành; chỉ thực hiện việc còn phục vụ **mục tiêu cuối người dùng** và có tiêu chí dừng. Sau PR/đợt sửa, lưu nhật ký tại `docs/sessions/` với commit, file, test, kết quả thực, điều chưa xác minh và bước kế tiếp; cập nhật memory và đúng dòng trạng thái trong roadmap. Mọi kết luận về Word/WPS chưa kiểm phải ghi `NOT_VERIFIED_RENDER`. Không đặt việc ghi nhớ như lý do chạy full test hay mở rộng scope.
