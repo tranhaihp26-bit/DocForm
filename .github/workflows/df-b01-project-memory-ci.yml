@@ -3,6 +3,8 @@ on:
   pull_request:
     paths:
       - ".github/workflows/df-b01-project-memory-ci.yml"
+      - "package.json"
+      - "package-lock.json"
       - "src/canonical/effectiveProfileAttribute.ts"
       - "src/utils/documentComposer.ts"
       - "test/effective-profile-attribute-v22.test.ts"
@@ -19,7 +21,7 @@ jobs:
           node-version: "22"
           cache: npm
       - name: Install from current lockfile
-        run: npm ci --legacy-peer-deps
+        run: npm ci
       - name: Typecheck
         run: npm run lint
       - name: Focused attribute and composer regressions
