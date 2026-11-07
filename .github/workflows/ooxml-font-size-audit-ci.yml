@@ -1,0 +1,34 @@
+name: DocForm scoped OOXML font-size audit
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/ooxml-font-size-audit-ci.yml"
+      - "package.json"
+      - "package-lock.json"
+      - "src/canonical/ooxmlFontSizeAudit.ts"
+      - "src/canonical/ruleEngine.ts"
+      - "src/utils/docxExport.ts"
+      - "test/ooxml-font-size-audit.test.ts"
+      - "test/df-b02-profile-export-ooxml.test.ts"
+  workflow_dispatch:
+
+jobs:
+  scoped-font-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install from lockfile
+        run: npm ci
+      - name: Typecheck
+        run: npm run lint
+      - name: Focused post-export OOXML font and profile regression tests
+        run: >
+          npx tsx --test
+          test/ooxml-font-size-audit.test.ts
+          test/df-b02-profile-export-ooxml.test.ts
