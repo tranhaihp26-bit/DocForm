@@ -43,3 +43,9 @@
 - Next evidence gate: select the actual app/browser and Office versions; use approved synthetic corpus and a real target user for U-01–U-12; save case-level expected/actual, measured-only time/help, DOCX hash, Office/version, and outcome.
 
 **Persistence:** local worktree only; GitHub persistence awaits G00/approval. No M1/M2, UAT, Word/WPS, or end-to-end acceptance claim is made.
+
+## Publication update — 2026-11-07
+
+- Publication was authorized through GitHub Primary. Branch `codex/g12-pa01-pa03-20261107` now points to commit `08888786f4b10414a0e635daaf1c6014a02b7ad2`; its tree `4967c148b27009a2dcb60d68d13adabf6374a791` matches the reviewed local tree.
+- [Draft PR #46](https://github.com/tranhaihp26-bit/DocForm/pull/46) is open and unmerged. It references issues #4, #5, and #6; all remain open. No Actions workflow run was created for this docs-only head.
+- This publication step did not rerun tests or perform interactive UI, Office rendering, or UAT. PA-01–PA-03 remain NOT_VERIFIED for end-to-end user acceptance.
