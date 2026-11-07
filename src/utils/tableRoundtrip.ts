@@ -532,17 +532,19 @@ export function validateOoxmlWellFormed(xml: string): { valid: boolean; error?: 
 function applyCompanyNd30TableFormatForComparison(model: TableModel): TableModel {
   return {
     ...model,
-    rows: model.rows.map((row, rowIndex) => {
-      const isHeader = Boolean(row.isHeader || rowIndex === 0);
+    rows: model.rows.map((row) => {
+      // Repeat-header is a semantic property of the source row, never an inferred
+      // property of the first imported data row.
+      const isHeader = row.isHeader === true;
       return {
         ...row,
         isHeader,
         cells: row.cells.map(cell => ({
           ...cell,
-          ...(rowIndex === 0 ? { alignment: "center" as const } : {}),
+          ...(isHeader ? { alignment: "center" as const } : {}),
           paragraphs: cell.paragraphs?.map(paragraph => ({
             ...paragraph,
-            ...(rowIndex === 0 ? { alignment: "center" as const } : {}),
+            ...(isHeader ? { alignment: "center" as const } : {}),
             runs: paragraph.runs?.map(run => ({
               ...run,
               font: "Times New Roman",
