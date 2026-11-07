@@ -346,13 +346,15 @@ B/C/E xong và pilot đủ chứng cứ ──> F01/F02 ──> F03
 | **DF-C03** | **DONE_CODE + VERIFIED_OOXML_FOCUSED** | `buildDocxTableFromModel` chỉ set `w:tblHeader` khi `row.isHeader===true`; nhánh comparator không tự sửa `rowIndex=0`. Đã có negative test chèn `tblHeader` giả và kiểm roundtrip từ chối | Cùng PR #2/commit |
 | **DF-A01** | **PARTIAL_SOURCE_MAPPED** | Đã tạo [ma trận nguồn, role, property, xung đột và trạng thái phê duyệt](../profile/PROFILE_SOURCE_MATRIX.md) cho bốn đường pilot. Không đổi JSON/master profile. Chưa hoàn tất 100% roles sau stamp và chưa Word/WPS sign-off | [Tệp `docs/profile/PROFILE_SOURCE_MATRIX.md`](../profile/PROFILE_SOURCE_MATRIX.md), commit `6fbe26a6` |
 | **DF-A02/DF-A03** | **BLOCKED_BY_MASTER** | ND30 header.date right/center và issuer.line 15/16; biến thể tên đơn vị HD05 | Không tự giải bằng fallback; cần golden có SHA/approval |
-| **DF-C02/C04 và B01–B06** | **OPEN** | Chưa triển khai trong sprint này | Chỉ tiến hành phần không bị A02/A03 chặn |
+| **DF-A04** | **DONE_CODE + CI_VERIFIED_FOCUSED** | Resolver kiểm tra 0/false/""/null, conflict, fonts invalid, fallback và regime | [PR #3](https://github.com/tranhaihp26-bit/DocForm/pull/3), [nhật ký](../sessions/2026-11-07_DF-A04-B01_effective-profile-and-memory.md) |
+| **DF-B01** | **PARTIAL_IMPLEMENTED + CI_VERIFIED_FOCUSED** | Resolver per-property có provenance, nối một consumer thật `body.fontSizePt` trong composer. Các role khác thuộc B02/B03 vẫn mở | [merge `cf5fb619`](https://github.com/tranhaihp26-bit/DocForm/commit/cf5fb6190a1bd06db9da846039ad6eebd75e027c), [CI 26/26](https://github.com/tranhaihp26-bit/DocForm/actions/runs/42336367558), [CI 31/31](https://github.com/tranhaihp26-bit/DocForm/actions/runs/42336367566) |
+| **DF-C02/C04 và B02–B06** | **OPEN** | Chưa triển khai trong sprint này | Chỉ tiến hành phần không bị A02/A03 chặn |
 
 **CI scope của PR #2:** GitHub Actions Ubuntu/Node 22 chạy `npm run lint` **PASS**, 15/15 tests **PASS**, 0 skipped/failed: [run 42332869724](https://github.com/tranhaihp26-bit/DocForm/actions/runs/42332869724). Đây là test OOXML/code, **không** chứng minh Word/WPS trực quan đã PASS; workflow vẫn dùng `npm ci --legacy-peer-deps` vì DF-E04 còn OPEN.
 
 **Kế hoạch thực hiện tiếp, không lặp lại DF-C01/DF-C03:**
 
-1. Hoàn thiện **DF-B01** với resolver per-property và trace `source`, `valueState`, `profileId`, `scope`; bắt buộc ca âm `0/false/""/null/UNSPECIFIED/INVALID_PROFILE_FONT_SIZE`. Không dùng master đang conflict.
+1. Tiếp tục **DF-B02** để nối những thuộc tính đã có nguồn vào exporter và OOXML QA; DF-B01 đã có resolver nhỏ + ca dữ liệu âm/dương, không tạo lại. Không dùng master đang conflict.
 2. Kết nối resolver vào các consumer thực (**DF-B02/B03**) theo từng role đã được ánh xạ. Test hai chế độ và trường hợp profile chưa xác nhận; không refactor exporter toàn phần.
 3. Xử lý phần độc lập **DF-E01/E02** sau khi đánh giá source-trust/candidate states. Cấu hình chưa duyệt giữ `REQUIRES_REVIEW`.
 4. **DF-C02**, **DF-A02/A03** chỉ mở khi có golden/master đúng phiên bản; với WPS/Word thì báo `NOT_VERIFIED_RENDER` khi chưa kiểm.
@@ -363,3 +365,10 @@ B/C/E xong và pilot đủ chứng cứ ──> F01/F02 ──> F03
 ## 13. QUY TẮC ĐIỀU HÀNH XUYÊN PHIÊN (BẮT BUỘC)
 
 Đọc [Project Memory](../PROJECT_MEMORY.md) và [Project Session Protocol](../PROJECT_SESSION_PROTOCOL.md) **trước khi mở task**, so ID/status/bằng chứng đã hoàn thành với HEAD hiện hành; chỉ thực hiện việc còn phục vụ **mục tiêu cuối người dùng** và có tiêu chí dừng. Sau PR/đợt sửa, lưu nhật ký tại `docs/sessions/` với commit, file, test, kết quả thực, điều chưa xác minh và bước kế tiếp; cập nhật memory và đúng dòng trạng thái trong roadmap. Mọi kết luận về Word/WPS chưa kiểm phải ghi `NOT_VERIFIED_RENDER`. Không đặt việc ghi nhớ như lý do chạy full test hay mở rộng scope.
+
+
+## 14. BÀN GIAO DF-A04/B01 — BỘ NHỚ DỰ ÁN ĐÃ KÍCH HOẠT (07/11/2026)
+
+**Đã merge [PR #3](https://github.com/tranhaihp26-bit/DocForm/pull/3)**: commit `cf5fb6190a1bd06db9da846039ad6eebd75e027c`. Chi tiết thay đổi, bằng chứng typecheck, [CI 26/26](https://github.com/tranhaihp26-bit/DocForm/actions/runs/42336367558), [CI 31/31](https://github.com/tranhaihp26-bit/DocForm/actions/runs/42336367566), hạn chế và tiếp quản được ghi tại [session log 07/11/2026](../sessions/2026-11-07_DF-A04-B01_effective-profile-and-memory.md).
+
+**Cổng vận hành bắt buộc từ phiên này:** trước sửa đọc [Project Memory](../PROJECT_MEMORY.md), xác nhận ID/mục tiêu cuối của roadmap và SHA/test còn hiệu lực; sau sửa ghi nhật ký phiên, cập nhật index + trạng thái gói, commit lên GitHub, không chỉ báo trong chat. Xem [quy trình chính thức](../PROJECT_SESSION_PROTOCOL.md). **Chưa nghiệm thu** Word/WPS toàn diện, chưa phát hành production.

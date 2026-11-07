@@ -14,7 +14,7 @@ Người dùng **tạo mới, nhập, chỉnh sửa, chuẩn hóa và xuất DOC
 - [Codebase Map](CODEBASE_MAP.md)
 - [Quy trình nhớ phiên, chống làm trùng/lạc mục tiêu](PROJECT_SESSION_PROTOCOL.md)
 
-## Tiến độ đã có bằng chứng trước phiên DF-B01
+## Tiến độ hiện tại (theo phiên đã lưu)
 
 | Gói | Trạng thái kiểm chứng | Bằng chứng |
 |---|---|---|
@@ -22,15 +22,16 @@ Người dùng **tạo mới, nhập, chỉnh sửa, chuẩn hóa và xuất DOC
 | DF-C03 | DONE_CODE + VERIFIED_OOXML_FOCUSED | PR #2, merge `b8d825bf`, GitHub Actions 42332869724 |
 | DF-A01 | PARTIAL_SOURCE_MAPPED | [Ma trận nguồn](profile/PROFILE_SOURCE_MATRIX.md); còn role chưa xác thực |
 | DF-A02/A03 | BLOCKED_BY_MASTER | Xung đột ND30 date alignment/issuer line; tên tổ chức Đảng theo mẫu khác phiên bản |
-| DF-B01/DF-A04 | PARTIAL_IMPLEMENTED + CI_VERIFIED_FOCUSED; PR #3 chưa merge | [Nhật ký phiên](sessions/2026-11-07_DF-A04-B01_effective-profile-and-memory.md) và GitHub Actions 42336222630, 42336222614 |
+| DF-A04 | DONE_CODE + CI_VERIFIED_FOCUSED | [PR #3](https://github.com/tranhaihp26-bit/DocForm/pull/3), merge `cf5fb619`; CI 26/26 & 31/31 ở HEAD cuối |
+| DF-B01 | PARTIAL_IMPLEMENTED + CI_VERIFIED_FOCUSED — mới nối body.fontSizePt | [Nhật ký phiên](sessions/2026-11-07_DF-A04-B01_effective-profile-and-memory.md); còn DF-B02 cho các consumer khác |
 | DF-B02/B03 | OPEN | Nối các thuộc tính còn lại vào exporter/QA sau khi B01 ổn định |
 | DF-E03/F02 | NOT_VERIFIED_RENDER | Chưa có bằng chứng Word/WPS thực |
 
 ## Phiên làm việc gần nhất
 
 - **Phiên:** 07/11/2026 — DF-A04/DF-B01 + thiết lập bộ nhớ dự án, nhánh `codex/df-b01-effective-attribute-project-memory-20261107`.
-- **Trạng thái trước merge:** resolver và composer đã sửa, hai workflow tại SHA e9baf86e đã PASS (26/26 và 31/31); PR #3 còn mở. Không tuyên bố nghiệm thu Word/WPS.
-- **Nhật ký phiên:** [07/11/2026 — DF-A04/B01 resolver & bộ nhớ dự án](sessions/2026-11-07_DF-A04-B01_effective-profile-and-memory.md). Sau merge bổ sung final SHA và trạng thái thực tế.
-- **Hành động tiếp theo sau phiên hiện tại:** nếu test B01 đạt, nối thêm thuộc tính đã duyệt vào đúng consumer (DF-B02); nếu chưa đạt, sửa chính xác lỗi CI; không sửa master A02/A03 bằng suy đoán.
+- **Trạng thái cuối:** [PR #3](https://github.com/tranhaihp26-bit/DocForm/pull/3) đã merge tại [`cf5fb619`](https://github.com/tranhaihp26-bit/DocForm/commit/cf5fb6190a1bd06db9da846039ad6eebd75e027c); CI tại head `457f0930` PASS [26/26](https://github.com/tranhaihp26-bit/DocForm/actions/runs/42336367558) và [31/31](https://github.com/tranhaihp26-bit/DocForm/actions/runs/42336367566). Chưa nghiệm thu Word/WPS.
+- **Nhật ký phiên đã lưu:** [07/11/2026 — DF-A04/B01 resolver & bộ nhớ dự án](sessions/2026-11-07_DF-A04-B01_effective-profile-and-memory.md), có commit, tệp thay đổi, CI, giới hạn và bước sau.
+- **Hành động ưu tiên tiếp theo:** DF-B02 nối các thuộc tính đã duyệt còn thiếu vào consumer/exporter/OOXML QA bằng test phạm vi nhỏ; không sửa master A02/A03 bằng suy đoán. Các phần Word/WPS vẫn NOT_VERIFIED_RENDER.
 
 **Lưu ý:** Khi bắt đầu phiên mới, đọc HEAD/PR live trên GitHub. Không dùng SHA nêu trong nhật ký cũ làm HEAD hiện hành mà không kiểm tra lại.

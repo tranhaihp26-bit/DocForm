@@ -42,6 +42,13 @@
 2. DF-B03 kiểm font integer theo role sau stamp; DF-E01 luồng AI confirmed-profile; DF-E04 peer dependency làm riêng nếu cần fresh npm ci.
 3. Không nghiệm thu toàn diện khi chưa có WPS/Word real render và master giải quyết A02/A03.
 
-## Hậu kiểm khi merge (bổ sung sau PR)
+## Hậu kiểm sau merge — ĐÃ LƯU BỘ NHỚ DỰ ÁN
 
-**PENDING_MERGE** — điền merge commit SHA, liên kết CI tại HEAD cuối và trạng thái `docs/PROJECT_MEMORY.md` sau khi merge. Không coi log provisional này là release acceptance.
+- **Merge thành công:** [PR #3](https://github.com/tranhaihp26-bit/DocForm/pull/3) được squash vào `main` tại [commit `cf5fb6190a1bd06db9da846039ad6eebd75e027c`](https://github.com/tranhaihp26-bit/DocForm/commit/cf5fb6190a1bd06db9da846039ad6eebd75e027c).
+- **HEAD cuối của PR:** `457f0930ce85e12dbf63b372a7cdf7499204f047` (sau ghi nhận nhật ký provisional).
+- **CI HEAD cuối:** [DF-B01 run 42336367558](https://github.com/tranhaihp26-bit/DocForm/actions/runs/42336367558) **26/26 PASS**, [V2.2 run 42336367566](https://github.com/tranhaihp26-bit/DocForm/actions/runs/42336367566) **31/31 PASS**, cả hai đã completed/success và TypeScript typecheck PASS.
+- **Kiểm tra tài liệu:** kiểm tra 13 Markdown thay đổi trên nhánh PR; **0 liên kết nội bộ không tồn tại**; không chạy full test vì cập nhật cuối phiên chỉ sửa Markdown.
+- **Memory đã cập nhật:** [Project Memory](../PROJECT_MEMORY.md) và [Master Roadmap](../roadmap/DOCFORM_MASTER_AUDIT_IMPLEMENTATION_ROADMAP_2026-11-07.md); thay đổi ghi nhận trong commit tài liệu riêng sau merge, SHA chính xác theo lịch sử `main`.
+- **Trạng thái đóng phiên:** `DF-A04 DONE_CODE+CI_VERIFIED_FOCUSED`, `DF-B01 PARTIAL_IMPLEMENTED+CI_VERIFIED_FOCUSED`, chưa `ACCEPTED` toàn pipeline. Các test không cung cấp bằng chứng Word/WPS visual; `NOT_VERIFIED_RENDER` giữ nguyên.
+
+**Điều kiện tiếp tục:** đọc Project Memory và Roadmap; không làm lại DF-C01/C03, không tự chốt A02/A03; chỉ mở DF-B02 hoặc gói độc lập có kết quả người dùng cụ thể.
