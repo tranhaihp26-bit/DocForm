@@ -212,6 +212,12 @@ async function main() {
     const zip = await JSZip.loadAsync(buffer);
     const xml = await zip.file("word/document.xml")?.async("string");
     assert.ok(xml, "Đã sinh word/document.xml cho HD 05 generic");
+    // Kiểm tra font là số nguyên pt: w:sz và w:szCs đều phải chẵn (đơn vị nửa pt).
+    const fontSizeHalfPoints = [...xml.matchAll(/<w:sz(?:Cs)?\\b[^>]*\\bw:val="(\\d+)"/g)]
+      .map(match => Number(match[1]));
+    assert.ok(fontSizeHalfPoints.length > 0, "DOCX phải có thuộc tính cỡ chữ để QA");
+    assert.ok(fontSizeHalfPoints.every(value => Number.isInteger(value) && value > 0 && value % 2 === 0),
+      "Không được xuất cỡ chữ 13.5/14.5/15.5pt; w:sz/w:szCs phải chẵn");
 
     // Evidence extraction
     const evidence = extractHD05EvidenceFromXml(xml);
