@@ -73,6 +73,8 @@ export function getStyleProfile(
   regime: "administrative" | "party" = "administrative",
   headerProfile?: string
 ): DocumentStyleProfile {
+  // In this style profile, the company body font applies only to body text;
+  // headings keep regime fallbacks until they have approved role attributes.
   if (regime === "party") {
     const partyProfile: DocumentStyleProfile = {
       regime: "party",
@@ -93,9 +95,6 @@ export function getStyleProfile(
       return {
         ...partyProfile,
         bodyFontSize: COMPANY_HD05_BODY_PROFILE.body.fontSizePt,
-        heading1FontSize: COMPANY_HD05_BODY_PROFILE.body.fontSizePt,
-        heading2FontSize: COMPANY_HD05_BODY_PROFILE.body.fontSizePt,
-        heading3FontSize: COMPANY_HD05_BODY_PROFILE.body.fontSizePt,
       };
     }
     return partyProfile;
@@ -119,9 +118,6 @@ export function getStyleProfile(
     return {
       ...administrativeProfile,
       bodyFontSize: COMPANY_ND30_BODY_PROFILE.body.fontSizePt,
-      heading1FontSize: COMPANY_ND30_BODY_PROFILE.body.fontSizePt,
-      heading2FontSize: COMPANY_ND30_BODY_PROFILE.body.fontSizePt,
-      heading3FontSize: COMPANY_ND30_BODY_PROFILE.body.fontSizePt,
     };
   }
   return administrativeProfile;
@@ -861,15 +857,14 @@ export function convertHtmlToDocxElements(
       }
 
       // Xử lý các thẻ tiêu đề (H1, H2, H3) theo vai trò phân cấp (Role-based Heading)
+      // These heading roles use regime defaults; body-normal spacing applies only to body paragraphs.
       if (tagName === "h1") {
         elements.push(
           new Paragraph({
             alignment: AlignmentType.CENTER,
             indent: bodyInsetMm ? { left: bodyInsetTwips, right: bodyInsetTwips } : undefined,
             keepNext: true,
-            spacing: useCompanyBodyFormat
-              ? { before: 180, after: companyBodyAfterTwips, line: companyBodyLineTwips, lineRule: LineRuleType.EXACT }
-              : { before: 180, after: 80, line: 276 },
+            spacing: { before: 180, after: 80, line: 276 },
             children: [
               new TextRun({
                 text: textContent.toUpperCase(),
@@ -889,9 +884,7 @@ export function convertHtmlToDocxElements(
             alignment: AlignmentType.CENTER,
             indent: bodyInsetMm ? { left: bodyInsetTwips, right: bodyInsetTwips } : undefined,
             keepNext: true,
-            spacing: useCompanyBodyFormat
-              ? { before: 140, after: companyBodyAfterTwips, line: companyBodyLineTwips, lineRule: LineRuleType.EXACT }
-              : { before: 140, after: 60, line: 276 },
+            spacing: { before: 140, after: 60, line: 276 },
             children: [
               new TextRun({
                 text: textContent.toUpperCase(),
@@ -911,9 +904,7 @@ export function convertHtmlToDocxElements(
             alignment: isCentered ? AlignmentType.CENTER : AlignmentType.LEFT,
             indent: bodyInsetMm ? { left: bodyInsetTwips, right: bodyInsetTwips } : undefined,
             keepNext: true,
-            spacing: useCompanyBodyFormat
-              ? { before: 100, after: companyBodyAfterTwips, line: companyBodyLineTwips, lineRule: LineRuleType.EXACT }
-              : { before: 100, after: 60, line: 276 },
+            spacing: { before: 100, after: 60, line: 276 },
             children: [
               new TextRun({
                 text: textContent,

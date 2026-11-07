@@ -3,6 +3,8 @@ on:
   pull_request:
     paths:
       - ".github/workflows/df-c01-c03-draft-table-ci.yml"
+      - "package.json"
+      - "package-lock.json"
       - "src/utils/docxExport.ts"
       - "src/utils/tableRoundtrip.ts"
       - "test/draft-signature-and-true-table-header.test.ts"
@@ -22,7 +24,7 @@ jobs:
           node-version: "22"
           cache: npm
       - name: Install using existing lockfile
-        run: npm ci --legacy-peer-deps
+        run: npm ci
       - name: Typecheck
         run: npm run lint
       - name: Focused OOXML and formatting regression tests
