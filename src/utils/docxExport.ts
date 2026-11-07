@@ -2531,7 +2531,7 @@ export function generateND30DocxDocument(data: DocumentFormatType): Document {
                               .filter(Boolean)
                               .map(line => {
                                 // Only notes explicitly supplied in signTitle may be rendered.
-                                const isSignNote = /^\\s*[\\(\\[](?:k[ýí]|ghi rõ|đóng dấu|chữ ký).*?[\\)\\]]\\s*$/i.test(line);
+                                const isSignNote = /^\s*[\(\[](?:k[ýí]|ghi rõ|đóng dấu|chữ ký).*?[\)\]]\s*$/i.test(line);
                                 return new Paragraph({
                                   alignment: AlignmentType.CENTER,
                                   keepNext: true,
@@ -2546,7 +2546,7 @@ export function generateND30DocxDocument(data: DocumentFormatType): Document {
                                     }),
                                   ],
                                 });
-                              })                              ) : []),
+                              }) : []),
                             // Drafts do not invent "(Ký, đóng dấu)".
                             // A note supplied as an explicit signTitle line is handled above.
                             // Khoảng trống ký tên
