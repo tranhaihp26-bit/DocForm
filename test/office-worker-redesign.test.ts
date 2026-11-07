@@ -375,7 +375,7 @@ console.log("\n--- TEST 7: Kiểm toán ruleEngine (Hợp lệ / Sai / Thiếu O
     has_nd30_shape_lines: false,
   };
   const invalidNd30Eval = evaluateDocumentRules(companyNd30Doc, "administrative", invalidNd30Ev);
-  assert.ok(invalidNd30Eval.canonicalStats.counts.FAIL >= 5, `Bằng chứng OOXML sai phải báo FAIL >= 5 rules, thực tế FAIL=${invalidNd30Eval.canonicalStats.counts.FAIL}`);
+  assert.ok(invalidNd30Eval.canonicalStats.counts.FAIL >= 5, `Bằng chứng OOXML sai phải báo FAIL >= 5 rules, thực tế FAIL=${invalidNd30Eval.canonicalStats.counts.FAIL}; failedRules=${JSON.stringify(invalidNd30Eval.results.filter(r => r.status === "FAIL").map(r => r.ruleId))}; targetProfiles=${JSON.stringify(invalidNd30Eval.results.filter(r => r.ruleId.includes("PROFILE.ND30") || r.ruleId.includes("MOTTO") || r.ruleId.includes("MARGIN") || r.ruleId.includes("ISSUER_UNDERLINE")).map(r => ({ id: r.ruleId, status: r.status, reason: r.reason })))}`);
   assert.equal(
     invalidNd30Eval.results.find(r => r.ruleId === "ND30.PL1.I.II.1B.MOTTO_UNDERLINE_LENGTH")?.status,
     "FAIL",
