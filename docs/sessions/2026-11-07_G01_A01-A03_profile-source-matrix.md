@@ -11,3 +11,9 @@
 - **Trạng thái sau phiên:** DF-A01 vẫn `PARTIAL_SOURCE_MAPPED` (ma trận mở rộng nhưng chưa xác nhận 100% role/path bằng golden/render); DF-A02/A03 vẫn `BLOCKED_BY_MASTER`. Office/WPS/UAT `NOT_VERIFIED`. Không khẳng định hỗ trợ end-to-end.
 - **Chưa thực hiện / chưa xác minh / rủi ro:** chưa có golden mẫu ND30 đúng revision hoặc quyết định issuer HD05; không kiểm mẫu body/footer của từng pilot; không mở nội dung tham chiếu Word, chỉ hash local fixture; không có Word/WPS render. Không ghi issue comment/PR vì auto-review chặn remote payload và yêu cầu direct approval; log này còn local (`NOT_PERSISTED`).
 - **Tiếp theo:** sau khi quyền ghi GitHub được xác nhận, gắn log và ma trận vào PR/issue #12; G00 cập nhật Project Memory/Roadmap sau khi tích hợp. Để #13/#14 mở cho đến khi có golden/revision/approval được phép công khai và test tương ứng.
+
+## Cập nhật sau khi publish — 07/11/2026
+
+- Người dùng đã cho phép publish qua GitHub Primary. Branch `codex/g01-a01-sources-20261107` đã được tạo; GitHub commit `c7afc7791ce95d600e6d65fa572ebe0337f61bad` có tree `8f286087bf06ab14b90b1f56205e3e7bbba0d5cb`, khớp cây local đã rà.
+- [PR #44](https://github.com/tranhaihp26-bit/DocForm/pull/44) đang mở ở trạng thái draft, chưa merge; issue #12 vẫn mở. Actions chưa tạo workflow run cho head này.
+- Đây là docs-only publication; không chạy lại runtime test, không có Word/WPS/UAT. A01 vẫn PARTIAL_SOURCE_MAPPED; A02/A03 vẫn BLOCKED_BY_MASTER.
