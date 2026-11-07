@@ -11,3 +11,5 @@
 - Thiếu fixture phải skip có lý do hoặc ghi BLOCKED cho phần kiểm chứng phụ thuộc; không `return` khiến test runner báo PASS như đã thực thi. Assert điều kiện tiên quyết trước khi kết luận: candidate tồn tại, trạng thái xác định, selector đúng và phần tử cần kiểm tra thực sự được tìm thấy.
 - Kiểm gate bằng ca dương/âm và hành vi được phép/bị chặn. Selector không tìm thấy không tự chứng minh nút disabled hoặc không có đường vòng. Khi UI chủ động ẩn nút, kiểm đúng trạng thái ẩn theo contract và xác nhận action tương ứng vẫn bị chặn.
 - Không giảm assertion, thay dữ liệu hoặc dùng `any` để che lỗi. Khi contract sản phẩm đổi hợp lệ, cập nhật test kèm lý do và bằng chứng; giữ các assertion bảo toàn dữ liệu và trạng thái an toàn liên quan.
+
+- Chạy test tương xứng theo mục tiêu phiên; giữ URL/lệnh/trạng thái PASS/FAIL thực và ghi vào [session log](../docs/PROJECT_SESSION_PROTOCOL.md). Mở [Project Memory](../docs/PROJECT_MEMORY.md) trước khi tạo lại test để tránh trùng ca đã có bằng chứng; test không phải giấy phép mở rộng scope.

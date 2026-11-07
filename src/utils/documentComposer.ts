@@ -3,6 +3,7 @@ import { COMPANY_HEADER_PROFILE_ID, applyCompanyProfile } from "../canonical/nd3
 import { COMPANY_HEADER_HD05_PROFILE_ID, applyCompanyHD05Profile } from "../canonical/hd05/companyHeaderHD05.ts";
 import { sanitizeHtmlForDocx } from "./docxExport.ts";
 import { resolveCompanyBodyProfile } from "../canonical/nd30/companyBodyProfile.ts";
+import { resolveEffectiveAttribute } from "../canonical/effectiveProfileAttribute.ts";
 import { syncImportedTablesFromHtml } from "./tableFormatUtils.ts";
 import { isTransformedMetadataTable } from "./sourceTableInventory.ts";
 export interface DocumentComposerSnapshot {
@@ -28,6 +29,30 @@ export function composeDocumentFormatData(snapshot: DocumentComposerSnapshot): D
       effectiveProfile = COMPANY_HEADER_HD05_PROFILE_ID;
     }
     const effectiveBody = resolveCompanyBodyProfile(isParty ? "party" : "administrative", effectiveProfile);
+    // DF-B01: one live consumer of per-property resolution. The existing generic
+    // body font is preserved as a regime fallback; approved company profile wins.
+    // Do not infer profile activation from organization names or AI output.
+    const regime = isParty ? "party" : "administrative";
+    const effectiveFont = resolveEffectiveAttribute({
+      regime,
+      profileId: effectiveProfile,
+      path: "body.fontSizePt",
+      profileLayers: effectiveBody ? [{
+        profileId: effectiveBody.id,
+        approval: "approved",
+        priority: 100,
+        sourceRef: "src/canonical/nd30/companyBodyProfile.ts",
+        values: { body: effectiveBody.body },
+      }] : [],
+      fallback: {
+        regime,
+        sourceRef: "src/utils/documentComposer.ts#generic-regime-font",
+        values: { body: { fontSizePt: isParty ? 14 : 13 } },
+      },
+    });
+    if (effectiveFont.state !== "SET" || typeof effectiveFont.value !== "number") {
+      throw new Error("effective_body_font_unresolved");
+    }
 
     const sourceBlocks = reviewBlocks.length > 0 ? reviewBlocks : (structuredImport?.blocks || uploadedBlocks);
     const transformedMetadataIds = new Set((sourceBlocks ?? []).filter(b => isTransformedMetadataTable(b, structuredImport?.importFidelityManifest, structuredImport?.fields)).flatMap(b => [b.id, b.tableModel?.tableId ?? b.id]));
@@ -85,7 +110,7 @@ export function composeDocumentFormatData(snapshot: DocumentComposerSnapshot): D
       nationalHeader1: isParty ? "ĐẢNG CỘNG SẢN VIỆT NAM" : "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM",
       nationalHeader2: (isParty ? "" : "Độc lập - Tự do - Hạnh phúc") as "" | "Độc lập - Tự do - Hạnh phúc",
       fontFamily: "Times New Roman",
-      fontSize: (effectiveBody?.body.fontSizePt ?? (isParty ? 14 : 13)) as 13 | 14,
+      fontSize: effectiveFont.value as 13 | 14,
       orgHeader1: exportDoc.orgHeader1,
       orgHeader2: exportDoc.orgHeader2,
       draftNote: exportDoc.draftNote,

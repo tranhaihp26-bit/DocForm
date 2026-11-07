@@ -1,0 +1,31 @@
+name: DocForm DF-B01 attribute resolution and project memory
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/df-b01-project-memory-ci.yml"
+      - "src/canonical/effectiveProfileAttribute.ts"
+      - "src/utils/documentComposer.ts"
+      - "test/effective-profile-attribute-v22.test.ts"
+  workflow_dispatch:
+
+jobs:
+  focused-b01:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install from current lockfile
+        run: npm ci --legacy-peer-deps
+      - name: Typecheck
+        run: npm run lint
+      - name: Focused attribute and composer regressions
+        run: >
+          npx tsx --test
+          test/effective-profile-attribute-v22.test.ts
+          test/company-body-profile.test.ts
+          test/profile-first-v22.test.ts
+          test/semantic-rule-formatting.test.ts

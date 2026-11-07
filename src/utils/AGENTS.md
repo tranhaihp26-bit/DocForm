@@ -29,3 +29,5 @@
 - Workspace/export: đọc `workspaceTransactions.ts`, `exportCandidate.ts`, sau đó đúng builder/gate liên quan. Table: `tableFormatUtils.ts`, `tableRoundtrip.ts`, `docxExport.ts` theo thay đổi.
 - Storage/profile/semantic: đọc module tương ứng và caller trong `App.tsx` trước khi thay contract.
 - Dùng test chuyên biệt trong Codebase Map (imported-table, candidate, storage, profile, semantic). Chạy test liên quan và `npm run lint`; kết quả synthetic không chứng minh mọi tài liệu thực.
+
+- Trước sửa composer/export/candidate, đối chiếu đầu ra người dùng và gói còn mở tại [Project Memory](../../docs/PROJECT_MEMORY.md) và Master Roadmap; không lặp kiểm thử module đã PASS nếu diff không ảnh hưởng. Sau sửa ghi file, hiệu lực, CI, nguồn còn chưa kiểm trong session log theo [quy trình](../../docs/PROJECT_SESSION_PROTOCOL.md).

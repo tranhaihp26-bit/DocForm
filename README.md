@@ -10,6 +10,8 @@
 
 ## Mục tiêu người dùng và chính sách profile V2.2
 
+**Quản lý dự án xuyên phiên:** coding agent phải đọc [bộ nhớ trạng thái](docs/PROJECT_MEMORY.md) và [Master Roadmap](docs/roadmap/DOCFORM_MASTER_AUDIT_IMPLEMENTATION_ROADMAP_2026-11-07.md) trước khi sửa, rồi [ghi nhật ký thay đổi/kiểm chứng lên GitHub](docs/PROJECT_SESSION_PROTOCOL.md) sau khi thực hiện. Không đánh dấu hoàn thành nếu chưa có commit và bằng chứng phù hợp.
+
 DocForm phải giúp người dùng **tạo, nhập, chỉnh sửa và chuẩn hóa văn bản**, xuất DOCX có thể tiếp tục chỉnh sửa. Khi người dùng chọn profile riêng của Công ty Hoa tiêu Hàng hải Miền Bắc, **mọi thuộc tính có cấu hình profile được áp đúng profile, không so/hậu kiểm hoặc cảnh báo xung đột với ND30/HD05**. Chỉ thuộc tính profile chưa có mới dùng ND30 hoặc HD05 cùng hệ làm fallback. `0`, `false`, `""` có chủ ý là đã thiết lập; không có cả hai nguồn thì `UNSPECIFIED`.
 
 Đây là **chính sách yêu cầu đã chốt, không mặc nhiên là tính năng runtime đã triển khai**. Xem [đặc tả V2.2 và kế hoạch nghiệm thu](docs/DOCFORM_PRODUCT_FIRST_PROFILE_POLICY_V2_2.md); hướng dẫn agent tại [AGENTS.md](AGENTS.md). Việc giữ nguyên byte nguồn để truy vết không đồng nghĩa phải giữ nguyên định dạng sai trong văn bản sau chuẩn hóa.
