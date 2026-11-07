@@ -2,6 +2,11 @@
 
 **Bắt buộc đọc trước khi sửa, cập nhật sau khi hoàn thành mỗi đợt.** Quy trình: [PROJECT_SESSION_PROTOCOL.md](PROJECT_SESSION_PROTOCOL.md). Tài liệu này là **chỉ mục ngắn**, không thay thế log phiên, Master Roadmap hay Git history.
 
+## Trạng thái GitHub mới nhất — cuối phiên tích hợp 07/11/2026
+
+**Đã tích hợp 5 PR:** #38, #42, #44, #46 và #48. PR #48 (Project Memory/Roadmap/nhật ký) đã merge tại `60c7990ae67c6089e12ef68109acbc4603e27c44`. **Vẫn mở, Draft:** #37, #43, #45 và #47. Các issue gốc vẫn mở nếu chưa đạt cổng nghiệm thu. **M1/M2: NO-GO** vì thiếu corpus DOCX hậu stamp, Word/WPS và UAT. [Nhật ký tích hợp](sessions/2026-11-07_github-integration-followup.md). Phần “publication” phía dưới là lịch sử tại thời điểm trước các merge.
+
+
 ## Mục tiêu sản phẩm không được thay đổi
 
 Người dùng **tạo mới, nhập, chỉnh sửa, chuẩn hóa và xuất DOCX có thể tiếp tục chỉnh sửa**, ưu tiên **mọi thuộc tính có cấu hình trong profile Công ty đã xác nhận**. ND30/HD05 chỉ bổ sung từng thuộc tính profile thiếu, không dùng để đối chiếu lại giá trị đã có. Giữ nguyên nội dung không được duyệt sửa và nguồn, không tự điền số/ngày/người ký/chữ ký/dấu; preview/PDF và trạng thái kiểm tra phải trung thực. Giữ workflow Import → Editor → Export, không mặc định viết lại kiến trúc.
