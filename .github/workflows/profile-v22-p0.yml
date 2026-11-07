@@ -3,6 +3,8 @@ on:
   pull_request:
     paths:
       - ".github/workflows/profile-v22-p0.yml"
+      - "package.json"
+      - "package-lock.json"
       - "src/canonical/**"
       - "src/utils/documentComposer.ts"
       - "src/utils/importSessionLifecycle.ts"
@@ -22,9 +24,13 @@ jobs:
           node-version: "22"
           cache: npm
       - name: Install dependencies
-        run: npm ci --legacy-peer-deps # Existing esbuild 0.25 / Vite 8 peer mismatch; tracked separately
+        run: npm ci
       - name: Typecheck
         run: npm run lint
+      - name: Production build
+        run: npm run build
+      - name: Direct esbuild consumer tests
+        run: npx tsx --test test/export-candidate-contract.test.ts test/current-document-state.test.ts
       - name: Focused V2.2 regression tests
         run: >
           npx tsx --test
