@@ -585,3 +585,10 @@ Mỗi dòng nghiệm thu cần: ID ca/loại, source giả lập hoặc được
 - **PR #48 đã MERGED** tại `60c7990ae67c6089e12ef68109acbc4603e27c44` (sau các PR #38, #42, #44, #46). Vì vậy hàng “G00 / continuity — IN_PROGRESS cho đến khi merge #48” trong mục 22 là snapshot trước thời điểm merge; hiện trạng G00 của phiên này là **đã lưu nhật ký và chỉ mục lên main**.
 - Vẫn còn 4 PR Draft #37/#43/#45/#47; không PR nào trong bốn PR này được merge trong phiên. Issues liên quan chưa đóng do cổng thực tế chưa hoàn thành.
 - Không có bằng chứng mới cho M1/M2, Word/WPS/UAT; giữ `NO-GO`. Chi tiết căn cứ ở [nhật ký tích hợp](../sessions/2026-11-07_github-integration-followup.md).
+
+### 22.2. Bổ sung bằng chứng CI theo phạm vi — 07/11/2026
+
+- DF-B03 / [PR #37](https://github.com/tranhaihp26-bit/DocForm/pull/37): workflow focused OOXML/font mới [42370010487](https://github.com/tranhaihp26-bit/DocForm/actions/runs/42370010487) **SUCCESS** (3/3); ba workflow PR hiện hành khác cũng SUCCESS. Chưa merge, branch diverged; không nâng `VERIFIED_OOXML_POST_STAMP_REAL`.
+- DF-E03 / [PR #43](https://github.com/tranhaihp26-bit/DocForm/pull/43): [42369791164](https://github.com/tranhaihp26-bit/DocForm/actions/runs/42369791164) **SUCCESS** (22 PASS/1 SKIP, Windows-only), thực thi lockfile install + lint + scoped renderer/security suites. Chưa merge hoặc nghiệm thu WPS.
+- DF-B04 / [PR #45](https://github.com/tranhaihp26-bit/DocForm/pull/45): [42369870886](https://github.com/tranhaihp26-bit/DocForm/actions/runs/42369870886) **SUCCESS** (scoped settings/header tests). Chưa merge hoặc nghiệm thu Word/WPS.
+- Đây là **CI trên các nhánh PR**, không phải release Gate R/U/O. #47 vẫn lỗi test. Giữ toàn bộ các issue và các PR Draft chưa nghiệm thu ở trạng thái cần kiểm chứng thêm; không đổi kết luận **M1/M2 NO-GO**.
