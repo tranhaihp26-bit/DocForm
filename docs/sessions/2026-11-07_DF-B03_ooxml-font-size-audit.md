@@ -1,0 +1,36 @@
+# Session 2026-11-07 — DF-B03 — Scoped OOXML font-size audit
+
+- **Mục tiêu người dùng / Master Roadmap:** Không để cỡ chữ 13,5/15,5 do engine tạo lọt qua ở role đã được profile quản lý; giữ nguyên vùng nguồn chưa được engine chuẩn hóa. Master Roadmap V2.0, DF-B03 / issue #8.
+- **Base HEAD, branch/PR, final merge SHA:** Base `5f8b00fab7f3fe87f1165aa3ca645c370c4cef5c`; branch `codex/g03-df-b03-20261107`; PR/commit đang chờ push và mở PR; chưa merge.
+- **Trạng thái trước phiên:** DF-B03 `OPEN / READY (W0)` theo Issue Execution Board; GitHub issue #8 đang `OPEN`, chưa có comment/công việc tương đương, không có PR mở thực hiện B03.
+- **Thay đổi:** `src/canonical/ooxmlFontSizeAudit.ts` → thêm auditor OOXML dựa trên manifest caller cung cấp; mỗi scope phải khai rõ `engine_managed` hoặc `untouched_source`; kiểm tra `w:sz` và `w:szCs` cho role engine quản lý, truy vết direct run → character style → paragraph mark/style và `basedOn` → table style khi xác định được → `docDefaults`; giá trị nửa điểm lẻ không được làm tròn; không đoán cỡ khi inheritance thiếu/không phân giải. Chỉ các run được khai báo mới được audit; run nguồn không quản lý ghi `NOT_APPLICABLE`.
+- **Thay đổi:** `test/ooxml-font-size-audit.test.ts` → tạo DOCX OOXML tổng hợp dạng ZIP với body, header, footer, bảng, docDefaults và style inheritance; kiểm tra 15,5pt âm, inheritance không giải được, thiếu `w:szCs`, expected lẻ, nguồn chưa quản lý và không nhầm độ rộng đường kẻ thành font.
+- **Kiểm thử:** `npm ci --legacy-peer-deps` — hoàn tất, thêm 310 packages; đây là workaround đã ghi nhận trước DF-E04, **không** gọi là clean install. `npm run lint` — PASS, exit 0 (`tsc --noEmit`). `npx tsx test/ooxml-font-size-audit.test.ts` — PASS, 2/2 tests, 0 fail/skip. `git diff --check` — PASS, không báo whitespace lỗi.
+- **Trạng thái sau phiên:** `DONE_CODE` với lint và focused test cục bộ PASS; GitHub CI chờ sau khi PR được mở. Đây chưa phải `VERIFIED_OOXML` trên candidate DOCX hậu stamp thật.
+- **Chưa thực hiện / chưa xác minh / rủi ro:** Chưa nối auditor vào exporter/candidate sau stamp vì G02 giữ độc quyền `docxExport.ts`/`ruleEngine.ts`; chưa quét DOCX đầu ra thật, chưa đo 0 odd half-point trên role production; chưa chạy Word/WPS/PDF visual hoặc UAT. Inheritance phức tạp chưa thể xác định trả `NOT_EVALUATED`; caller phải cung cấp manifest chính xác theo part/paragraph/run và provenance role.
+- **Đề xuất delta cho G00 sau PR/merge:** Project Memory ghi DF-B03 là code/test độc lập, chờ nối manifest vào luồng hậu stamp; Master Roadmap ghi trạng thái theo CI và dependency G02; Support Matrix không đổi vì chưa có evidence hậu stamp/render và không mở rộng cam kết người dùng.
+- **Tiếp theo theo Master Roadmap:** Mở PR nhỏ cho #8; chờ CI phù hợp; giữ issue mở cho đến khi auditor được gọi trên candidate hậu stamp và còn bằng chứng Office/UAT theo release gate. Sau đó phối hợp G00/G02 về API manifest; F02/Word-WPS mới đánh giá render thật.
+
+## Cập nhật sau khi publish PR — 07/11/2026
+
+- **Commit và PR:** Local commit `0e307425d686368160a605851b2403945fac0b1d`; GitHub commit `fa28b5868c1b24742374970026b9b309f1cf9118`; parent của GitHub commit là base `5f8b00fab7f3fe87f1165aa3ca645c370c4cef5c`. Blob SHA của cả ba tệp và tree SHA `56ee7f2691a8e0fe6210023b6ce75572ce930986` khớp giữa commit local và commit đã publish. Branch `codex/g03-df-b03-20261107`; [PR #37](https://github.com/tranhaihp26-bit/DocForm/pull/37) đang mở ở trạng thái draft; chưa merge.
+- **GitHub CI:** [Run 42349837323](https://github.com/tranhaihp26-bit/DocForm/actions/runs/42349837323) kết thúc `success` trên code head `fa28b5868c1b24742374970026b9b309f1cf9118`: `npm ci --legacy-peer-deps`, `npm run lint`, và 31/31 test của năm suite V2.2 được cấu hình trong workflow, 0 fail/skip. Workflow **không chạy** `test/ooxml-font-size-audit.test.ts`; focused test mới đã chạy cục bộ 2/2 và được ghi riêng ở trên. CI không phải bằng chứng render Word/WPS.
+- **Trạng thái chốt:** Issue #8 vẫn `OPEN`; PR còn draft để chờ review. Đề xuất cho Project Memory/Roadmap/Support Matrix như trên vẫn là delta gửi G00 sau merge; không tự cập nhật các tệp điều hành dùng chung.
+
+## Follow-up theo review — 07/11/2026
+
+- **Sửa contract nguồn chưa quản lý:** Khi scope `untouched_source` bỏ `runIndex`, auditor giờ trả một `NOT_APPLICABLE` cho mỗi text-bearing run được chọn, với `runIndex` và evidence `part#p[n]/r[n]`. Run phi văn bản bị bỏ qua; `untouchedSourceRuns` đếm run được xác định, không đếm một scope như thể là một run.
+- **Fixture/test:** paragraph nguồn tổng hợp có hai run chữ cách nhau bằng run tab; xác nhận hai hàng `NOT_APPLICABLE` với locator `/r[0]` và `/r[2]`, counter bằng 2. Scope source đơn lẻ vẫn không tham gia đánh giá font profile.
+- **Kiểm tra cục bộ sau sửa:** `npm run lint` — PASS, exit 0; `npx tsx test/ooxml-font-size-audit.test.ts` — PASS, 2/2, 0 fail/skip. CI mới chờ sau khi cập nhật PR branch; chưa có thay đổi về việc thiếu tích hợp exporter hoặc Word/WPS/UAT.
+
+## CI sau review correction — 07/11/2026
+
+- **Code head đã kiểm:** `b9209aebbd8c6899d8e727e6e505fae182805026` (PR #37 tại thời điểm chạy). [GitHub Actions run 42350667718](https://github.com/tranhaihp26-bit/DocForm/actions/runs/42350667718) kết thúc `success`: `npm ci --legacy-peer-deps`, `npm run lint`, và 31/31 test thuộc năm suite V2.2 được workflow chọn, 0 fail/skip.
+- Workflow không chạy `test/ooxml-font-size-audit.test.ts`; focused test mới đã PASS cục bộ 2/2, cùng `npm run lint` PASS sau sửa. Run CI trên code head không chứng minh Word/WPS render hay DOCX hậu stamp.
+- Issue #8 vẫn `OPEN`; PR #37 vẫn draft. Auditor vẫn chưa nối exporter/candidate; không gắn `VERIFIED_OOXML`, `VERIFIED_RENDER`, UAT hay acceptance.
+
+## Cập nhật sau khi đồng bộ và publish PR — 07/11/2026
+
+- Sau khi quyền publish được xác nhận, PR #37 được cập nhật theo hướng fast-forward từ head cũ `fa9ad016f70130b17f700c323d29dfedcca49dd7`. GitHub commit mới `d59c23912e9199beb8df22cd55c1e0bd68f86253` có parent là head cũ và tree `101d8dfb9c93f20e808ad32031766c5009c447ff`, khớp cây local đã rà. PR #37 vẫn open/draft, chưa merge; issue #8 vẫn open.
+- GitHub Actions trên head mới kết thúc success: runs [42366552599](https://github.com/tranhaihp26-bit/DocForm/actions/runs/42366552599), [42366552612](https://github.com/tranhaihp26-bit/DocForm/actions/runs/42366552612), [42366552638](https://github.com/tranhaihp26-bit/DocForm/actions/runs/42366552638). Các workflow chạy typecheck và nhóm test đã cấu hình; focused audit test 2/2 và lint đã được chạy local trước bước publish.
+- Đồng bộ main/CI không bổ sung kiểm tra trên DOCX hậu stamp thật. Tích hợp exporter, Word/WPS, PDF visual và UAT vẫn chưa xác minh.
